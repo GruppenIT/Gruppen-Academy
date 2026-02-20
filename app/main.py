@@ -15,10 +15,12 @@ from app.learning.router import router as learning_router
 from app.users.router import router as users_router
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("CORS origins: %s", settings.cors_origins)
     await init_startup()
     yield
 
@@ -31,9 +33,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+cors_origins = list(settings.cors_origins)
+# Ensure common local dev origins are included
+for origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
+    if origin not in cors_origins:
+        cors_origins.append(origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

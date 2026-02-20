@@ -1,6 +1,6 @@
 import json
 
-import anthropic
+from openai import AsyncOpenAI
 
 from app.config import settings
 from app.evaluations.schemas import EvaluationResult
@@ -11,11 +11,9 @@ from app.llm.prompts import (
     REPORT_PROFESSIONAL_SYSTEM_PROMPT,
 )
 
-MODEL = "claude-sonnet-4-20250514"
 
-
-def _get_client() -> anthropic.AsyncAnthropic:
-    return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+def _get_client() -> AsyncOpenAI:
+    return AsyncOpenAI(api_key=settings.openai_api_key)
 
 
 async def evaluate_response(
@@ -32,14 +30,17 @@ Resposta do profissional: {answer_text}
     if rubric:
         user_content += f"\nRubrica de avaliação: {json.dumps(rubric, ensure_ascii=False)}"
 
-    message = await client.messages.create(
-        model=MODEL,
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
         max_tokens=2048,
-        system=EVALUATION_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_content}],
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": EVALUATION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
     )
 
-    result_text = message.content[0].text
+    result_text = response.choices[0].message.content
     result_json = json.loads(result_text)
     return EvaluationResult(**result_json)
 
@@ -69,14 +70,18 @@ Competências alvo:
     if num_questions:
         user_content += f"\nNúmero desejado de perguntas: {num_questions}"
 
-    message = await client.messages.create(
-        model=MODEL,
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
         max_tokens=4096,
-        system=QUESTION_GENERATION_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_content}],
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": QUESTION_GENERATION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
     )
 
-    return json.loads(message.content[0].text)
+    result = json.loads(response.choices[0].message.content)
+    return result if isinstance(result, list) else result.get("questions", [result])
 
 
 async def generate_report(evaluations: list, report_type: str) -> dict:
@@ -102,14 +107,17 @@ async def generate_report(evaluations: list, report_type: str) -> dict:
 {json.dumps(evaluations_data, ensure_ascii=False, indent=2)}
 """
 
-    message = await client.messages.create(
-        model=MODEL,
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
         max_tokens=4096,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_content}],
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
     )
 
-    return json.loads(message.content[0].text)
+    return json.loads(response.choices[0].message.content)
 
 
 async def tutor_chat(
@@ -118,11 +126,12 @@ async def tutor_chat(
 ) -> str:
     client = _get_client()
 
-    message = await client.messages.create(
-        model=MODEL,
+    api_messages = [{"role": "system", "content": system_context}, *messages]
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
         max_tokens=2048,
-        system=system_context,
-        messages=messages,
+        messages=api_messages,
     )
 
-    return message.content[0].text
+    return response.choices[0].message.content

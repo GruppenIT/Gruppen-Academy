@@ -14,7 +14,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3,<4",
     "passlib[bcrypt]>=1.7,<2",
     "python-multipart>=0.0.18",
-    "anthropic>=0.42,<1",
+    "openai>=1.60,<2",
     "httpx>=0.28,<1",
 ]
 

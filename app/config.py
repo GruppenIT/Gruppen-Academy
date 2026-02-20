@@ -8,7 +8,8 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://gruppen:gruppen@db:5432/gruppen_academy"
 
-    anthropic_api_key: str = ""
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o"
 
     jwt_secret_key: str = "change-me"
     jwt_algorithm: str = "HS256"

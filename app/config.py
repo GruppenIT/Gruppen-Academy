@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_access_token_expire_minutes: int = 30
 
-    cors_origins: list[str] = ["https://academy.gruppen.com.br"]
+    cors_origins: list[str] = ["https://academy.gruppen.com.br", "http://localhost:3000"]
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

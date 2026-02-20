@@ -1,3 +1,6 @@
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -6,15 +9,26 @@ from app.catalog.router import router as catalog_router
 from app.config import settings
 from app.evaluations.router import router as evaluations_router
 from app.gamification.router import router as gamification_router
+from app.init_db import startup as init_startup
 from app.journeys.router import router as journeys_router
 from app.learning.router import router as learning_router
 from app.users.router import router as users_router
+
+logging.basicConfig(level=logging.INFO)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_startup()
+    yield
+
 
 app = FastAPI(
     title="Gruppen Academy",
     description="Plataforma interna de aprendizagem corporativa da Gruppen",
     version="0.1.0",
     root_path="",
+    lifespan=lifespan,
 )
 
 app.add_middleware(

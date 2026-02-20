@@ -43,7 +43,7 @@ export default function LevelProgress({ points, compact }: LevelProgressProps) {
             <p className="text-sm text-gray-500">{points} XP totais</p>
           </div>
         </div>
-        {current !== next && (
+        {current.name !== next.name && (
           <div className="text-right">
             <p className="text-xs text-gray-400">Próximo nível</p>
             <p className="text-sm font-medium text-gray-600">
@@ -63,7 +63,7 @@ export default function LevelProgress({ points, compact }: LevelProgressProps) {
         />
       </div>
 
-      {current !== next && (
+      {current.name !== next.name && (
         <p className="text-xs text-gray-400 mt-2 text-center">
           Faltam <span className="font-medium text-brand-600">{next.minPoints - points} XP</span> para {next.name}
         </p>

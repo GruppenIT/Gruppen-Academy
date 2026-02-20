@@ -142,9 +142,11 @@ export const LEVELS = [
   { name: 'Lenda', minPoints: 2000, icon: '👑' },
 ] as const
 
+type Level = typeof LEVELS[number]
+
 export function getUserLevel(points: number) {
-  let current = LEVELS[0]
-  let next = LEVELS[1]
+  let current: Level = LEVELS[0]
+  let next: Level = LEVELS[1]
   for (let i = LEVELS.length - 1; i >= 0; i--) {
     if (points >= LEVELS[i].minPoints) {
       current = LEVELS[i]
@@ -152,7 +154,7 @@ export function getUserLevel(points: number) {
       break
     }
   }
-  const progressToNext = next === current
+  const progressToNext = next.name === current.name
     ? 100
     : ((points - current.minPoints) / (next.minPoints - current.minPoints)) * 100
   return { current, next, progressToNext }

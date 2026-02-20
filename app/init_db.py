@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 async def init_db():
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Inline migrations for columns added after initial schema
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0"
+        ))
+
     logger.info("Database tables created/verified.")
 
 

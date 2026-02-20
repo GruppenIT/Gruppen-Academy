@@ -103,7 +103,7 @@ class ApiClient {
     const q = productId ? `?product_id=${productId}` : ''
     return this.request<import('@/types').MasterGuideline[]>(`/api/catalog/guidelines${q}`)
   }
-  createGuideline(data: { product_id?: string | null; title: string; content: string; category: string; is_corporate?: boolean }) {
+  createGuideline(data: { product_id?: string | null; title: string; content: string; category: string; is_corporate?: boolean; domain?: string }) {
     return this.request<import('@/types').MasterGuideline>('/api/catalog/guidelines', { method: 'POST', body: JSON.stringify(data) })
   }
   updateGuideline(id: string, data: Record<string, unknown>) {
@@ -111,7 +111,10 @@ class ApiClient {
   }
 
   // Journeys
-  getJourneys(skip = 0, limit = 50) { return this.request<import('@/types').Journey[]>(`/api/journeys?skip=${skip}&limit=${limit}`) }
+  getJourneys(skip = 0, limit = 50, domain?: string) {
+    const q = domain ? `&domain=${domain}` : ''
+    return this.request<import('@/types').Journey[]>(`/api/journeys?skip=${skip}&limit=${limit}${q}`)
+  }
   getJourney(id: string) { return this.request<import('@/types').Journey>(`/api/journeys/${id}`) }
   getJourneyQuestions(id: string) { return this.request<import('@/types').Question[]>(`/api/journeys/${id}/questions`) }
   createJourney(data: { title: string; description?: string; domain?: string; session_duration_minutes?: number; participant_level?: string; product_ids?: string[]; competency_ids?: string[] }) {

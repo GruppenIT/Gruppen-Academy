@@ -49,10 +49,11 @@ async def create_new_journey(
 async def list_all_journeys(
     skip: int = 0,
     limit: int = 50,
+    domain: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    return await list_journeys(db, skip, limit)
+    return await list_journeys(db, skip, limit, domain=domain)
 
 
 @router.get("/{journey_id}", response_model=JourneyOut)

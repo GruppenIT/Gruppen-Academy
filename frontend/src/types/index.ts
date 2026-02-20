@@ -38,6 +38,7 @@ export interface MasterGuideline {
   content: string
   category: string
   is_corporate: boolean
+  domain: string | null
   created_at: string
 }
 

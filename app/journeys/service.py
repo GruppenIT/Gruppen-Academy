@@ -47,8 +47,13 @@ async def get_journey(db: AsyncSession, journey_id: uuid.UUID) -> Journey | None
     return result.scalar_one_or_none()
 
 
-async def list_journeys(db: AsyncSession, skip: int = 0, limit: int = 50) -> list[Journey]:
-    result = await db.execute(select(Journey).offset(skip).limit(limit))
+async def list_journeys(
+    db: AsyncSession, skip: int = 0, limit: int = 50, domain: str | None = None
+) -> list[Journey]:
+    query = select(Journey)
+    if domain:
+        query = query.where(Journey.domain == domain)
+    result = await db.execute(query.order_by(Journey.created_at.desc()).offset(skip).limit(limit))
     return list(result.scalars().all())
 
 

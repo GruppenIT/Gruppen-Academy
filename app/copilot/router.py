@@ -192,17 +192,23 @@ async def copilot_generate_journey(
     if not products:
         raise HTTPException(status_code=400, detail="Nenhum produto encontrado para os IDs informados.")
 
-    # Fetch all competencies for context
-    comps_result = await db.execute(select(Competency).where(Competency.is_active))
+    # Fetch competencies filtered by the journey's domain
+    comps_result = await db.execute(
+        select(Competency).where(Competency.is_active, Competency.domain == data.domain)
+    )
     competencies = list(comps_result.scalars().all())
 
-    # Fetch relevant master guidelines: corporate + product-specific
-    from sqlalchemy import or_
+    # Fetch relevant master guidelines: corporate + product-specific + domain-scoped
+    from sqlalchemy import or_, and_
     guidelines_result = await db.execute(
         select(MasterGuideline).where(
             or_(
                 MasterGuideline.is_corporate.is_(True),
                 MasterGuideline.product_id.in_(data.product_ids),
+                and_(
+                    MasterGuideline.domain == data.domain,
+                    MasterGuideline.domain.isnot(None),
+                ),
             )
         )
     )
@@ -232,6 +238,7 @@ async def copilot_generate_journey(
             "content": g.content,
             "category": g.category,
             "is_corporate": g.is_corporate,
+            "domain": g.domain,
             "product": next((p.name for p in products if p.id == g.product_id), "Corporativa")
             if g.product_id else "Corporativa",
         }

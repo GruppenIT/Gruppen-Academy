@@ -21,6 +21,7 @@ export default function AdminJornadasPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [domainFilter, setDomainFilter] = useState<string | null>(null)
   const [modalMode, setModalMode] = useState<ModalMode>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -140,9 +141,13 @@ export default function AdminJornadasPage() {
     closeWizard(); load()
   }
 
+  const journeyDomains = [...new Set(journeys.map(j => j.domain))].sort()
+
   const filtered = journeys.filter((j) => {
     const q = search.toLowerCase()
-    return j.title.toLowerCase().includes(q) || j.domain.toLowerCase().includes(q)
+    const matchesSearch = j.title.toLowerCase().includes(q) || j.domain.toLowerCase().includes(q)
+    const matchesDomain = !domainFilter || j.domain === domainFilter
+    return matchesSearch && matchesDomain
   })
 
   return (
@@ -157,6 +162,31 @@ export default function AdminJornadasPage() {
           <Sparkles className="w-4 h-4" /> Nova Jornada com IA
         </button>
       </div>
+
+      {/* Domain filter */}
+      {journeyDomains.length > 1 && (
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs font-medium text-gray-500 uppercase">Dominio:</span>
+          <button
+            onClick={() => setDomainFilter(null)}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${!domainFilter ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          >
+            Todos ({journeys.length})
+          </button>
+          {journeyDomains.map((d) => {
+            const count = journeys.filter(j => j.domain === d).length
+            return (
+              <button
+                key={d}
+                onClick={() => setDomainFilter(domainFilter === d ? null : d)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors capitalize ${domainFilter === d ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                {d} ({count})
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="relative mb-6">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />

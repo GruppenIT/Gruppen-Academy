@@ -86,6 +86,7 @@ class MasterGuidelineCreate(BaseModel):
     content: str
     category: str
     is_corporate: bool = False
+    domain: str | None = None
 
 
 class MasterGuidelineUpdate(BaseModel):
@@ -94,6 +95,7 @@ class MasterGuidelineUpdate(BaseModel):
     content: str | None = None
     category: str | None = None
     is_corporate: bool | None = None
+    domain: str | None = None
 
 
 class MasterGuidelineOut(BaseModel):
@@ -103,6 +105,7 @@ class MasterGuidelineOut(BaseModel):
     content: str
     category: str
     is_corporate: bool
+    domain: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -20,6 +20,7 @@ export default function AdminCompetenciasPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [domainFilter, setDomainFilter] = useState<string | null>(null)
   const [modalMode, setModalMode] = useState<ModalMode>(null)
   const [modalType, setModalType] = useState<Tab>('competencies')
   const [saving, setSaving] = useState(false)
@@ -39,6 +40,7 @@ export default function AdminCompetenciasPage() {
   const [gCategory, setGCategory] = useState('')
   const [gProductId, setGProductId] = useState('')
   const [gIsCorporate, setGIsCorporate] = useState(false)
+  const [gDomain, setGDomain] = useState<string>('')
   const [editGuideId, setEditGuideId] = useState<string | null>(null)
 
   // Copilot state
@@ -67,11 +69,11 @@ export default function AdminCompetenciasPage() {
     setError(''); setModalType('competencies'); setModalMode('edit')
   }
   const openCreateGuide = () => {
-    setEditGuideId(null); setGTitle(''); setGContent(''); setGCategory(''); setGProductId(products[0]?.id || ''); setGIsCorporate(false)
+    setEditGuideId(null); setGTitle(''); setGContent(''); setGCategory(''); setGProductId(products[0]?.id || ''); setGIsCorporate(false); setGDomain('')
     setError(''); setModalType('guidelines'); setModalMode('create')
   }
   const openEditGuide = (g: MasterGuideline) => {
-    setEditGuideId(g.id); setGTitle(g.title); setGContent(g.content); setGCategory(g.category); setGProductId(g.product_id || ''); setGIsCorporate(g.is_corporate)
+    setEditGuideId(g.id); setGTitle(g.title); setGContent(g.content); setGCategory(g.category); setGProductId(g.product_id || ''); setGIsCorporate(g.is_corporate); setGDomain(g.domain || '')
     setError(''); setModalType('guidelines'); setModalMode('edit')
   }
 
@@ -97,6 +99,7 @@ export default function AdminCompetenciasPage() {
             content: gContent,
             category: gCategory,
             is_corporate: gIsCorporate,
+            domain: gDomain || undefined,
           })
         } else if (editGuideId) {
           await api.updateGuideline(editGuideId, {
@@ -105,6 +108,7 @@ export default function AdminCompetenciasPage() {
             content: gContent,
             category: gCategory,
             is_corporate: gIsCorporate,
+            domain: gDomain || null,
           })
         }
       }
@@ -180,9 +184,14 @@ export default function AdminCompetenciasPage() {
 
   const totalSuggestions = tab === 'competencies' ? compSuggestions.length : guideSuggestions.length
 
+  // Derive available domains from data
+  const compDomains = [...new Set(competencies.map(c => c.domain))].sort()
+
   const filteredComps = competencies.filter((c) => {
     const q = search.toLowerCase()
-    return c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
+    const matchesSearch = c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
+    const matchesDomain = !domainFilter || c.domain === domainFilter
+    return matchesSearch && matchesDomain
   })
   const filteredGuides = guidelines.filter((g) => {
     const q = search.toLowerCase()
@@ -221,6 +230,31 @@ export default function AdminCompetenciasPage() {
           <FileText className="w-4 h-4 inline mr-1" /> Orientacoes Master ({guidelines.length})
         </button>
       </div>
+
+      {/* Domain filter (competencies tab only) */}
+      {tab === 'competencies' && compDomains.length > 1 && (
+        <div className="flex items-center gap-2 mb-4">
+          <span className="text-xs font-medium text-gray-500 uppercase">Dominio:</span>
+          <button
+            onClick={() => setDomainFilter(null)}
+            className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${!domainFilter ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+          >
+            Todos ({competencies.length})
+          </button>
+          {compDomains.map((d) => {
+            const count = competencies.filter(c => c.domain === d).length
+            return (
+              <button
+                key={d}
+                onClick={() => setDomainFilter(domainFilter === d ? null : d)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors capitalize ${domainFilter === d ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+              >
+                {d} ({count})
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       <div className="relative mb-6">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -282,7 +316,10 @@ export default function AdminCompetenciasPage() {
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-gray-500">{g.is_corporate ? 'Todos os produtos' : productName(g.product_id || '')} · {g.category}</p>
+                    <p className="text-xs text-gray-500">
+                      {g.is_corporate ? 'Todos os produtos' : productName(g.product_id || '')} · {g.category}
+                      {g.domain && <span className="capitalize"> · {g.domain}</span>}
+                    </p>
                   </div>
                 </div>
                 <button onClick={() => openEditGuide(g)} className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50">
@@ -333,7 +370,12 @@ export default function AdminCompetenciasPage() {
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700 block mb-1">Dominio</label>
-                      <input type="text" className="input-field w-full" value={cDomain} onChange={(e) => setCDomain(e.target.value)} placeholder="vendas" />
+                      <select className="input-field w-full" value={cDomain} onChange={(e) => setCDomain(e.target.value)}>
+                        <option value="vendas">Vendas</option>
+                        <option value="suporte">Suporte</option>
+                        <option value="lideranca">Lideranca</option>
+                        <option value="cs">CS</option>
+                      </select>
                     </div>
                   </div>
                 </>
@@ -373,9 +415,21 @@ export default function AdminCompetenciasPage() {
                     <label className="text-sm font-medium text-gray-700 block mb-1">Titulo *</label>
                     <input type="text" className="input-field w-full" value={gTitle} onChange={(e) => setGTitle(e.target.value)} placeholder="Ex: Abordagem consultiva BaaS" />
                   </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1">Categoria *</label>
-                    <input type="text" className="input-field w-full" value={gCategory} onChange={(e) => setGCategory(e.target.value)} placeholder="Ex: abordagem, objecoes, storytelling" />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">Categoria *</label>
+                      <input type="text" className="input-field w-full" value={gCategory} onChange={(e) => setGCategory(e.target.value)} placeholder="Ex: abordagem, objecoes" />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">Dominio</label>
+                      <select className="input-field w-full" value={gDomain} onChange={(e) => setGDomain(e.target.value)}>
+                        <option value="">Todos os dominios</option>
+                        <option value="vendas">Vendas</option>
+                        <option value="suporte">Suporte</option>
+                        <option value="lideranca">Lideranca</option>
+                        <option value="cs">CS</option>
+                      </select>
+                    </div>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-700 block mb-1">Conteudo *</label>

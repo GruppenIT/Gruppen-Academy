@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { api } from '@/lib/api'
 import type { Product } from '@/types'
 import {
@@ -9,6 +9,43 @@ import {
 } from 'lucide-react'
 
 type ModalMode = 'create' | 'edit' | null
+
+function AutoTextarea({
+  value,
+  onChange,
+  placeholder,
+  className = '',
+  minRows = 2,
+}: {
+  value: string
+  onChange: (val: string) => void
+  placeholder?: string
+  className?: string
+  minRows?: number
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null)
+
+  const resize = useCallback(() => {
+    const el = ref.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [])
+
+  useEffect(() => { resize() }, [value, resize])
+
+  return (
+    <textarea
+      ref={ref}
+      className={`input-field w-full resize-none overflow-hidden ${className}`}
+      rows={minRows}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onInput={resize}
+      placeholder={placeholder}
+    />
+  )
+}
 
 export default function AdminProdutosPage() {
   const [products, setProducts] = useState<Product[]>([])
@@ -26,6 +63,7 @@ export default function AdminProdutosPage() {
   const [formPainPoints, setFormPainPoints] = useState('')
   const [formObjections, setFormObjections] = useState('')
   const [formDifferentials, setFormDifferentials] = useState('')
+  const [formTechnology, setFormTechnology] = useState('')
 
   const load = useCallback(async () => {
     try { setProducts(await api.getProducts(0, 200, true)) } catch {} finally { setLoading(false) }
@@ -37,6 +75,7 @@ export default function AdminProdutosPage() {
     setEditProduct(null)
     setFormName(''); setFormDescription(''); setFormPersona('')
     setFormPainPoints(''); setFormObjections(''); setFormDifferentials('')
+    setFormTechnology('')
     setError(''); setModalMode('create')
   }
 
@@ -45,6 +84,7 @@ export default function AdminProdutosPage() {
     setFormName(p.name); setFormDescription(p.description)
     setFormPersona(p.target_persona || ''); setFormPainPoints(p.common_pain_points || '')
     setFormObjections(p.typical_objections || ''); setFormDifferentials(p.differentials || '')
+    setFormTechnology(p.technology || '')
     setError(''); setModalMode('edit')
   }
 
@@ -59,6 +99,7 @@ export default function AdminProdutosPage() {
           name: formName, description: formDescription,
           target_persona: formPersona || undefined, common_pain_points: formPainPoints || undefined,
           typical_objections: formObjections || undefined, differentials: formDifferentials || undefined,
+          technology: formTechnology || undefined,
           priority: products.length,
         })
       } else if (editProduct) {
@@ -66,6 +107,7 @@ export default function AdminProdutosPage() {
           name: formName, description: formDescription,
           target_persona: formPersona || null, common_pain_points: formPainPoints || null,
           typical_objections: formObjections || null, differentials: formDifferentials || null,
+          technology: formTechnology || null,
         })
       }
       closeModal(); load()
@@ -136,6 +178,7 @@ export default function AdminProdutosPage() {
                 <th className="w-10 px-3 py-3"></th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">#</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Produto</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase hidden md:table-cell">Tecnologia</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase hidden lg:table-cell">Persona</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
                 <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Acoes</th>
@@ -184,6 +227,10 @@ export default function AdminProdutosPage() {
                       </div>
                     </div>
                   </td>
+                  {/* Technology */}
+                  <td className="px-4 py-3 hidden md:table-cell">
+                    <p className="text-xs text-gray-500 line-clamp-1">{p.technology || '—'}</p>
+                  </td>
                   {/* Persona */}
                   <td className="px-4 py-3 hidden lg:table-cell">
                     <p className="text-xs text-gray-500 line-clamp-1">{p.target_persona || '—'}</p>
@@ -216,7 +263,7 @@ export default function AdminProdutosPage() {
                 </tr>
               ))}
               {filtered.length === 0 && (
-                <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400">Nenhum produto encontrado.</td></tr>
+                <tr><td colSpan={7} className="px-4 py-12 text-center text-sm text-gray-400">Nenhum produto encontrado.</td></tr>
               )}
             </tbody>
           </table>
@@ -227,7 +274,7 @@ export default function AdminProdutosPage() {
       {modalMode && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-slide-up max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
               <h3 className="font-bold text-gray-900 flex items-center gap-2">
                 <Package className="w-5 h-5 text-brand-600" />
                 {modalMode === 'create' ? 'Novo Produto' : 'Editar Produto'}
@@ -242,7 +289,11 @@ export default function AdminProdutosPage() {
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Descricao *</label>
-                <textarea className="input-field w-full h-24 resize-none" value={formDescription} onChange={(e) => setFormDescription(e.target.value)} placeholder="Descreva o produto/solucao..." />
+                <AutoTextarea value={formDescription} onChange={setFormDescription} placeholder="Descreva o produto/solucao..." minRows={3} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-gray-700 block mb-1">Tecnologia envolvida</label>
+                <input type="text" className="input-field w-full" value={formTechnology} onChange={(e) => setFormTechnology(e.target.value)} placeholder="Ex: Fortinet FortiSIEM, Veeam, VMware" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Persona-alvo</label>
@@ -250,18 +301,18 @@ export default function AdminProdutosPage() {
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Dores comuns</label>
-                <textarea className="input-field w-full h-20 resize-none" value={formPainPoints} onChange={(e) => setFormPainPoints(e.target.value)} placeholder="Quais dores esse produto resolve?" />
+                <AutoTextarea value={formPainPoints} onChange={setFormPainPoints} placeholder="Quais dores esse produto resolve?" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Objecoes tipicas</label>
-                <textarea className="input-field w-full h-20 resize-none" value={formObjections} onChange={(e) => setFormObjections(e.target.value)} placeholder="Quais objecoes os clientes costumam ter?" />
+                <AutoTextarea value={formObjections} onChange={setFormObjections} placeholder="Quais objecoes os clientes costumam ter?" />
               </div>
               <div>
                 <label className="text-sm font-medium text-gray-700 block mb-1">Diferenciais</label>
-                <textarea className="input-field w-full h-20 resize-none" value={formDifferentials} onChange={(e) => setFormDifferentials(e.target.value)} placeholder="O que diferencia dos concorrentes?" />
+                <AutoTextarea value={formDifferentials} onChange={setFormDifferentials} placeholder="O que diferencia dos concorrentes?" />
               </div>
             </div>
-            <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-100 sticky bottom-0 bg-white rounded-b-2xl">
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-100 sticky bottom-0 bg-white rounded-b-2xl z-10">
               <button onClick={closeModal} className="btn-secondary px-4 py-2">Cancelar</button>
               <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 px-4 py-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}

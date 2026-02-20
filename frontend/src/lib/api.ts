@@ -76,7 +76,7 @@ class ApiClient {
     return this.request<import('@/types').Product[]>(`/api/catalog/products?skip=${skip}&limit=${limit}&include_inactive=${includeInactive}`)
   }
   getProduct(id: string) { return this.request<import('@/types').Product>(`/api/catalog/products/${id}`) }
-  createProduct(data: { name: string; description: string; target_persona?: string; common_pain_points?: string; typical_objections?: string; differentials?: string; priority?: number }) {
+  createProduct(data: { name: string; description: string; target_persona?: string; common_pain_points?: string; typical_objections?: string; differentials?: string; technology?: string; priority?: number }) {
     return this.request<import('@/types').Product>('/api/catalog/products', { method: 'POST', body: JSON.stringify(data) })
   }
   updateProduct(id: string, data: Record<string, unknown>) {

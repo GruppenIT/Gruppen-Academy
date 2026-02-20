@@ -18,6 +18,7 @@ export interface Product {
   common_pain_points: string | null
   typical_objections: string | null
   differentials: string | null
+  technology: string | null
   priority: number
   is_active: boolean
 }

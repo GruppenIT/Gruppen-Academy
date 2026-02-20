@@ -28,6 +28,9 @@ async def init_db():
         await conn.execute(text(
             "ALTER TABLE products ADD COLUMN IF NOT EXISTS priority INTEGER NOT NULL DEFAULT 0"
         ))
+        await conn.execute(text(
+            "ALTER TABLE products ADD COLUMN IF NOT EXISTS technology TEXT"
+        ))
 
     logger.info("Database tables created/verified.")
 
@@ -83,6 +86,7 @@ SEED_PRODUCTS = [
             "flexibilidade e escalabilidade sob demanda; "
             "parceria com fabricantes líderes de mercado"
         ),
+        "technology": "Fortinet FortiGate, Cisco Firepower",
     },
     {
         "name": "SIEM as a Service",
@@ -112,6 +116,7 @@ SEED_PRODUCTS = [
             "relatórios estratégicos para tomada de decisão; "
             "conformidade com ISO 27001 e LGPD"
         ),
+        "technology": "Fortinet FortiSIEM",
     },
     {
         "name": "Pentest (Teste de Intrusão)",
@@ -139,6 +144,7 @@ SEED_PRODUCTS = [
             "relatórios detalhados com plano de remediação priorizado; "
             "testes em redes, aplicações web, mobile e infraestrutura"
         ),
+        "technology": "Kali Linux, Burp Suite, Nmap, Metasploit",
     },
     {
         "name": "Gestão Inteligente de Vulnerabilidades",
@@ -164,6 +170,7 @@ SEED_PRODUCTS = [
             "relatórios executivos e técnicos; "
             "integração com processos de patch management"
         ),
+        "technology": "Tenable Nessus, Qualys",
     },
     {
         "name": "WAF (Web Application Firewall)",
@@ -190,6 +197,7 @@ SEED_PRODUCTS = [
             "integração com DevSecOps; "
             "monitoramento contínuo pela equipe Gruppen"
         ),
+        "technology": "Fortinet FortiWeb, Cloudflare WAF",
     },
     {
         "name": "Antispam",
@@ -215,6 +223,7 @@ SEED_PRODUCTS = [
             "quarentena gerenciada; "
             "relatórios de ameaças bloqueadas"
         ),
+        "technology": "Trend Micro Email Security, Fortinet FortiMail",
     },
     {
         "name": "EPP/EDR (Endpoint Protection)",
@@ -242,6 +251,7 @@ SEED_PRODUCTS = [
             "capacidade de investigação forense; "
             "gestão centralizada pela Gruppen"
         ),
+        "technology": "Trend Micro Apex One, VMware Carbon Black",
     },
     {
         "name": "XDR (Extended Detection and Response)",
@@ -269,6 +279,7 @@ SEED_PRODUCTS = [
             "redução de fadiga de alertas; "
             "gestão pela equipe especializada Gruppen"
         ),
+        "technology": "Trend Micro Vision One",
     },
     {
         "name": "NAC (Network Access Control)",
@@ -295,6 +306,7 @@ SEED_PRODUCTS = [
             "integração com Fortinet e Cisco; "
             "implantação assistida pela Gruppen"
         ),
+        "technology": "Fortinet FortiNAC, Cisco ISE",
     },
     {
         "name": "Microsegmentação",
@@ -321,6 +333,7 @@ SEED_PRODUCTS = [
             "visibilidade completa de tráfego leste-oeste; "
             "alinhado à estratégia Zero Trust da Gruppen"
         ),
+        "technology": "VMware NSX",
     },
     {
         "name": "PAM (Privileged Access Management)",
@@ -347,6 +360,7 @@ SEED_PRODUCTS = [
             "alertas de comportamento anômalo; "
             "atende requisitos LGPD, ISO 27001 e PCI-DSS"
         ),
+        "technology": "CyberArk, senhasegura",
     },
     # ── Backup / Nuvem ───────────────────────────────────────────────
     {
@@ -380,6 +394,7 @@ SEED_PRODUCTS = [
             "equipe certificada em proteção de dados; "
             "conformidade com LGPD"
         ),
+        "technology": "Veeam Backup & Replication",
     },
     {
         "name": "IaaS (Infraestrutura como Serviço)",
@@ -406,6 +421,7 @@ SEED_PRODUCTS = [
             "escalabilidade sob demanda; "
             "integração com demais serviços Gruppen (firewall, backup)"
         ),
+        "technology": "VMware vSphere, Dell EMC",
     },
     {
         "name": "SaaS (Software como Serviço)",
@@ -431,6 +447,7 @@ SEED_PRODUCTS = [
             "suporte contínuo e treinamento; "
             "integração com segurança (antispam, MFA, Conditional Access)"
         ),
+        "technology": "Microsoft 365, Azure",
     },
     # ── Datacenter ───────────────────────────────────────────────────
     {
@@ -458,6 +475,7 @@ SEED_PRODUCTS = [
             "redução de TCO comprovada; "
             "sustentabilidade com menor consumo energético"
         ),
+        "technology": "Dell EMC VxRail, VMware vSAN",
     },
     {
         "name": "Servidores e Storage",
@@ -484,6 +502,7 @@ SEED_PRODUCTS = [
             "implantação e suporte contínuo; "
             "integração com soluções de backup e virtualização"
         ),
+        "technology": "Dell EMC PowerEdge, Dell EMC PowerStore, HPE ProLiant",
     },
     # ── Networking ───────────────────────────────────────────────────
     {
@@ -510,6 +529,7 @@ SEED_PRODUCTS = [
             "equipe com mais de 20 anos em networking; "
             "integração com NAC e firewall"
         ),
+        "technology": "Cisco Catalyst, Cisco Meraki",
     },
     {
         "name": "Wireless Corporativo",
@@ -536,6 +556,7 @@ SEED_PRODUCTS = [
             "integração com NAC e segurança; "
             "parceria Cisco e Fortinet"
         ),
+        "technology": "Cisco Catalyst Wi-Fi 6/6E, Fortinet FortiAP",
     },
     {
         "name": "SD-WAN",
@@ -562,6 +583,7 @@ SEED_PRODUCTS = [
             "redução de custos com links; "
             "gestão centralizada pela Gruppen"
         ),
+        "technology": "Fortinet Secure SD-WAN",
     },
     {
         "name": "SDN (Software-Defined Networking)",
@@ -588,6 +610,7 @@ SEED_PRODUCTS = [
             "integração com microsegmentação; "
             "redução de tempo de provisionamento"
         ),
+        "technology": "VMware NSX, Cisco ACI",
     },
     # ── End User ─────────────────────────────────────────────────────
     {
@@ -615,6 +638,7 @@ SEED_PRODUCTS = [
             "escalável e centralizado; "
             "redução de TCO para estações de trabalho"
         ),
+        "technology": "VMware Horizon",
     },
     {
         "name": "Estações de Trabalho",
@@ -640,6 +664,7 @@ SEED_PRODUCTS = [
             "gestão de ciclo de vida; "
             "integração com EPP/EDR e VDI"
         ),
+        "technology": "Dell Latitude, Dell OptiPlex, HPE",
     },
     # ── Serviços ─────────────────────────────────────────────────────
     {
@@ -670,6 +695,7 @@ SEED_PRODUCTS = [
             "parcerias VMware, Dell EMC, Microsoft, Fortinet, Cisco; "
             "foco em melhoria contínua e transferência de conhecimento"
         ),
+        "technology": "Multi-vendor (VMware, Dell EMC, Microsoft, Fortinet, Cisco)",
     },
 ]
 

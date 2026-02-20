@@ -14,6 +14,7 @@ class ProductCreate(BaseModel):
     common_pain_points: str | None = None
     typical_objections: str | None = None
     differentials: str | None = None
+    technology: str | None = None
     priority: int = 0
 
 
@@ -24,6 +25,7 @@ class ProductUpdate(BaseModel):
     common_pain_points: str | None = None
     typical_objections: str | None = None
     differentials: str | None = None
+    technology: str | None = None
     priority: int | None = None
     is_active: bool | None = None
 
@@ -36,6 +38,7 @@ class ProductOut(BaseModel):
     common_pain_points: str | None
     typical_objections: str | None
     differentials: str | None
+    technology: str | None
     priority: int
     is_active: bool
     created_at: datetime

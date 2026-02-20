@@ -81,24 +81,28 @@ class CompetencyOut(BaseModel):
 
 # --- Master Guideline ---
 class MasterGuidelineCreate(BaseModel):
-    product_id: uuid.UUID
+    product_id: uuid.UUID | None = None
     title: str
     content: str
     category: str
+    is_corporate: bool = False
 
 
 class MasterGuidelineUpdate(BaseModel):
+    product_id: uuid.UUID | None = None
     title: str | None = None
     content: str | None = None
     category: str | None = None
+    is_corporate: bool | None = None
 
 
 class MasterGuidelineOut(BaseModel):
     id: uuid.UUID
-    product_id: uuid.UUID
+    product_id: uuid.UUID | None
     title: str
     content: str
     category: str
+    is_corporate: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}

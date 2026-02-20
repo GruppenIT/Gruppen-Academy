@@ -129,7 +129,12 @@ async def copilot_suggest_guidelines(
     ]
 
     existing_data = [
-        {"title": g.title, "category": g.category, "product_id": str(g.product_id)}
+        {
+            "title": g.title,
+            "category": g.category,
+            "product_id": str(g.product_id) if g.product_id else None,
+            "is_corporate": g.is_corporate,
+        }
         for g in existing
     ]
 
@@ -153,6 +158,7 @@ async def copilot_create_guidelines_bulk(
                 title=item.title,
                 content=item.content,
                 category=item.category,
+                is_corporate=item.is_corporate,
             ),
         )
         created.append({"id": str(guide.id), "title": guide.title})
@@ -190,6 +196,18 @@ async def copilot_generate_journey(
     comps_result = await db.execute(select(Competency).where(Competency.is_active))
     competencies = list(comps_result.scalars().all())
 
+    # Fetch relevant master guidelines: corporate + product-specific
+    from sqlalchemy import or_
+    guidelines_result = await db.execute(
+        select(MasterGuideline).where(
+            or_(
+                MasterGuideline.is_corporate.is_(True),
+                MasterGuideline.product_id.in_(data.product_ids),
+            )
+        )
+    )
+    guidelines = list(guidelines_result.scalars().all())
+
     products_data = [
         {
             "name": p.name,
@@ -208,10 +226,23 @@ async def copilot_generate_journey(
         for c in competencies
     ]
 
+    guidelines_data = [
+        {
+            "title": g.title,
+            "content": g.content,
+            "category": g.category,
+            "is_corporate": g.is_corporate,
+            "product": next((p.name for p in products if p.id == g.product_id), "Corporativa")
+            if g.product_id else "Corporativa",
+        }
+        for g in guidelines
+    ]
+
     # Generate questions via LLM
     raw_questions = await generate_questions(
         products=products_data,
         competencies=competencies_data,
+        guidelines=guidelines_data,
         session_duration_minutes=data.session_duration_minutes,
         participant_level=data.participant_level,
         domain=data.domain,

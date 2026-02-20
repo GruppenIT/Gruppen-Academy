@@ -5,7 +5,7 @@ import { api } from '@/lib/api'
 import type { Competency, MasterGuideline, Product, CopilotCompetencySuggestion, CopilotGuidelineSuggestion } from '@/types'
 import {
   Plus, Search, Pencil, X, Loader2, Brain, FileText, ChevronDown, ChevronUp,
-  Sparkles, Check, AlertCircle,
+  Sparkles, Check, AlertCircle, Building2,
 } from 'lucide-react'
 
 type Tab = 'competencies' | 'guidelines'
@@ -38,6 +38,7 @@ export default function AdminCompetenciasPage() {
   const [gContent, setGContent] = useState('')
   const [gCategory, setGCategory] = useState('')
   const [gProductId, setGProductId] = useState('')
+  const [gIsCorporate, setGIsCorporate] = useState(false)
   const [editGuideId, setEditGuideId] = useState<string | null>(null)
 
   // Copilot state
@@ -66,11 +67,11 @@ export default function AdminCompetenciasPage() {
     setError(''); setModalType('competencies'); setModalMode('edit')
   }
   const openCreateGuide = () => {
-    setEditGuideId(null); setGTitle(''); setGContent(''); setGCategory(''); setGProductId(products[0]?.id || '')
+    setEditGuideId(null); setGTitle(''); setGContent(''); setGCategory(''); setGProductId(products[0]?.id || ''); setGIsCorporate(false)
     setError(''); setModalType('guidelines'); setModalMode('create')
   }
   const openEditGuide = (g: MasterGuideline) => {
-    setEditGuideId(g.id); setGTitle(g.title); setGContent(g.content); setGCategory(g.category); setGProductId(g.product_id)
+    setEditGuideId(g.id); setGTitle(g.title); setGContent(g.content); setGCategory(g.category); setGProductId(g.product_id || ''); setGIsCorporate(g.is_corporate)
     setError(''); setModalType('guidelines'); setModalMode('edit')
   }
 
@@ -87,11 +88,24 @@ export default function AdminCompetenciasPage() {
           await api.updateCompetency(editCompId, { name: cName, description: cDesc, type: cType, domain: cDomain })
         }
       } else {
-        if (!gTitle || !gContent || !gCategory || !gProductId) { setError('Todos os campos sao obrigatorios.'); setSaving(false); return }
+        if (!gTitle || !gContent || !gCategory) { setError('Titulo, categoria e conteudo sao obrigatorios.'); setSaving(false); return }
+        if (!gIsCorporate && !gProductId) { setError('Selecione um produto ou marque como orientacao corporativa.'); setSaving(false); return }
         if (modalMode === 'create') {
-          await api.createGuideline({ product_id: gProductId, title: gTitle, content: gContent, category: gCategory })
+          await api.createGuideline({
+            product_id: gIsCorporate ? null : gProductId,
+            title: gTitle,
+            content: gContent,
+            category: gCategory,
+            is_corporate: gIsCorporate,
+          })
         } else if (editGuideId) {
-          await api.updateGuideline(editGuideId, { title: gTitle, content: gContent, category: gCategory })
+          await api.updateGuideline(editGuideId, {
+            product_id: gIsCorporate ? null : gProductId,
+            title: gTitle,
+            content: gContent,
+            category: gCategory,
+            is_corporate: gIsCorporate,
+          })
         }
       }
       closeModal(); load()
@@ -146,7 +160,7 @@ export default function AdminCompetenciasPage() {
       } else {
         const selected = guideSuggestions.filter(s => s.selected)
         const result = await api.copilotCreateGuidelinesBulk(
-          selected.map(s => ({ product_id: s.product_id, title: s.title, content: s.content, category: s.category }))
+          selected.map(s => ({ product_id: s.product_id, title: s.title, content: s.content, category: s.category, is_corporate: s.is_corporate }))
         )
         setCopilotCreatedCount(result.count)
       }
@@ -175,7 +189,7 @@ export default function AdminCompetenciasPage() {
     return g.title.toLowerCase().includes(q) || g.content.toLowerCase().includes(q)
   })
 
-  const productName = (id: string) => products.find(p => p.id === id)?.name || '—'
+  const productName = (id: string | null) => id ? (products.find(p => p.id === id)?.name || '—') : '—'
 
   return (
     <div>
@@ -260,8 +274,15 @@ export default function AdminCompetenciasPage() {
                 <div className="flex items-center gap-3 flex-1 min-w-0 cursor-pointer" onClick={() => setExpandedGuideline(expandedGuideline === g.id ? null : g.id)}>
                   {expandedGuideline === g.id ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{g.title}</p>
-                    <p className="text-xs text-gray-500">{productName(g.product_id)} · {g.category}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-medium text-gray-900">{g.title}</p>
+                      {g.is_corporate && (
+                        <span className="inline-flex items-center gap-1 badge-pill text-xs bg-amber-50 text-amber-700 border border-amber-200">
+                          <Building2 className="w-3 h-3" /> Corporativa
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-500">{g.is_corporate ? 'Todos os produtos' : productName(g.product_id || '')} · {g.category}</p>
                   </div>
                 </div>
                 <button onClick={() => openEditGuide(g)} className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50">
@@ -318,12 +339,36 @@ export default function AdminCompetenciasPage() {
                 </>
               ) : (
                 <>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700 block mb-1">Produto *</label>
-                    <select className="input-field w-full" value={gProductId} onChange={(e) => setGProductId(e.target.value)}>
-                      {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
+                  <div
+                    onClick={() => setGIsCorporate(!gIsCorporate)}
+                    className={`flex items-center gap-3 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                      gIsCorporate
+                        ? 'border-amber-300 bg-amber-50/50'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
+                      gIsCorporate ? 'bg-amber-500' : 'border-2 border-gray-300'
+                    }`}>
+                      {gIsCorporate && <Check className="w-3 h-3 text-white" />}
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2">
+                        <Building2 className="w-4 h-4 text-amber-600" />
+                        <span className="text-sm font-medium text-gray-900">Orientacao Corporativa</span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-0.5">Vale para todos os produtos. Sera considerada pelo copiloto na criacao de jornadas e relatorios.</p>
+                    </div>
                   </div>
+
+                  {!gIsCorporate && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">Produto *</label>
+                      <select className="input-field w-full" value={gProductId} onChange={(e) => setGProductId(e.target.value)}>
+                        {products.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className="text-sm font-medium text-gray-700 block mb-1">Titulo *</label>
                     <input type="text" className="input-field w-full" value={gTitle} onChange={(e) => setGTitle(e.target.value)} placeholder="Ex: Abordagem consultiva BaaS" />
@@ -506,8 +551,13 @@ export default function AdminCompetenciasPage() {
                             <div className="flex items-center gap-2 mb-1">
                               <p className="text-sm font-semibold text-gray-900">{s.title}</p>
                               <span className="badge-pill text-xs bg-gray-100 text-gray-500">{s.category}</span>
+                              {s.is_corporate && (
+                                <span className="inline-flex items-center gap-1 badge-pill text-xs bg-amber-50 text-amber-700 border border-amber-200">
+                                  <Building2 className="w-3 h-3" /> Corporativa
+                                </span>
+                              )}
                             </div>
-                            <p className="text-xs text-gray-500 mb-1">{productName(s.product_id)}</p>
+                            <p className="text-xs text-gray-500 mb-1">{s.is_corporate ? 'Todos os produtos' : productName(s.product_id || '')}</p>
                             <p className="text-xs text-gray-600 line-clamp-3">{s.content}</p>
                             <p className="text-xs text-gray-400 italic mt-1">{s.rationale}</p>
                           </div>

@@ -33,10 +33,11 @@ export interface Competency {
 
 export interface MasterGuideline {
   id: string
-  product_id: string
+  product_id: string | null
   title: string
   content: string
   category: string
+  is_corporate: boolean
   created_at: string
 }
 
@@ -160,7 +161,8 @@ export interface CopilotGuidelineSuggestion {
   title: string
   content: string
   category: string
-  product_id: string
+  product_id: string | null
+  is_corporate: boolean
   rationale: string
 }
 

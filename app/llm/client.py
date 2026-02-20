@@ -22,6 +22,7 @@ async def evaluate_response(
     question_text: str,
     answer_text: str,
     rubric: dict | None = None,
+    guidelines: list[dict] | None = None,
 ) -> EvaluationResult:
     client = _get_client()
 
@@ -31,6 +32,13 @@ Resposta do profissional: {answer_text}
 """
     if rubric:
         user_content += f"\nRubrica de avaliação: {json.dumps(rubric, ensure_ascii=False)}"
+    if guidelines:
+        corporate = [g for g in guidelines if g.get("is_corporate")]
+        product_specific = [g for g in guidelines if not g.get("is_corporate")]
+        if corporate:
+            user_content += f"\n\nOrientações Corporativas (valem para todos os produtos — use como referência na avaliação):\n{json.dumps(corporate, ensure_ascii=False, indent=2)}"
+        if product_specific:
+            user_content += f"\n\nOrientações Master do Produto:\n{json.dumps(product_specific, ensure_ascii=False, indent=2)}"
 
     response = await client.chat.completions.create(
         model=settings.openai_model,
@@ -54,6 +62,7 @@ async def generate_questions(
     participant_level: str,
     domain: str,
     num_questions: int | None = None,
+    guidelines: list[dict] | None = None,
 ) -> list[dict]:
     client = _get_client()
 
@@ -68,6 +77,19 @@ Produtos/Soluções:
 
 Competências alvo:
 {json.dumps(competencies, ensure_ascii=False, indent=2)}
+"""
+    if guidelines:
+        corporate = [g for g in guidelines if g.get("is_corporate")]
+        product_specific = [g for g in guidelines if not g.get("is_corporate")]
+        if corporate:
+            user_content += f"""
+Orientações Corporativas (valem para TODOS os produtos — devem ser consideradas em todas as perguntas):
+{json.dumps(corporate, ensure_ascii=False, indent=2)}
+"""
+        if product_specific:
+            user_content += f"""
+Orientações Master por Produto:
+{json.dumps(product_specific, ensure_ascii=False, indent=2)}
 """
     if num_questions:
         user_content += f"\nNúmero desejado de perguntas: {num_questions}"

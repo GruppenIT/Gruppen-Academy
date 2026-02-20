@@ -160,11 +160,12 @@ async def create_new_guideline(
 @router.get("/guidelines", response_model=list[MasterGuidelineOut])
 async def list_all_guidelines(
     product_id: uuid.UUID | None = None,
+    corporate_only: bool = False,
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
 ):
-    return await list_master_guidelines(db, product_id, skip, limit)
+    return await list_master_guidelines(db, product_id, corporate_only=corporate_only, skip=skip, limit=limit)
 
 
 @router.get("/guidelines/{guideline_id}", response_model=MasterGuidelineOut)

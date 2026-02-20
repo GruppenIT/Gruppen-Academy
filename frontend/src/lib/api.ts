@@ -103,7 +103,7 @@ class ApiClient {
     const q = productId ? `?product_id=${productId}` : ''
     return this.request<import('@/types').MasterGuideline[]>(`/api/catalog/guidelines${q}`)
   }
-  createGuideline(data: { product_id: string; title: string; content: string; category: string }) {
+  createGuideline(data: { product_id?: string | null; title: string; content: string; category: string; is_corporate?: boolean }) {
     return this.request<import('@/types').MasterGuideline>('/api/catalog/guidelines', { method: 'POST', body: JSON.stringify(data) })
   }
   updateGuideline(id: string, data: Record<string, unknown>) {
@@ -180,7 +180,7 @@ class ApiClient {
   copilotSuggestGuidelines() {
     return this.request<import('@/types').CopilotGuidelineSuggestResponse>('/api/copilot/suggest-guidelines', { method: 'POST' })
   }
-  copilotCreateGuidelinesBulk(items: { product_id: string; title: string; content: string; category: string }[]) {
+  copilotCreateGuidelinesBulk(items: { product_id?: string | null; title: string; content: string; category: string; is_corporate?: boolean }[]) {
     return this.request<{ created: { id: string; title: string }[]; count: number }>('/api/copilot/create-guidelines-bulk', { method: 'POST', body: JSON.stringify({ items }) })
   }
   copilotGenerateJourney(data: { title: string; domain: string; session_duration_minutes: number; participant_level: string; product_ids: string[]; description?: string }) {

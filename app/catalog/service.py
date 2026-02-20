@@ -107,11 +107,27 @@ async def create_master_guideline(db: AsyncSession, data: MasterGuidelineCreate)
 
 
 async def list_master_guidelines(
-    db: AsyncSession, product_id: uuid.UUID | None = None, skip: int = 0, limit: int = 50
+    db: AsyncSession,
+    product_id: uuid.UUID | None = None,
+    corporate_only: bool = False,
+    include_corporate: bool = True,
+    skip: int = 0,
+    limit: int = 50,
 ) -> list[MasterGuideline]:
     query = select(MasterGuideline)
-    if product_id:
-        query = query.where(MasterGuideline.product_id == product_id)
+    if corporate_only:
+        query = query.where(MasterGuideline.is_corporate.is_(True))
+    elif product_id:
+        if include_corporate:
+            from sqlalchemy import or_
+            query = query.where(
+                or_(
+                    MasterGuideline.product_id == product_id,
+                    MasterGuideline.is_corporate.is_(True),
+                )
+            )
+        else:
+            query = query.where(MasterGuideline.product_id == product_id)
     result = await db.execute(query.offset(skip).limit(limit))
     return list(result.scalars().all())
 

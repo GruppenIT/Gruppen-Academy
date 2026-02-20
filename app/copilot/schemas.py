@@ -32,7 +32,8 @@ class GuidelineSuggestion(BaseModel):
     title: str
     content: str
     category: str
-    product_id: str
+    product_id: str | None = None
+    is_corporate: bool = False
     rationale: str
 
 
@@ -41,10 +42,11 @@ class GuidelineSuggestResponse(BaseModel):
 
 
 class GuidelineBulkCreateItem(BaseModel):
-    product_id: uuid.UUID
+    product_id: uuid.UUID | None = None
     title: str
     content: str
     category: str
+    is_corporate: bool = False
 
 
 class GuidelineBulkCreateRequest(BaseModel):

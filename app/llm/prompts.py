@@ -10,6 +10,9 @@ pesar tanto quanto erros conceituais, a menos que a rubrica peça explicitamente
 - Seja construtivo: aponte pontos de melhoria com exemplos concretos e reforce pontos fortes.
 - Evite elogios vazios sem explicação.
 - Não faça julgamentos pessoais; foque em comportamentos/competências observáveis.
+- Quando orientações corporativas forem fornecidas, considere-as como referência transversal na \
+avaliação: a resposta do profissional deve estar alinhada com as diretrizes da empresa.
+- Orientações master por produto devem ser usadas como referência específica para aquele contexto.
 
 Retorne SEMPRE um JSON válido no formato:
 {
@@ -73,6 +76,9 @@ Regras:
 - Adapte a linguagem e profundidade ao nível dos participantes.
 - Inclua uma rubrica de avaliação para cada pergunta.
 - Varie os tipos: dissertativas, estudos de caso, roleplay, etc.
+- Quando orientações corporativas forem fornecidas, elas valem para TODOS os produtos e devem \
+ser incorporadas transversalmente nas perguntas (abordagem, tom, valores, políticas da empresa).
+- Orientações por produto devem ser usadas para perguntas específicas daquele produto.
 
 Retorne um JSON com a lista de perguntas no formato:
 {
@@ -138,6 +144,9 @@ storytelling de valor, perguntas de descoberta, argumentos por persona.
 - NÃO repita orientações que já existem.
 - Cada sugestão deve ser prática e aplicável na rotina de vendas/atendimento.
 - Gere entre 3 e 10 sugestões relevantes.
+- Quando fizer sentido, sugira orientações CORPORATIVAS (is_corporate=true, product_id=null) que \
+valem para todos os produtos — por exemplo: tom de voz da empresa, postura consultiva geral, \
+valores de atendimento, políticas transversais.
 
 Retorne um JSON no formato:
 {
@@ -146,7 +155,8 @@ Retorne um JSON no formato:
       "title": "<título da orientação>",
       "content": "<conteúdo detalhado da orientação>",
       "category": "<categoria: abordagem|objecoes|storytelling|descoberta|valor>",
-      "product_id": "<UUID do produto relacionado>",
+      "product_id": "<UUID do produto relacionado OU null se corporativa>",
+      "is_corporate": <true se vale para todos os produtos, false se é específica>,
       "rationale": "<por que essa orientação é importante>"
     }
   ]

@@ -8,17 +8,17 @@ import {
 } from 'lucide-react'
 
 const ROLE_LABELS: Record<UserRole, string> = {
-  SUPER_ADMIN: 'Super Admin',
-  ADMIN: 'Admin',
-  MANAGER: 'Gestor',
-  PROFESSIONAL: 'Profissional',
+  super_admin: 'Super Admin',
+  admin: 'Admin',
+  manager: 'Gestor',
+  professional: 'Profissional',
 }
 
 const ROLE_COLORS: Record<UserRole, string> = {
-  SUPER_ADMIN: 'bg-red-50 text-red-700',
-  ADMIN: 'bg-brand-50 text-brand-700',
-  MANAGER: 'bg-violet-50 text-violet-700',
-  PROFESSIONAL: 'bg-emerald-50 text-emerald-700',
+  super_admin: 'bg-red-50 text-red-700',
+  admin: 'bg-brand-50 text-brand-700',
+  manager: 'bg-violet-50 text-violet-700',
+  professional: 'bg-emerald-50 text-emerald-700',
 }
 
 type ModalMode = 'create' | 'edit' | null
@@ -36,7 +36,7 @@ export default function AdminUsersPage() {
   const [formName, setFormName] = useState('')
   const [formEmail, setFormEmail] = useState('')
   const [formPassword, setFormPassword] = useState('')
-  const [formRole, setFormRole] = useState<UserRole>('PROFESSIONAL')
+  const [formRole, setFormRole] = useState<UserRole>('professional')
   const [formDepartment, setFormDepartment] = useState('')
 
   const loadUsers = useCallback(async () => {
@@ -57,7 +57,7 @@ export default function AdminUsersPage() {
     setFormName('')
     setFormEmail('')
     setFormPassword('')
-    setFormRole('PROFESSIONAL')
+    setFormRole('professional')
     setFormDepartment('')
     setError('')
     setModalMode('create')
@@ -306,10 +306,10 @@ export default function AdminUsersPage() {
                   value={formRole}
                   onChange={(e) => setFormRole(e.target.value as UserRole)}
                 >
-                  <option value="PROFESSIONAL">Profissional</option>
-                  <option value="MANAGER">Gestor</option>
-                  <option value="ADMIN">Admin</option>
-                  <option value="SUPER_ADMIN">Super Admin</option>
+                  <option value="professional">Profissional</option>
+                  <option value="manager">Gestor</option>
+                  <option value="admin">Admin</option>
+                  <option value="super_admin">Super Admin</option>
                 </select>
               </div>
 

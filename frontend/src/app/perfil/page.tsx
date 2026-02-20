@@ -37,10 +37,10 @@ export default function PerfilPage() {
   }
 
   const roleLabels: Record<string, string> = {
-    SUPER_ADMIN: 'Super Admin',
-    ADMIN: 'Administrador',
-    MANAGER: 'Gestor',
-    PROFESSIONAL: 'Profissional',
+    super_admin: 'Super Admin',
+    admin: 'Administrador',
+    manager: 'Gestor',
+    professional: 'Profissional',
   }
 
   return (

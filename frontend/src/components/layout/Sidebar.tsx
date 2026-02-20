@@ -19,7 +19,7 @@ const navItems = [
 ]
 
 const adminItems = [
-  { href: '/admin', label: 'Admin', icon: Settings, roles: ['ADMIN', 'SUPER_ADMIN'] },
+  { href: '/admin', label: 'Admin', icon: Settings, roles: ['admin', 'super_admin'] },
 ]
 
 export default function Sidebar() {

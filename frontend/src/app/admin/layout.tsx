@@ -26,12 +26,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const router = useRouter()
 
   useEffect(() => {
-    if (!loading && user && !['ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+    if (!loading && user && !['admin', 'super_admin'].includes(user.role)) {
       router.push('/dashboard')
     }
   }, [loading, user, router])
 
-  if (loading || !user || !['ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+  if (loading || !user || !['admin', 'super_admin'].includes(user.role)) {
     return null
   }
 

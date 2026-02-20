@@ -46,11 +46,10 @@ class ApiClient {
 
   // Auth
   async login(email: string, password: string) {
-    const data = new URLSearchParams({ username: email, password })
     const res = await fetch(`${API_BASE}/api/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: data,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
     })
     if (!res.ok) throw new Error('Credenciais inválidas')
     const json = await res.json()

@@ -64,6 +64,12 @@ class ApiClient {
   // Users
   getMe() { return this.request<import('@/types').User>('/api/users/me') }
   getUsers(skip = 0, limit = 50) { return this.request<import('@/types').User[]>(`/api/users?skip=${skip}&limit=${limit}`) }
+  createUser(data: { email: string; password: string; full_name: string; role?: string; department?: string }) {
+    return this.request<import('@/types').User>('/api/users', { method: 'POST', body: JSON.stringify(data) })
+  }
+  updateUser(id: string, data: { full_name?: string; role?: string; department?: string; is_active?: boolean }) {
+    return this.request<import('@/types').User>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
 
   // Catalog
   getProducts(skip = 0, limit = 50) { return this.request<import('@/types').Product[]>(`/api/catalog/products?skip=${skip}&limit=${limit}`) }

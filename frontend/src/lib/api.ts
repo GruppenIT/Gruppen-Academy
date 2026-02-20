@@ -71,18 +71,53 @@ class ApiClient {
     return this.request<import('@/types').User>(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
   }
 
-  // Catalog
+  // Catalog - Products
   getProducts(skip = 0, limit = 50) { return this.request<import('@/types').Product[]>(`/api/catalog/products?skip=${skip}&limit=${limit}`) }
   getProduct(id: string) { return this.request<import('@/types').Product>(`/api/catalog/products/${id}`) }
+  createProduct(data: { name: string; description: string; target_persona?: string; common_pain_points?: string; typical_objections?: string; differentials?: string }) {
+    return this.request<import('@/types').Product>('/api/catalog/products', { method: 'POST', body: JSON.stringify(data) })
+  }
+  updateProduct(id: string, data: Record<string, unknown>) {
+    return this.request<import('@/types').Product>(`/api/catalog/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
+  // Catalog - Competencies
   getCompetencies(domain?: string) {
     const q = domain ? `?domain=${domain}` : ''
     return this.request<import('@/types').Competency[]>(`/api/catalog/competencies${q}`)
+  }
+  createCompetency(data: { name: string; description: string; type: string; domain?: string }) {
+    return this.request<import('@/types').Competency>('/api/catalog/competencies', { method: 'POST', body: JSON.stringify(data) })
+  }
+  updateCompetency(id: string, data: Record<string, unknown>) {
+    return this.request<import('@/types').Competency>(`/api/catalog/competencies/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+
+  // Catalog - Guidelines
+  getGuidelines(productId?: string) {
+    const q = productId ? `?product_id=${productId}` : ''
+    return this.request<import('@/types').MasterGuideline[]>(`/api/catalog/guidelines${q}`)
+  }
+  createGuideline(data: { product_id: string; title: string; content: string; category: string }) {
+    return this.request<import('@/types').MasterGuideline>('/api/catalog/guidelines', { method: 'POST', body: JSON.stringify(data) })
+  }
+  updateGuideline(id: string, data: Record<string, unknown>) {
+    return this.request<import('@/types').MasterGuideline>(`/api/catalog/guidelines/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
   }
 
   // Journeys
   getJourneys(skip = 0, limit = 50) { return this.request<import('@/types').Journey[]>(`/api/journeys?skip=${skip}&limit=${limit}`) }
   getJourney(id: string) { return this.request<import('@/types').Journey>(`/api/journeys/${id}`) }
   getJourneyQuestions(id: string) { return this.request<import('@/types').Question[]>(`/api/journeys/${id}/questions`) }
+  createJourney(data: { title: string; description?: string; domain?: string; session_duration_minutes?: number; participant_level?: string; product_ids?: string[]; competency_ids?: string[] }) {
+    return this.request<import('@/types').Journey>('/api/journeys', { method: 'POST', body: JSON.stringify(data) })
+  }
+  updateJourney(id: string, data: Record<string, unknown>) {
+    return this.request<import('@/types').Journey>(`/api/journeys/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+  createQuestion(journeyId: string, data: { text: string; type?: string; weight?: number; rubric?: Record<string, unknown>; expected_lines?: number; order?: number; competency_ids?: string[] }) {
+    return this.request<import('@/types').Question>(`/api/journeys/${journeyId}/questions`, { method: 'POST', body: JSON.stringify(data) })
+  }
 
   // Learning
   getLearningPaths(domain?: string) {
@@ -91,6 +126,12 @@ class ApiClient {
   }
   getLearningPath(id: string) { return this.request<import('@/types').LearningPath>(`/api/learning/paths/${id}`) }
   getPathActivities(pathId: string) { return this.request<import('@/types').LearningActivity[]>(`/api/learning/paths/${pathId}/activities`) }
+  createLearningPath(data: { title: string; description?: string; domain?: string; target_role?: string; competency_ids?: string[] }) {
+    return this.request<import('@/types').LearningPath>('/api/learning/paths', { method: 'POST', body: JSON.stringify(data) })
+  }
+  createActivity(pathId: string, data: { title: string; description?: string; type: string; content?: Record<string, unknown>; order?: number; points_reward?: number }) {
+    return this.request<import('@/types').LearningActivity>(`/api/learning/paths/${pathId}/activities`, { method: 'POST', body: JSON.stringify(data) })
+  }
 
   // Tutor
   createTutorSession(topic: string, activityId?: string) {
@@ -113,6 +154,16 @@ class ApiClient {
   getLeaderboard(limit = 10) { return this.request<import('@/types').UserPointsSummary[]>(`/api/gamification/leaderboard?limit=${limit}`) }
   getBadges() { return this.request<import('@/types').Badge[]>('/api/gamification/badges') }
   getMyBadges() { return this.request<import('@/types').UserBadge[]>('/api/gamification/badges/me') }
+  createBadge(data: { name: string; description: string; icon?: string; criteria: string; points_threshold?: number }) {
+    return this.request<import('@/types').Badge>('/api/gamification/badges', { method: 'POST', body: JSON.stringify(data) })
+  }
+  awardBadge(badgeId: string, userId: string) {
+    return this.request<import('@/types').UserBadge>(`/api/gamification/badges/${badgeId}/award/${userId}`, { method: 'POST' })
+  }
+  createScore(data: { user_id: string; points: number; source: string; description?: string }) {
+    return this.request<import('@/types').Score>('/api/gamification/scores', { method: 'POST', body: JSON.stringify(data) })
+  }
+  getUserPoints(userId: string) { return this.request<import('@/types').UserPointsSummary>(`/api/gamification/scores/${userId}`) }
 }
 
 export const api = new ApiClient()

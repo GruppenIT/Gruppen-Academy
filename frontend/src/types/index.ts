@@ -29,6 +29,15 @@ export interface Competency {
   domain: string
 }
 
+export interface MasterGuideline {
+  id: string
+  product_id: string
+  title: string
+  content: string
+  category: string
+  created_at: string
+}
+
 export interface Journey {
   id: string
   title: string

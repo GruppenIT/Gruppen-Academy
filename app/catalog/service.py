@@ -33,9 +33,26 @@ async def get_product(db: AsyncSession, product_id: uuid.UUID) -> Product | None
     return result.scalar_one_or_none()
 
 
-async def list_products(db: AsyncSession, skip: int = 0, limit: int = 50) -> list[Product]:
-    result = await db.execute(select(Product).where(Product.is_active).offset(skip).limit(limit))
+async def list_products(
+    db: AsyncSession, skip: int = 0, limit: int = 50, include_inactive: bool = False
+) -> list[Product]:
+    query = select(Product)
+    if not include_inactive:
+        query = query.where(Product.is_active)
+    query = query.order_by(Product.priority.asc(), Product.name.asc()).offset(skip).limit(limit)
+    result = await db.execute(query)
     return list(result.scalars().all())
+
+
+async def reorder_products(
+    db: AsyncSession, items: list[tuple[uuid.UUID, int]]
+) -> None:
+    for product_id, priority in items:
+        result = await db.execute(select(Product).where(Product.id == product_id))
+        product = result.scalar_one_or_none()
+        if product:
+            product.priority = priority
+    await db.commit()
 
 
 async def update_product(db: AsyncSession, product: Product, data: ProductUpdate) -> Product:

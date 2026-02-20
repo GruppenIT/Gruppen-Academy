@@ -675,8 +675,8 @@ async def seed_products():
             logger.info("Products already seeded, skipping.")
             return
 
-        for data in SEED_PRODUCTS:
-            product = Product(**data)
+        for idx, data in enumerate(SEED_PRODUCTS):
+            product = Product(**data, priority=idx)
             db.add(product)
 
         await db.commit()

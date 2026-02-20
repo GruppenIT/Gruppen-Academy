@@ -72,13 +72,18 @@ class ApiClient {
   }
 
   // Catalog - Products
-  getProducts(skip = 0, limit = 50) { return this.request<import('@/types').Product[]>(`/api/catalog/products?skip=${skip}&limit=${limit}`) }
+  getProducts(skip = 0, limit = 50, includeInactive = false) {
+    return this.request<import('@/types').Product[]>(`/api/catalog/products?skip=${skip}&limit=${limit}&include_inactive=${includeInactive}`)
+  }
   getProduct(id: string) { return this.request<import('@/types').Product>(`/api/catalog/products/${id}`) }
-  createProduct(data: { name: string; description: string; target_persona?: string; common_pain_points?: string; typical_objections?: string; differentials?: string }) {
+  createProduct(data: { name: string; description: string; target_persona?: string; common_pain_points?: string; typical_objections?: string; differentials?: string; priority?: number }) {
     return this.request<import('@/types').Product>('/api/catalog/products', { method: 'POST', body: JSON.stringify(data) })
   }
   updateProduct(id: string, data: Record<string, unknown>) {
     return this.request<import('@/types').Product>(`/api/catalog/products/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+  reorderProducts(items: { id: string; priority: number }[]) {
+    return this.request<void>('/api/catalog/products/reorder', { method: 'PUT', body: JSON.stringify(items) })
   }
 
   // Catalog - Competencies

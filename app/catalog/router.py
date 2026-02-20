@@ -13,6 +13,7 @@ from app.catalog.schemas import (
     MasterGuidelineUpdate,
     ProductCreate,
     ProductOut,
+    ProductReorderItem,
     ProductUpdate,
 )
 from app.catalog.service import (
@@ -26,6 +27,7 @@ from app.catalog.service import (
     list_competencies,
     list_master_guidelines,
     list_products,
+    reorder_products,
     update_competency,
     update_master_guideline,
     update_product,
@@ -49,9 +51,12 @@ async def create_new_product(
 
 @router.get("/products", response_model=list[ProductOut])
 async def list_all_products(
-    skip: int = 0, limit: int = 50, db: AsyncSession = Depends(get_db)
+    skip: int = 0,
+    limit: int = 50,
+    include_inactive: bool = False,
+    db: AsyncSession = Depends(get_db),
 ):
-    return await list_products(db, skip, limit)
+    return await list_products(db, skip, limit, include_inactive=include_inactive)
 
 
 @router.get("/products/{product_id}", response_model=ProductOut)
@@ -73,6 +78,15 @@ async def update_existing_product(
     if not product:
         raise HTTPException(status_code=404, detail="Produto não encontrado")
     return await update_product(db, product, data)
+
+
+@router.put("/products/reorder", status_code=204)
+async def reorder_all_products(
+    items: list[ProductReorderItem],
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    await reorder_products(db, [(item.id, item.priority) for item in items])
 
 
 @router.post("/products/{product_id}/competencies/{competency_id}", status_code=204)

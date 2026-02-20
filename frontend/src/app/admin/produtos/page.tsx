@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import type { Product } from '@/types'
 import {
   Plus, Search, Pencil, X, Loader2, Package, CheckCircle, XCircle,
+  ChevronUp, ChevronDown, GripVertical,
 } from 'lucide-react'
 
 type ModalMode = 'create' | 'edit' | null
@@ -17,6 +18,7 @@ export default function AdminProdutosPage() {
   const [editProduct, setEditProduct] = useState<Product | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [reordering, setReordering] = useState(false)
 
   const [formName, setFormName] = useState('')
   const [formDescription, setFormDescription] = useState('')
@@ -26,7 +28,7 @@ export default function AdminProdutosPage() {
   const [formDifferentials, setFormDifferentials] = useState('')
 
   const load = useCallback(async () => {
-    try { setProducts(await api.getProducts(0, 200)) } catch {} finally { setLoading(false) }
+    try { setProducts(await api.getProducts(0, 200, true)) } catch {} finally { setLoading(false) }
   }, [])
 
   useEffect(() => { load() }, [load])
@@ -57,6 +59,7 @@ export default function AdminProdutosPage() {
           name: formName, description: formDescription,
           target_persona: formPersona || undefined, common_pain_points: formPainPoints || undefined,
           typical_objections: formObjections || undefined, differentials: formDifferentials || undefined,
+          priority: products.length,
         })
       } else if (editProduct) {
         await api.updateProduct(editProduct.id, {
@@ -73,10 +76,37 @@ export default function AdminProdutosPage() {
     try { await api.updateProduct(p.id, { is_active: !p.is_active }); load() } catch {}
   }
 
-  const filtered = products.filter((p) => {
-    const q = search.toLowerCase()
-    return p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)
-  })
+  const moveProduct = async (index: number, direction: 'up' | 'down') => {
+    const swapIndex = direction === 'up' ? index - 1 : index + 1
+    if (swapIndex < 0 || swapIndex >= products.length) return
+
+    setReordering(true)
+    const reordered = [...products]
+    const temp = reordered[index]
+    reordered[index] = reordered[swapIndex]
+    reordered[swapIndex] = temp
+
+    // Update local state immediately for responsiveness
+    setProducts(reordered)
+
+    // Send reorder to backend
+    try {
+      await api.reorderProducts(reordered.map((p, i) => ({ id: p.id, priority: i })))
+    } catch {
+      load() // revert on error
+    } finally {
+      setReordering(false)
+    }
+  }
+
+  const filtered = search
+    ? products.filter((p) => {
+        const q = search.toLowerCase()
+        return p.name.toLowerCase().includes(q) || p.description.toLowerCase().includes(q)
+      })
+    : products
+
+  const isSearching = search.length > 0
 
   return (
     <div>
@@ -99,33 +129,101 @@ export default function AdminProdutosPage() {
       {loading ? (
         <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-brand-600 animate-spin" /></div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((p) => (
-            <div key={p.id} className="card p-5 relative">
-              <div className="flex items-start justify-between mb-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-                  <Package className="w-5 h-5 text-blue-600" />
-                </div>
-                <div className="flex items-center gap-1">
-                  <button onClick={() => openEdit(p)} className="p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50"><Pencil className="w-4 h-4" /></button>
-                  <button onClick={() => toggleActive(p)} className={`p-1.5 rounded-lg ${p.is_active ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'}`}>
-                    {p.is_active ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
-                  </button>
-                </div>
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-1">{p.name}</h3>
-              <p className="text-sm text-gray-500 line-clamp-2 mb-3">{p.description}</p>
-              <span className={`badge-pill ${p.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                {p.is_active ? 'Ativo' : 'Inativo'}
-              </span>
-            </div>
-          ))}
-          {filtered.length === 0 && (
-            <div className="col-span-full text-center py-12 text-sm text-gray-400">Nenhum produto encontrado.</div>
-          )}
+        <div className="card overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-100">
+                <th className="w-10 px-3 py-3"></th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">#</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Produto</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase hidden lg:table-cell">Persona</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Status</th>
+                <th className="text-right px-4 py-3 text-xs font-semibold text-gray-500 uppercase">Acoes</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {filtered.map((p, index) => (
+                <tr key={p.id} className={`hover:bg-gray-50/50 transition-colors ${!p.is_active ? 'opacity-50' : ''}`}>
+                  {/* Reorder arrows */}
+                  <td className="px-3 py-3">
+                    {!isSearching && (
+                      <div className="flex flex-col items-center gap-0.5">
+                        <button
+                          onClick={() => moveProduct(index, 'up')}
+                          disabled={index === 0 || reordering}
+                          className="p-0.5 rounded text-gray-300 hover:text-brand-600 disabled:opacity-30 disabled:hover:text-gray-300"
+                        >
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                        <GripVertical className="w-3.5 h-3.5 text-gray-300" />
+                        <button
+                          onClick={() => moveProduct(index, 'down')}
+                          disabled={index === filtered.length - 1 || reordering}
+                          className="p-0.5 rounded text-gray-300 hover:text-brand-600 disabled:opacity-30 disabled:hover:text-gray-300"
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                  {/* Priority number */}
+                  <td className="px-4 py-3">
+                    <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-500 text-xs font-bold flex items-center justify-center">
+                      {p.priority + 1}
+                    </span>
+                  </td>
+                  {/* Product info */}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                        <Package className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900 truncate">{p.name}</p>
+                        <p className="text-xs text-gray-500 line-clamp-1">{p.description}</p>
+                      </div>
+                    </div>
+                  </td>
+                  {/* Persona */}
+                  <td className="px-4 py-3 hidden lg:table-cell">
+                    <p className="text-xs text-gray-500 line-clamp-1">{p.target_persona || '—'}</p>
+                  </td>
+                  {/* Status */}
+                  <td className="px-4 py-3 text-center">
+                    <span className={`badge-pill ${p.is_active ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                      {p.is_active ? 'Ativo' : 'Inativo'}
+                    </span>
+                  </td>
+                  {/* Actions */}
+                  <td className="px-4 py-3">
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => openEdit(p)}
+                        className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50"
+                        title="Editar"
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => toggleActive(p)}
+                        className={`p-2 rounded-lg ${p.is_active ? 'text-gray-400 hover:text-red-600 hover:bg-red-50' : 'text-gray-400 hover:text-emerald-600 hover:bg-emerald-50'}`}
+                        title={p.is_active ? 'Desativar' : 'Ativar'}
+                      >
+                        {p.is_active ? <XCircle className="w-4 h-4" /> : <CheckCircle className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400">Nenhum produto encontrado.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
 
+      {/* Create / Edit Modal */}
       {modalMode && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-slide-up max-h-[90vh] overflow-y-auto">

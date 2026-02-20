@@ -70,7 +70,7 @@ export default function LoginPage() {
         </div>
 
         <p className="relative text-brand-300 text-sm">
-          &copy; {new Date().getFullYear()} Gruppen Tecnologia &amp; Segurança
+          &copy; {new Date().getFullYear()} Gruppen it Security // Segurança Pensada em Grupo
         </p>
       </div>
 

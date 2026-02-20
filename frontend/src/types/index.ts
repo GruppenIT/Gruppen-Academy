@@ -143,6 +143,45 @@ export interface EvaluationCriteria {
   comentario: string
 }
 
+// Copilot types
+export interface CopilotCompetencySuggestion {
+  name: string
+  description: string
+  type: 'HARD' | 'SOFT'
+  domain: string
+  rationale: string
+}
+
+export interface CopilotCompetencySuggestResponse {
+  suggestions: CopilotCompetencySuggestion[]
+}
+
+export interface CopilotGuidelineSuggestion {
+  title: string
+  content: string
+  category: string
+  product_id: string
+  rationale: string
+}
+
+export interface CopilotGuidelineSuggestResponse {
+  suggestions: CopilotGuidelineSuggestion[]
+}
+
+export interface CopilotGeneratedQuestion {
+  text: string
+  type: string
+  weight: number
+  expected_lines: number
+  rubric: Record<string, unknown> | null
+  competency_tags: string[]
+}
+
+export interface CopilotJourneyGenerateResponse {
+  journey_id: string
+  questions: CopilotGeneratedQuestion[]
+}
+
 // Gamification levels
 export const LEVELS = [
   { name: 'Iniciante', minPoints: 0, icon: '🌱' },

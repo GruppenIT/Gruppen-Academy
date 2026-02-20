@@ -2,13 +2,16 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
-import type { Competency, MasterGuideline, Product } from '@/types'
+import type { Competency, MasterGuideline, Product, CopilotCompetencySuggestion, CopilotGuidelineSuggestion } from '@/types'
 import {
   Plus, Search, Pencil, X, Loader2, Brain, FileText, ChevronDown, ChevronUp,
+  Sparkles, Check, AlertCircle,
 } from 'lucide-react'
 
 type Tab = 'competencies' | 'guidelines'
 type ModalMode = 'create' | 'edit' | null
+
+type CopilotStep = 'idle' | 'analyzing' | 'suggestions' | 'creating' | 'done' | 'error'
 
 export default function AdminCompetenciasPage() {
   const [tab, setTab] = useState<Tab>('competencies')
@@ -36,6 +39,14 @@ export default function AdminCompetenciasPage() {
   const [gCategory, setGCategory] = useState('')
   const [gProductId, setGProductId] = useState('')
   const [editGuideId, setEditGuideId] = useState<string | null>(null)
+
+  // Copilot state
+  const [copilotOpen, setCopilotOpen] = useState(false)
+  const [copilotStep, setCopilotStep] = useState<CopilotStep>('idle')
+  const [copilotError, setCopilotError] = useState('')
+  const [compSuggestions, setCompSuggestions] = useState<(CopilotCompetencySuggestion & { selected: boolean })[]>([])
+  const [guideSuggestions, setGuideSuggestions] = useState<(CopilotGuidelineSuggestion & { selected: boolean })[]>([])
+  const [copilotCreatedCount, setCopilotCreatedCount] = useState(0)
 
   const load = useCallback(async () => {
     try {
@@ -87,6 +98,74 @@ export default function AdminCompetenciasPage() {
     } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Erro ao salvar') } finally { setSaving(false) }
   }
 
+  // --- Copilot Flow ---
+  const startCopilot = () => {
+    setCopilotOpen(true)
+    setCopilotStep('idle')
+    setCopilotError('')
+    setCompSuggestions([])
+    setGuideSuggestions([])
+    setCopilotCreatedCount(0)
+  }
+
+  const runCopilotAnalysis = async () => {
+    setCopilotStep('analyzing')
+    setCopilotError('')
+    try {
+      if (tab === 'competencies') {
+        const result = await api.copilotSuggestCompetencies()
+        setCompSuggestions(result.suggestions.map(s => ({ ...s, selected: true })))
+      } else {
+        const result = await api.copilotSuggestGuidelines()
+        setGuideSuggestions(result.suggestions.map(s => ({ ...s, selected: true })))
+      }
+      setCopilotStep('suggestions')
+    } catch (err: unknown) {
+      setCopilotError(err instanceof Error ? err.message : 'Erro ao analisar. Tente novamente.')
+      setCopilotStep('error')
+    }
+  }
+
+  const toggleCompSuggestion = (index: number) => {
+    setCompSuggestions(prev => prev.map((s, i) => i === index ? { ...s, selected: !s.selected } : s))
+  }
+
+  const toggleGuideSuggestion = (index: number) => {
+    setGuideSuggestions(prev => prev.map((s, i) => i === index ? { ...s, selected: !s.selected } : s))
+  }
+
+  const confirmCopilotCreation = async () => {
+    setCopilotStep('creating')
+    try {
+      if (tab === 'competencies') {
+        const selected = compSuggestions.filter(s => s.selected)
+        const result = await api.copilotCreateCompetenciesBulk(
+          selected.map(s => ({ name: s.name, description: s.description, type: s.type, domain: s.domain }))
+        )
+        setCopilotCreatedCount(result.count)
+      } else {
+        const selected = guideSuggestions.filter(s => s.selected)
+        const result = await api.copilotCreateGuidelinesBulk(
+          selected.map(s => ({ product_id: s.product_id, title: s.title, content: s.content, category: s.category }))
+        )
+        setCopilotCreatedCount(result.count)
+      }
+      setCopilotStep('done')
+      load()
+    } catch (err: unknown) {
+      setCopilotError(err instanceof Error ? err.message : 'Erro ao criar. Tente novamente.')
+      setCopilotStep('error')
+    }
+  }
+
+  const closeCopilot = () => { setCopilotOpen(false) }
+
+  const selectedCount = tab === 'competencies'
+    ? compSuggestions.filter(s => s.selected).length
+    : guideSuggestions.filter(s => s.selected).length
+
+  const totalSuggestions = tab === 'competencies' ? compSuggestions.length : guideSuggestions.length
+
   const filteredComps = competencies.filter((c) => {
     const q = search.toLowerCase()
     return c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q)
@@ -105,9 +184,18 @@ export default function AdminCompetenciasPage() {
           <Brain className="w-5 h-5 text-gray-400" />
           <h2 className="text-lg font-bold text-gray-900">Competencias & Orientacoes</h2>
         </div>
-        <button onClick={tab === 'competencies' ? openCreateComp : openCreateGuide} className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" /> {tab === 'competencies' ? 'Nova Competencia' : 'Nova Orientacao'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={startCopilot}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700 transition-all shadow-sm"
+          >
+            <Sparkles className="w-4 h-4" />
+            Copiloto IA
+          </button>
+          <button onClick={tab === 'competencies' ? openCreateComp : openCreateGuide} className="btn-primary flex items-center gap-2">
+            <Plus className="w-4 h-4" /> {tab === 'competencies' ? 'Nova Competencia' : 'Nova Orientacao'}
+          </button>
+        </div>
       </div>
 
       {/* Sub-tabs */}
@@ -191,7 +279,7 @@ export default function AdminCompetenciasPage() {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Create / Edit Modal */}
       {modalMode && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-slide-up max-h-[90vh] overflow-y-auto">
@@ -258,6 +346,218 @@ export default function AdminCompetenciasPage() {
                 {modalMode === 'create' ? 'Criar' : 'Salvar'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Copilot Modal */}
+      {copilotOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl animate-slide-up max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
+              <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-white" />
+                </div>
+                Copiloto IA — {tab === 'competencies' ? 'Competencias' : 'Orientacoes Master'}
+              </h3>
+              <button onClick={closeCopilot} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="p-5">
+              {/* Step: Idle - Confirmation */}
+              {copilotStep === 'idle' && (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-100 to-purple-100 flex items-center justify-center mx-auto mb-4">
+                    <Sparkles className="w-8 h-8 text-violet-600" />
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">
+                    {tab === 'competencies' ? 'Sugerir novas competencias' : 'Sugerir novas orientacoes'}
+                  </h4>
+                  <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
+                    {tab === 'competencies'
+                      ? `A IA vai analisar os ${products.length} produtos cadastrados e as ${competencies.length} competencias existentes para sugerir novas competencias que complementem o catalogo.`
+                      : `A IA vai analisar os ${products.length} produtos cadastrados e as ${guidelines.length} orientacoes existentes para sugerir novas diretrizes estrategicas.`
+                    }
+                  </p>
+                  <button
+                    onClick={runCopilotAnalysis}
+                    className="px-6 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700 transition-all shadow-sm"
+                  >
+                    Iniciar analise
+                  </button>
+                </div>
+              )}
+
+              {/* Step: Analyzing */}
+              {copilotStep === 'analyzing' && (
+                <div className="text-center py-12">
+                  <div className="relative w-16 h-16 mx-auto mb-4">
+                    <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-violet-100 to-purple-100 animate-pulse" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Loader2 className="w-8 h-8 text-violet-600 animate-spin" />
+                    </div>
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">Analisando...</h4>
+                  <p className="text-sm text-gray-500">
+                    {tab === 'competencies'
+                      ? 'Avaliando produtos e identificando lacunas de competencias...'
+                      : 'Avaliando produtos e identificando oportunidades de orientacao...'
+                    }
+                  </p>
+                  <div className="mt-4 flex items-center justify-center gap-2">
+                    <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <div className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Step: Error */}
+              {copilotStep === 'error' && (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
+                    <AlertCircle className="w-8 h-8 text-red-500" />
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">Erro na analise</h4>
+                  <p className="text-sm text-red-600 mb-6">{copilotError}</p>
+                  <button
+                    onClick={runCopilotAnalysis}
+                    className="px-6 py-3 rounded-xl text-sm font-medium bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700 transition-all"
+                  >
+                    Tentar novamente
+                  </button>
+                </div>
+              )}
+
+              {/* Step: Suggestions */}
+              {copilotStep === 'suggestions' && (
+                <div>
+                  <div className="flex items-center justify-between mb-4">
+                    <p className="text-sm text-gray-600">
+                      <span className="font-semibold text-violet-600">{totalSuggestions}</span> sugestoes encontradas — <span className="font-semibold">{selectedCount}</span> selecionadas
+                    </p>
+                    <button
+                      onClick={() => {
+                        if (tab === 'competencies') {
+                          const allSelected = compSuggestions.every(s => s.selected)
+                          setCompSuggestions(prev => prev.map(s => ({ ...s, selected: !allSelected })))
+                        } else {
+                          const allSelected = guideSuggestions.every(s => s.selected)
+                          setGuideSuggestions(prev => prev.map(s => ({ ...s, selected: !allSelected })))
+                        }
+                      }}
+                      className="text-xs text-violet-600 hover:text-violet-700 font-medium"
+                    >
+                      {(tab === 'competencies' ? compSuggestions : guideSuggestions).every(s => s.selected) ? 'Desmarcar todas' : 'Selecionar todas'}
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 max-h-[50vh] overflow-y-auto">
+                    {tab === 'competencies' && compSuggestions.map((s, i) => (
+                      <div
+                        key={i}
+                        onClick={() => toggleCompSuggestion(i)}
+                        className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                          s.selected
+                            ? 'border-violet-300 bg-violet-50/50'
+                            : 'border-gray-100 bg-white hover:border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
+                            s.selected ? 'bg-violet-600' : 'border-2 border-gray-300'
+                          }`}>
+                            {s.selected && <Check className="w-3 h-3 text-white" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-sm font-semibold text-gray-900">{s.name}</p>
+                              <span className={`badge-pill text-xs ${s.type === 'HARD' ? 'bg-blue-50 text-blue-600' : 'bg-violet-50 text-violet-600'}`}>
+                                {s.type === 'HARD' ? 'Hard' : 'Soft'}
+                              </span>
+                              <span className="badge-pill text-xs bg-gray-100 text-gray-500">{s.domain}</span>
+                            </div>
+                            <p className="text-xs text-gray-600 mb-2">{s.description}</p>
+                            <p className="text-xs text-gray-400 italic">{s.rationale}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {tab === 'guidelines' && guideSuggestions.map((s, i) => (
+                      <div
+                        key={i}
+                        onClick={() => toggleGuideSuggestion(i)}
+                        className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                          s.selected
+                            ? 'border-violet-300 bg-violet-50/50'
+                            : 'border-gray-100 bg-white hover:border-gray-200'
+                        }`}
+                      >
+                        <div className="flex items-start gap-3">
+                          <div className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 mt-0.5 ${
+                            s.selected ? 'bg-violet-600' : 'border-2 border-gray-300'
+                          }`}>
+                            {s.selected && <Check className="w-3 h-3 text-white" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-sm font-semibold text-gray-900">{s.title}</p>
+                              <span className="badge-pill text-xs bg-gray-100 text-gray-500">{s.category}</span>
+                            </div>
+                            <p className="text-xs text-gray-500 mb-1">{productName(s.product_id)}</p>
+                            <p className="text-xs text-gray-600 line-clamp-3">{s.content}</p>
+                            <p className="text-xs text-gray-400 italic mt-1">{s.rationale}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Step: Creating */}
+              {copilotStep === 'creating' && (
+                <div className="text-center py-12">
+                  <Loader2 className="w-8 h-8 text-violet-600 animate-spin mx-auto mb-4" />
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">Criando {selectedCount} itens...</h4>
+                  <p className="text-sm text-gray-500">Aguarde enquanto salvamos no sistema.</p>
+                </div>
+              )}
+
+              {/* Step: Done */}
+              {copilotStep === 'done' && (
+                <div className="text-center py-8">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-50 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-8 h-8 text-emerald-600" />
+                  </div>
+                  <h4 className="text-lg font-semibold text-gray-900 mb-2">Pronto!</h4>
+                  <p className="text-sm text-gray-500 mb-6">
+                    {copilotCreatedCount} {tab === 'competencies' ? 'competencias criadas' : 'orientacoes criadas'} com sucesso.
+                  </p>
+                  <button onClick={closeCopilot} className="btn-primary px-6 py-2">
+                    Fechar
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Footer with actions */}
+            {copilotStep === 'suggestions' && (
+              <div className="flex items-center justify-between p-5 border-t border-gray-100 sticky bottom-0 bg-white rounded-b-2xl z-10">
+                <button onClick={closeCopilot} className="btn-secondary px-4 py-2">Cancelar</button>
+                <button
+                  onClick={confirmCopilotCreation}
+                  disabled={selectedCount === 0}
+                  className="flex items-center gap-2 px-6 py-2 rounded-xl text-sm font-medium bg-gradient-to-r from-violet-500 to-purple-600 text-white hover:from-violet-600 hover:to-purple-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Check className="w-4 h-4" />
+                  Criar {selectedCount} {tab === 'competencies' ? 'competencias' : 'orientacoes'}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

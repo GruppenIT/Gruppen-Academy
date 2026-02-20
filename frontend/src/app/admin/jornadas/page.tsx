@@ -2,22 +2,23 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
-import type { Journey, Question, Product, Competency } from '@/types'
+import type { Journey, Question, Product, CopilotGeneratedQuestion } from '@/types'
 import {
-  Plus, Search, Pencil, X, Loader2, Route, Eye, ChevronDown, ChevronUp,
-  FileQuestion, Trash2,
+  Plus, Search, Pencil, X, Loader2, Route, ChevronDown, ChevronUp,
+  FileQuestion, Sparkles, Check, AlertCircle,
 } from 'lucide-react'
 
 const STATUS_LABELS: Record<string, string> = { DRAFT: 'Rascunho', PUBLISHED: 'Publicada', ARCHIVED: 'Arquivada' }
 const STATUS_COLORS: Record<string, string> = { DRAFT: 'bg-gray-100 text-gray-500', PUBLISHED: 'bg-emerald-50 text-emerald-600', ARCHIVED: 'bg-orange-50 text-orange-600' }
-const Q_TYPE_LABELS: Record<string, string> = { ESSAY: 'Dissertativa', CASE_STUDY: 'Estudo de Caso', ROLEPLAY: 'Roleplay', OBJECTIVE: 'Objetiva' }
+const Q_TYPE_LABELS: Record<string, string> = { ESSAY: 'Dissertativa', CASE_STUDY: 'Estudo de Caso', ROLEPLAY: 'Roleplay', OBJECTIVE: 'Objetiva', essay: 'Dissertativa', case_study: 'Estudo de Caso', roleplay: 'Roleplay', objective: 'Objetiva' }
+const Q_TYPE_COLORS: Record<string, string> = { ESSAY: 'bg-blue-50 text-blue-600', CASE_STUDY: 'bg-amber-50 text-amber-600', ROLEPLAY: 'bg-purple-50 text-purple-600', OBJECTIVE: 'bg-emerald-50 text-emerald-600', essay: 'bg-blue-50 text-blue-600', case_study: 'bg-amber-50 text-amber-600', roleplay: 'bg-purple-50 text-purple-600', objective: 'bg-emerald-50 text-emerald-600' }
 
-type ModalMode = 'create-journey' | 'edit-journey' | 'add-question' | null
+type ModalMode = 'edit-journey' | 'add-question' | null
+type WizardStep = 'form' | 'generating' | 'review' | 'error'
 
 export default function AdminJornadasPage() {
   const [journeys, setJourneys] = useState<Journey[]>([])
   const [products, setProducts] = useState<Product[]>([])
-  const [competencies, setCompetencies] = useState<Competency[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [modalMode, setModalMode] = useState<ModalMode>(null)
@@ -26,14 +27,14 @@ export default function AdminJornadasPage() {
   const [expanded, setExpanded] = useState<string | null>(null)
   const [questions, setQuestions] = useState<Record<string, Question[]>>({})
 
-  // Journey form
+  // Edit Journey form
+  const [editJourneyId, setEditJourneyId] = useState<string | null>(null)
   const [jTitle, setJTitle] = useState('')
   const [jDesc, setJDesc] = useState('')
   const [jDomain, setJDomain] = useState('vendas')
   const [jDuration, setJDuration] = useState(180)
   const [jLevel, setJLevel] = useState('intermediario')
   const [jStatus, setJStatus] = useState('DRAFT')
-  const [editJourneyId, setEditJourneyId] = useState<string | null>(null)
 
   // Question form
   const [qJourneyId, setQJourneyId] = useState('')
@@ -43,10 +44,23 @@ export default function AdminJornadasPage() {
   const [qLines, setQLines] = useState(10)
   const [qOrder, setQOrder] = useState(0)
 
+  // AI Wizard state
+  const [wizardOpen, setWizardOpen] = useState(false)
+  const [wizardStep, setWizardStep] = useState<WizardStep>('form')
+  const [wizardError, setWizardError] = useState('')
+  const [wTitle, setWTitle] = useState('')
+  const [wDesc, setWDesc] = useState('')
+  const [wDomain, setWDomain] = useState('vendas')
+  const [wDuration, setWDuration] = useState(180)
+  const [wLevel, setWLevel] = useState('intermediario')
+  const [wProducts, setWProducts] = useState<string[]>([])
+  const [generatedQuestions, setGeneratedQuestions] = useState<CopilotGeneratedQuestion[]>([])
+  const [generatedJourneyId, setGeneratedJourneyId] = useState('')
+
   const load = useCallback(async () => {
     try {
-      const [j, p, c] = await Promise.all([api.getJourneys(0, 200), api.getProducts(0, 200), api.getCompetencies()])
-      setJourneys(j); setProducts(p); setCompetencies(c)
+      const [j, p] = await Promise.all([api.getJourneys(0, 200), api.getProducts(0, 200)])
+      setJourneys(j); setProducts(p)
     } catch {} finally { setLoading(false) }
   }, [])
 
@@ -63,10 +77,6 @@ export default function AdminJornadasPage() {
     if (expanded === id) { setExpanded(null) } else { setExpanded(id); if (!questions[id]) loadQuestions(id) }
   }
 
-  const openCreateJourney = () => {
-    setEditJourneyId(null); setJTitle(''); setJDesc(''); setJDomain('vendas'); setJDuration(180); setJLevel('intermediario'); setJStatus('DRAFT')
-    setError(''); setModalMode('create-journey')
-  }
   const openEditJourney = (j: Journey) => {
     setEditJourneyId(j.id); setJTitle(j.title); setJDesc(j.description || ''); setJDomain(j.domain); setJDuration(j.session_duration_minutes); setJLevel(j.participant_level); setJStatus(j.status)
     setError(''); setModalMode('edit-journey')
@@ -76,16 +86,12 @@ export default function AdminJornadasPage() {
     setQOrder((questions[journeyId]?.length || 0) + 1)
     setError(''); setModalMode('add-question')
   }
-
   const closeModal = () => { setModalMode(null); setError('') }
 
   const handleSave = async () => {
     setError(''); setSaving(true)
     try {
-      if (modalMode === 'create-journey') {
-        if (!jTitle) { setError('Titulo e obrigatorio.'); setSaving(false); return }
-        await api.createJourney({ title: jTitle, description: jDesc || undefined, domain: jDomain, session_duration_minutes: jDuration, participant_level: jLevel })
-      } else if (modalMode === 'edit-journey' && editJourneyId) {
+      if (modalMode === 'edit-journey' && editJourneyId) {
         await api.updateJourney(editJourneyId, { title: jTitle, description: jDesc || null, domain: jDomain, session_duration_minutes: jDuration, participant_level: jLevel, status: jStatus })
       } else if (modalMode === 'add-question') {
         if (!qText) { setError('Texto da pergunta e obrigatorio.'); setSaving(false); return }
@@ -94,6 +100,44 @@ export default function AdminJornadasPage() {
       }
       closeModal(); load()
     } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Erro ao salvar') } finally { setSaving(false) }
+  }
+
+  // AI Wizard
+  const openWizard = () => {
+    setWTitle(''); setWDesc(''); setWDomain('vendas'); setWDuration(180); setWLevel('intermediario'); setWProducts([])
+    setGeneratedQuestions([]); setGeneratedJourneyId(''); setWizardError('')
+    setWizardStep('form'); setWizardOpen(true)
+  }
+  const closeWizard = () => { setWizardOpen(false) }
+
+  const toggleProduct = (id: string) => {
+    setWProducts(prev => prev.includes(id) ? prev.filter(p => p !== id) : [...prev, id])
+  }
+
+  const runWizard = async () => {
+    if (!wTitle.trim()) { setWizardError('Titulo e obrigatorio.'); return }
+    if (wProducts.length === 0) { setWizardError('Selecione pelo menos um produto.'); return }
+    setWizardError(''); setWizardStep('generating')
+    try {
+      const result = await api.copilotGenerateJourney({
+        title: wTitle.trim(),
+        domain: wDomain,
+        session_duration_minutes: wDuration,
+        participant_level: wLevel,
+        product_ids: wProducts,
+        description: wDesc || undefined,
+      })
+      setGeneratedJourneyId(result.journey_id)
+      setGeneratedQuestions(result.questions)
+      setWizardStep('review')
+    } catch (err: unknown) {
+      setWizardError(err instanceof Error ? err.message : 'Erro ao gerar jornada')
+      setWizardStep('error')
+    }
+  }
+
+  const finishWizard = () => {
+    closeWizard(); load()
   }
 
   const filtered = journeys.filter((j) => {
@@ -109,8 +153,8 @@ export default function AdminJornadasPage() {
           <h2 className="text-lg font-bold text-gray-900">Jornadas de Avaliacao</h2>
           <span className="badge-pill bg-gray-100 text-gray-600">{journeys.length}</span>
         </div>
-        <button onClick={openCreateJourney} className="btn-primary flex items-center gap-2">
-          <Plus className="w-4 h-4" /> Nova Jornada
+        <button onClick={openWizard} className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white font-medium text-sm bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 shadow-sm transition-all">
+          <Sparkles className="w-4 h-4" /> Nova Jornada com IA
         </button>
       </div>
 
@@ -166,7 +210,7 @@ export default function AdminJornadasPage() {
                             <div className="flex-1 min-w-0">
                               <p className="text-sm text-gray-900">{q.text}</p>
                               <div className="flex items-center gap-2 mt-1">
-                                <span className="badge-pill bg-blue-50 text-blue-600 text-xs">{Q_TYPE_LABELS[q.type] || q.type}</span>
+                                <span className={`badge-pill text-xs ${Q_TYPE_COLORS[q.type] || 'bg-gray-50 text-gray-600'}`}>{Q_TYPE_LABELS[q.type] || q.type}</span>
                                 <span className="text-xs text-gray-400">Peso: {q.weight}</span>
                                 <span className="text-xs text-gray-400">{q.expected_lines} linhas</span>
                               </div>
@@ -186,24 +230,24 @@ export default function AdminJornadasPage() {
         </div>
       )}
 
-      {/* Modal */}
+      {/* Edit Journey / Add Question Modal */}
       {modalMode && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-slide-up max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl">
               <h3 className="font-bold text-gray-900">
-                {modalMode === 'create-journey' ? 'Nova Jornada' : modalMode === 'edit-journey' ? 'Editar Jornada' : 'Nova Pergunta'}
+                {modalMode === 'edit-journey' ? 'Editar Jornada' : 'Nova Pergunta'}
               </h3>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
             <div className="p-5 space-y-4">
               {error && <div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm">{error}</div>}
 
-              {(modalMode === 'create-journey' || modalMode === 'edit-journey') ? (
+              {modalMode === 'edit-journey' ? (
                 <>
                   <div>
                     <label className="text-sm font-medium text-gray-700 block mb-1">Titulo *</label>
-                    <input type="text" className="input-field w-full" value={jTitle} onChange={(e) => setJTitle(e.target.value)} placeholder="Ex: Avaliacao BaaS Q1 2026" />
+                    <input type="text" className="input-field w-full" value={jTitle} onChange={(e) => setJTitle(e.target.value)} />
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-700 block mb-1">Descricao</label>
@@ -228,16 +272,14 @@ export default function AdminJornadasPage() {
                         <option value="avancado">Avancado</option>
                       </select>
                     </div>
-                    {modalMode === 'edit-journey' && (
-                      <div>
-                        <label className="text-sm font-medium text-gray-700 block mb-1">Status</label>
-                        <select className="input-field w-full" value={jStatus} onChange={(e) => setJStatus(e.target.value)}>
-                          <option value="DRAFT">Rascunho</option>
-                          <option value="PUBLISHED">Publicada</option>
-                          <option value="ARCHIVED">Arquivada</option>
-                        </select>
-                      </div>
-                    )}
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">Status</label>
+                      <select className="input-field w-full" value={jStatus} onChange={(e) => setJStatus(e.target.value)}>
+                        <option value="DRAFT">Rascunho</option>
+                        <option value="PUBLISHED">Publicada</option>
+                        <option value="ARCHIVED">Arquivada</option>
+                      </select>
+                    </div>
                   </div>
                 </>
               ) : (
@@ -278,9 +320,198 @@ export default function AdminJornadasPage() {
               <button onClick={closeModal} className="btn-secondary px-4 py-2">Cancelar</button>
               <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 px-4 py-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {modalMode?.startsWith('create') || modalMode === 'add-question' ? 'Criar' : 'Salvar'}
+                {modalMode === 'add-question' ? 'Criar' : 'Salvar'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Journey Wizard */}
+      {wizardOpen && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl animate-slide-up max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl z-10">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+                  <Sparkles className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900">Nova Jornada com IA</h3>
+                  <p className="text-xs text-gray-500">
+                    {wizardStep === 'form' && 'Configure os parametros e selecione os produtos'}
+                    {wizardStep === 'generating' && 'Gerando perguntas com inteligencia artificial...'}
+                    {wizardStep === 'review' && 'Jornada criada com sucesso!'}
+                    {wizardStep === 'error' && 'Ocorreu um erro na geracao'}
+                  </p>
+                </div>
+              </div>
+              <button onClick={closeWizard} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+
+            <div className="p-5">
+              {/* Form Step */}
+              {wizardStep === 'form' && (
+                <div className="space-y-5">
+                  {wizardError && <div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm">{wizardError}</div>}
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1">Titulo da Jornada *</label>
+                    <input type="text" className="input-field w-full" value={wTitle} onChange={(e) => setWTitle(e.target.value)} placeholder="Ex: Avaliacao BaaS Q1 2026" />
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-1">Descricao (opcional)</label>
+                    <textarea className="input-field w-full h-16 resize-none" value={wDesc} onChange={(e) => setWDesc(e.target.value)} placeholder="Contexto ou objetivos especificos..." />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">Dominio</label>
+                      <select className="input-field w-full" value={wDomain} onChange={(e) => setWDomain(e.target.value)}>
+                        <option value="vendas">Vendas</option>
+                        <option value="suporte">Suporte</option>
+                        <option value="lideranca">Lideranca</option>
+                        <option value="cs">CS</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">Duracao (min)</label>
+                      <input type="number" className="input-field w-full" value={wDuration} onChange={(e) => setWDuration(Number(e.target.value))} />
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700 block mb-1">Nivel</label>
+                      <select className="input-field w-full" value={wLevel} onChange={(e) => setWLevel(e.target.value)}>
+                        <option value="iniciante">Iniciante</option>
+                        <option value="intermediario">Intermediario</option>
+                        <option value="avancado">Avancado</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="text-sm font-medium text-gray-700 block mb-2">
+                      Produtos Foco * <span className="text-xs text-gray-400 font-normal">({wProducts.length} selecionado{wProducts.length !== 1 ? 's' : ''})</span>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
+                      {products.map((p) => {
+                        const selected = wProducts.includes(p.id)
+                        return (
+                          <button key={p.id} type="button" onClick={() => toggleProduct(p.id)} className={`p-3 rounded-xl border-2 text-left transition-all ${selected ? 'border-violet-500 bg-violet-50' : 'border-gray-100 hover:border-gray-200 bg-white'}`}>
+                            <div className="flex items-start gap-2">
+                              <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 mt-0.5 transition-all ${selected ? 'border-violet-500 bg-violet-500' : 'border-gray-300'}`}>
+                                {selected && <Check className="w-3 h-3 text-white" />}
+                              </div>
+                              <div className="min-w-0">
+                                <p className={`text-sm font-medium truncate ${selected ? 'text-violet-900' : 'text-gray-900'}`}>{p.name}</p>
+                                {p.technology && <p className="text-xs text-gray-400 truncate">{p.technology}</p>}
+                              </div>
+                            </div>
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {products.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Nenhum produto cadastrado.</p>}
+                  </div>
+                </div>
+              )}
+
+              {/* Generating Step */}
+              {wizardStep === 'generating' && (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <div className="relative mb-6">
+                    <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+                      <Sparkles className="w-8 h-8 text-white animate-pulse" />
+                    </div>
+                    <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-violet-400 animate-ping" />
+                  </div>
+                  <h4 className="text-lg font-bold text-gray-900 mb-2">Gerando Jornada</h4>
+                  <p className="text-sm text-gray-500 text-center max-w-sm">
+                    A IA esta analisando os produtos selecionados e criando perguntas variadas e calibradas para o tempo e nivel definidos.
+                  </p>
+                  <div className="flex items-center gap-1 mt-6">
+                    <span className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '0ms' }} />
+                    <span className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '150ms' }} />
+                    <span className="w-2 h-2 rounded-full bg-violet-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+                  </div>
+                </div>
+              )}
+
+              {/* Review Step */}
+              {wizardStep === 'review' && (
+                <div className="space-y-5">
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Check className="w-5 h-5 text-emerald-600" />
+                      <h4 className="font-semibold text-emerald-900">Jornada criada com sucesso!</h4>
+                    </div>
+                    <p className="text-sm text-emerald-700">
+                      A IA gerou <strong>{generatedQuestions.length} perguntas</strong> para a jornada &ldquo;{wTitle}&rdquo;.
+                      Voce pode editar as perguntas depois na pagina da jornada.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h4 className="text-sm font-semibold text-gray-700 mb-3">Perguntas Geradas</h4>
+                    <div className="space-y-3">
+                      {generatedQuestions.map((q, i) => (
+                        <div key={i} className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+                          <div className="flex items-start gap-3">
+                            <span className="w-7 h-7 rounded-full bg-violet-100 text-violet-700 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">{i + 1}</span>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm text-gray-900 mb-2">{q.text}</p>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className={`badge-pill text-xs ${Q_TYPE_COLORS[q.type] || 'bg-gray-100 text-gray-600'}`}>
+                                  {Q_TYPE_LABELS[q.type] || q.type}
+                                </span>
+                                <span className="text-xs text-gray-400">Peso: {q.weight}</span>
+                                <span className="text-xs text-gray-400">{q.expected_lines} linhas</span>
+                                {q.competency_tags?.map((tag, ti) => (
+                                  <span key={ti} className="badge-pill bg-violet-50 text-violet-600 text-xs">{tag}</span>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Error Step */}
+              {wizardStep === 'error' && (
+                <div className="flex flex-col items-center justify-center py-16">
+                  <div className="w-16 h-16 rounded-2xl bg-red-50 flex items-center justify-center mb-4">
+                    <AlertCircle className="w-8 h-8 text-red-500" />
+                  </div>
+                  <h4 className="text-lg font-bold text-gray-900 mb-2">Erro na Geracao</h4>
+                  <p className="text-sm text-gray-500 text-center max-w-sm mb-4">{wizardError}</p>
+                  <button onClick={() => setWizardStep('form')} className="btn-secondary px-4 py-2 text-sm">
+                    Tentar novamente
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Footer */}
+            {(wizardStep === 'form' || wizardStep === 'review') && (
+              <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-100 sticky bottom-0 bg-white rounded-b-2xl">
+                <button onClick={closeWizard} className="btn-secondary px-4 py-2">
+                  {wizardStep === 'review' ? 'Fechar' : 'Cancelar'}
+                </button>
+                {wizardStep === 'form' && (
+                  <button onClick={runWizard} className="flex items-center gap-2 px-4 py-2 rounded-xl text-white font-medium text-sm bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 shadow-sm transition-all">
+                    <Sparkles className="w-4 h-4" /> Gerar com IA
+                  </button>
+                )}
+                {wizardStep === 'review' && (
+                  <button onClick={finishWizard} className="btn-primary flex items-center gap-2 px-4 py-2">
+                    <Check className="w-4 h-4" /> Concluir
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}

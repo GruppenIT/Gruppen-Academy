@@ -5,7 +5,9 @@ from openai import AsyncOpenAI
 from app.config import settings
 from app.evaluations.schemas import EvaluationResult
 from app.llm.prompts import (
+    COMPETENCY_SUGGESTION_SYSTEM_PROMPT,
     EVALUATION_SYSTEM_PROMPT,
+    GUIDELINE_SUGGESTION_SYSTEM_PROMPT,
     QUESTION_GENERATION_SYSTEM_PROMPT,
     REPORT_MANAGER_SYSTEM_PROMPT,
     REPORT_PROFESSIONAL_SYSTEM_PROMPT,
@@ -118,6 +120,66 @@ async def generate_report(evaluations: list, report_type: str) -> dict:
     )
 
     return json.loads(response.choices[0].message.content)
+
+
+async def suggest_competencies(
+    products: list[dict],
+    existing_competencies: list[dict],
+) -> list[dict]:
+    client = _get_client()
+
+    user_content = f"""Analise os produtos/soluções da Gruppen e as competências já cadastradas.
+Sugira NOVAS competências que complementem as existentes.
+
+Produtos/Soluções cadastrados:
+{json.dumps(products, ensure_ascii=False, indent=2)}
+
+Competências já existentes:
+{json.dumps(existing_competencies, ensure_ascii=False, indent=2)}
+"""
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=4096,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": COMPETENCY_SUGGESTION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    result = json.loads(response.choices[0].message.content)
+    return result.get("suggestions", [])
+
+
+async def suggest_guidelines(
+    products: list[dict],
+    existing_guidelines: list[dict],
+) -> list[dict]:
+    client = _get_client()
+
+    user_content = f"""Analise os produtos/soluções da Gruppen e as orientações master já cadastradas.
+Sugira NOVAS orientações estratégicas.
+
+Produtos/Soluções:
+{json.dumps(products, ensure_ascii=False, indent=2)}
+
+Orientações já existentes:
+{json.dumps(existing_guidelines, ensure_ascii=False, indent=2)}
+"""
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=4096,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": GUIDELINE_SUGGESTION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    result = json.loads(response.choices[0].message.content)
+    return result.get("suggestions", [])
 
 
 async def tutor_chat(

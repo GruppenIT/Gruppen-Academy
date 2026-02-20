@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.auth.router import router as auth_router
 from app.catalog.router import router as catalog_router
 from app.config import settings
+from app.copilot.router import router as copilot_router
 from app.evaluations.router import router as evaluations_router
 from app.gamification.router import router as gamification_router
 from app.init_db import startup as init_startup
@@ -54,6 +55,7 @@ app.include_router(journeys_router, prefix="/api/journeys", tags=["journeys"])
 app.include_router(evaluations_router, prefix="/api/evaluations", tags=["evaluations"])
 app.include_router(learning_router, prefix="/api/learning", tags=["learning"])
 app.include_router(gamification_router, prefix="/api/gamification", tags=["gamification"])
+app.include_router(copilot_router, prefix="/api/copilot", tags=["copilot"])
 
 
 @app.get("/api/health")

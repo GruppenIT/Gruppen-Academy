@@ -169,6 +169,23 @@ class ApiClient {
     return this.request<import('@/types').Score>('/api/gamification/scores', { method: 'POST', body: JSON.stringify(data) })
   }
   getUserPoints(userId: string) { return this.request<import('@/types').UserPointsSummary>(`/api/gamification/scores/${userId}`) }
+
+  // Copilot
+  copilotSuggestCompetencies() {
+    return this.request<import('@/types').CopilotCompetencySuggestResponse>('/api/copilot/suggest-competencies', { method: 'POST' })
+  }
+  copilotCreateCompetenciesBulk(items: { name: string; description: string; type: string; domain: string }[]) {
+    return this.request<{ created: { id: string; name: string }[]; count: number }>('/api/copilot/create-competencies-bulk', { method: 'POST', body: JSON.stringify({ items }) })
+  }
+  copilotSuggestGuidelines() {
+    return this.request<import('@/types').CopilotGuidelineSuggestResponse>('/api/copilot/suggest-guidelines', { method: 'POST' })
+  }
+  copilotCreateGuidelinesBulk(items: { product_id: string; title: string; content: string; category: string }[]) {
+    return this.request<{ created: { id: string; title: string }[]; count: number }>('/api/copilot/create-guidelines-bulk', { method: 'POST', body: JSON.stringify({ items }) })
+  }
+  copilotGenerateJourney(data: { title: string; domain: string; session_duration_minutes: number; participant_level: string; product_ids: string[]; description?: string }) {
+    return this.request<import('@/types').CopilotJourneyGenerateResponse>('/api/copilot/generate-journey', { method: 'POST', body: JSON.stringify(data) })
+  }
 }
 
 export const api = new ApiClient()

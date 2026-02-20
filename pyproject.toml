@@ -13,6 +13,7 @@ dependencies = [
     "pydantic-settings>=2.0,<3",
     "python-jose[cryptography]>=3.3,<4",
     "passlib[bcrypt]>=1.7,<2",
+    "bcrypt>=4.0,<4.1",
     "python-multipart>=0.0.18",
     "openai>=1.60,<2",
     "httpx>=0.28,<1",

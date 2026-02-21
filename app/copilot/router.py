@@ -86,7 +86,7 @@ async def copilot_create_competencies_bulk(
             CompetencyCreate(
                 name=item.name,
                 description=item.description,
-                type=item.type,
+                type=item.type.lower(),
                 domain=item.domain,
             ),
         )

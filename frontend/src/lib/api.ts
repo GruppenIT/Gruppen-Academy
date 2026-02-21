@@ -195,6 +195,17 @@ class ApiClient {
   copilotGenerateJourney(data: { title: string; domain: string; session_duration_minutes: number; participant_level: string; product_ids: string[]; description?: string }) {
     return this.request<import('@/types').CopilotJourneyGenerateResponse>('/api/copilot/generate-journey', { method: 'POST', body: JSON.stringify(data) })
   }
+
+  // Settings
+  getSettings() {
+    return this.request<{ key: string; value: string; description: string | null }[]>('/api/settings')
+  }
+  updateSettings(settings: Record<string, string>) {
+    return this.request<{ key: string; value: string; description: string | null }[]>('/api/settings', {
+      method: 'PUT',
+      body: JSON.stringify({ settings }),
+    })
+  }
 }
 
 export const api = new ApiClient()

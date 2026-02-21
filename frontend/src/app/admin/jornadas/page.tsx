@@ -77,10 +77,11 @@ export default function AdminJornadasPage() {
   const [generatedJourneyId, setGeneratedJourneyId] = useState('')
 
   const load = useCallback(async () => {
-    try {
-      const [j, p, t] = await Promise.all([api.getJourneys(0, 200), api.getProducts(0, 200), api.getTeams()])
-      setJourneys(j); setProducts(p); setTeams(t)
-    } catch {} finally { setLoading(false) }
+    const [j, p, t] = await Promise.allSettled([api.getJourneys(0, 200), api.getProducts(0, 200), api.getTeams()])
+    if (j.status === 'fulfilled') setJourneys(j.value)
+    if (p.status === 'fulfilled') setProducts(p.value)
+    if (t.status === 'fulfilled') setTeams(t.value)
+    setLoading(false)
   }, [])
 
   useEffect(() => { load() }, [load])

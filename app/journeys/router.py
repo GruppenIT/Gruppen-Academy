@@ -60,6 +60,36 @@ async def list_all_journeys(
     return await list_journeys(db, skip, limit, domain=domain)
 
 
+# NOTE: /my/available MUST be before /{journey_id} to avoid FastAPI matching "my" as UUID
+@router.get("/my/available", response_model=list[JourneyOut])
+async def list_my_available_journeys(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List async published journeys assigned to teams the current user belongs to."""
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+    from app.journeys.models import Journey, JourneyMode, JourneyStatus
+    from app.teams.models import team_member, journey_team
+
+    # Find team IDs for this user
+    team_ids_q = select(team_member.c.team_id).where(team_member.c.user_id == current_user.id)
+
+    # Find journey IDs assigned to those teams
+    journey_ids_q = select(journey_team.c.journey_id).where(journey_team.c.team_id.in_(team_ids_q))
+
+    result = await db.execute(
+        select(Journey)
+        .where(
+            Journey.id.in_(journey_ids_q),
+            Journey.status == JourneyStatus.PUBLISHED,
+            Journey.mode == JourneyMode.ASYNC,
+        )
+        .order_by(Journey.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
 @router.get("/{journey_id}", response_model=JourneyOut)
 async def get_single_journey(
     journey_id: uuid.UUID,
@@ -204,36 +234,6 @@ async def submit_question_response(
 
 
 # --- Async Journey Flow (professional) ---
-
-
-@router.get("/my/available", response_model=list[JourneyOut])
-async def list_my_available_journeys(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """List async published journeys assigned to teams the current user belongs to."""
-    from sqlalchemy import select
-    from sqlalchemy.orm import selectinload
-    from app.journeys.models import Journey, JourneyMode, JourneyStatus
-    from app.teams.models import team_member, journey_team
-
-    # Find team IDs for this user
-    from sqlalchemy import select as sa_select
-    team_ids_q = sa_select(team_member.c.team_id).where(team_member.c.user_id == current_user.id)
-
-    # Find journey IDs assigned to those teams
-    journey_ids_q = sa_select(journey_team.c.journey_id).where(journey_team.c.team_id.in_(team_ids_q))
-
-    result = await db.execute(
-        select(Journey)
-        .where(
-            Journey.id.in_(journey_ids_q),
-            Journey.status == JourneyStatus.PUBLISHED,
-            Journey.mode == JourneyMode.ASYNC,
-        )
-        .order_by(Journey.created_at.desc())
-    )
-    return list(result.scalars().all())
 
 
 @router.post("/{journey_id}/start", response_model=ParticipationStatusOut)

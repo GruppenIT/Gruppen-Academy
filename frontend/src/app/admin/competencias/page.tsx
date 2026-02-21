@@ -30,7 +30,7 @@ export default function AdminCompetenciasPage() {
   // Competency form
   const [cName, setCName] = useState('')
   const [cDesc, setCDesc] = useState('')
-  const [cType, setCType] = useState<'HARD' | 'SOFT'>('HARD')
+  const [cType, setCType] = useState('HARD')
   const [cDomain, setCDomain] = useState('vendas')
   const [editCompId, setEditCompId] = useState<string | null>(null)
 
@@ -363,7 +363,7 @@ export default function AdminCompetenciasPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm font-medium text-gray-700 block mb-1">Tipo</label>
-                      <select className="input-field w-full" value={cType} onChange={(e) => setCType(e.target.value as 'HARD' | 'SOFT')}>
+                      <select className="input-field w-full" value={cType} onChange={(e) => setCType(e.target.value)}>
                         <option value="HARD">Hard Skill</option>
                         <option value="SOFT">Soft Skill</option>
                       </select>

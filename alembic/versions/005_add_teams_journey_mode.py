@@ -71,9 +71,9 @@ def upgrade() -> None:
 
     # --- Journey mode column ---
     if not _type_exists(conn, "journeymode"):
-        op.execute("CREATE TYPE journeymode AS ENUM ('sync', 'async')")
+        op.execute("CREATE TYPE journeymode AS ENUM ('SYNC', 'ASYNC')")
     if not _column_exists(conn, "journeys", "mode"):
-        op.add_column("journeys", sa.Column("mode", sa.Enum("sync", "async", name="journeymode"), nullable=False, server_default="async"))
+        op.add_column("journeys", sa.Column("mode", sa.Enum("SYNC", "ASYNC", name="journeymode"), nullable=False, server_default="ASYNC"))
 
     # --- Question max_time_seconds ---
     if not _column_exists(conn, "questions", "max_time_seconds"):

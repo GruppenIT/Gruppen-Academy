@@ -40,6 +40,17 @@ async def init_db():
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_sub VARCHAR(255)"
         ))
+        # Fix journeymode enum values: migration 005 created them lowercase
+        # but SQLAlchemy Enum() uses Python enum member NAMES (uppercase) by default.
+        await conn.execute(text("""
+            DO $$ BEGIN ALTER TYPE journeymode RENAME VALUE 'sync' TO 'SYNC';
+            EXCEPTION WHEN others THEN NULL; END $$"""))
+        await conn.execute(text("""
+            DO $$ BEGIN ALTER TYPE journeymode RENAME VALUE 'async' TO 'ASYNC';
+            EXCEPTION WHEN others THEN NULL; END $$"""))
+        await conn.execute(text(
+            "ALTER TABLE journeys ALTER COLUMN mode SET DEFAULT 'ASYNC'"
+        ))
 
     logger.info("Database tables created/verified.")
 

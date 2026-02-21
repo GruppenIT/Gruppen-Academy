@@ -166,8 +166,8 @@ export default function DashboardPage() {
                     <p className="text-sm font-medium text-gray-900 truncate">{j.title}</p>
                     <p className="text-xs text-gray-400">{j.domain} · {j.session_duration_minutes}min</p>
                   </div>
-                  <span className={`badge-pill ${j.status === 'PUBLISHED' ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>
-                    {j.status === 'PUBLISHED' ? 'Ativa' : j.status === 'DRAFT' ? 'Rascunho' : 'Arquivada'}
+                  <span className={`badge-pill ${j.status.toLowerCase() === 'published' ? 'bg-emerald-50 text-emerald-600' : 'bg-gray-100 text-gray-500'}`}>
+                    {j.status.toLowerCase() === 'published' ? 'Ativa' : j.status.toLowerCase() === 'draft' ? 'Rascunho' : 'Arquivada'}
                   </span>
                 </Link>
               ))}

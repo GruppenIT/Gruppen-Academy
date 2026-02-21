@@ -34,8 +34,8 @@ export default function AdminRelatoriosPage() {
   const admins = users.filter(u => ['super_admin', 'admin'].includes(u.role)).length
   const managers = users.filter(u => u.role === 'manager').length
   const professionals = users.filter(u => u.role === 'professional').length
-  const publishedJourneys = journeys.filter(j => j.status === 'PUBLISHED').length
-  const draftJourneys = journeys.filter(j => j.status === 'DRAFT').length
+  const publishedJourneys = journeys.filter(j => j.status.toLowerCase() === 'published').length
+  const draftJourneys = journeys.filter(j => j.status.toLowerCase() === 'draft').length
 
   const departments = users.reduce((acc, u) => {
     const dept = u.department || 'Sem departamento'

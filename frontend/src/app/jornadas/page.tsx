@@ -8,7 +8,10 @@ import type { Journey } from '@/types'
 import { Route, Clock, Users, ArrowRight, Search, Filter } from 'lucide-react'
 import { clsx } from 'clsx'
 
-const statusConfig = {
+const statusConfig: Record<string, { label: string; class: string }> = {
+  published: { label: 'Ativa', class: 'bg-emerald-50 text-emerald-600' },
+  draft: { label: 'Rascunho', class: 'bg-gray-100 text-gray-500' },
+  archived: { label: 'Arquivada', class: 'bg-orange-50 text-orange-600' },
   PUBLISHED: { label: 'Ativa', class: 'bg-emerald-50 text-emerald-600' },
   DRAFT: { label: 'Rascunho', class: 'bg-gray-100 text-gray-500' },
   ARCHIVED: { label: 'Arquivada', class: 'bg-orange-50 text-orange-600' },

@@ -22,7 +22,7 @@ export default function JourneyDetailPage() {
   const [journey, setJourney] = useState<Journey | null>(null)
   const [questions, setQuestions] = useState<Question[]>([])
   const [loading, setLoading] = useState(true)
-  const isAsync = journey?.mode === 'async' || journey?.mode === 'ASYNC'
+  const isAsync = journey?.mode === 'async'
 
   useEffect(() => {
     const id = params.id as string

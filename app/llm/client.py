@@ -1,4 +1,5 @@
 import json
+import logging
 
 from openai import AsyncOpenAI
 
@@ -13,9 +14,13 @@ from app.llm.prompts import (
     REPORT_PROFESSIONAL_SYSTEM_PROMPT,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _get_client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=settings.openai_api_key)
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY não configurada. Verifique o arquivo .env.")
+    return AsyncOpenAI(api_key=settings.openai_api_key, timeout=120.0)
 
 
 async def evaluate_response(

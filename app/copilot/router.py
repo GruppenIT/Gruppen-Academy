@@ -68,7 +68,13 @@ async def copilot_suggest_competencies(
         for c in existing
     ]
 
-    suggestions = await suggest_competencies(products_data, existing_data)
+    try:
+        suggestions = await suggest_competencies(products_data, existing_data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Erro na sugestão de competências via IA: %s", e)
+        raise HTTPException(status_code=502, detail=f"Erro ao comunicar com o serviço de IA: {e}")
     return CompetencySuggestResponse(suggestions=suggestions)
 
 
@@ -138,7 +144,13 @@ async def copilot_suggest_guidelines(
         for g in existing
     ]
 
-    suggestions = await suggest_guidelines(products_data, existing_data)
+    try:
+        suggestions = await suggest_guidelines(products_data, existing_data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Erro na sugestão de orientações via IA: %s", e)
+        raise HTTPException(status_code=502, detail=f"Erro ao comunicar com o serviço de IA: {e}")
     return GuidelineSuggestResponse(suggestions=suggestions)
 
 
@@ -246,14 +258,23 @@ async def copilot_generate_journey(
     ]
 
     # Generate questions via LLM
-    raw_questions = await generate_questions(
-        products=products_data,
-        competencies=competencies_data,
-        guidelines=guidelines_data,
-        session_duration_minutes=data.session_duration_minutes,
-        participant_level=data.participant_level,
-        domain=data.domain,
-    )
+    try:
+        raw_questions = await generate_questions(
+            products=products_data,
+            competencies=competencies_data,
+            guidelines=guidelines_data,
+            session_duration_minutes=data.session_duration_minutes,
+            participant_level=data.participant_level,
+            domain=data.domain,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Erro na geração de perguntas via IA: %s", e)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Erro ao comunicar com o serviço de IA: {e}",
+        )
 
     # Create the journey
     journey = await create_journey(

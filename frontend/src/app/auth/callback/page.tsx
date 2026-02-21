@@ -1,11 +1,27 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
 import { Loader2, AlertCircle, GraduationCap } from 'lucide-react'
 
-export default function SSOCallbackPage() {
+function LoadingSpinner() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center space-y-4">
+        <div className="w-12 h-12 bg-brand-100 rounded-xl flex items-center justify-center mx-auto">
+          <GraduationCap className="w-6 h-6 text-brand-600" />
+        </div>
+        <div className="flex items-center gap-2 text-gray-600">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm font-medium">Autenticando...</span>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SSOCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [error, setError] = useState('')
@@ -67,17 +83,13 @@ export default function SSOCallbackPage() {
     )
   }
 
+  return <LoadingSpinner />
+}
+
+export default function SSOCallbackPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="text-center space-y-4">
-        <div className="w-12 h-12 bg-brand-100 rounded-xl flex items-center justify-center mx-auto">
-          <GraduationCap className="w-6 h-6 text-brand-600" />
-        </div>
-        <div className="flex items-center gap-2 text-gray-600">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span className="text-sm font-medium">Autenticando...</span>
-        </div>
-      </div>
-    </div>
+    <Suspense fallback={<LoadingSpinner />}>
+      <SSOCallbackContent />
+    </Suspense>
   )
 }

@@ -1,4 +1,5 @@
 import logging
+import traceback
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -224,6 +225,25 @@ async def copilot_generate_journey(
     current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
     """Create a journey and generate questions via AI based on selected products."""
+    try:
+        return await _generate_journey_impl(data, db, current_user)
+    except HTTPException:
+        raise
+    except Exception as e:
+        tb = traceback.format_exc()
+        logger.error("Erro inesperado em generate-journey: %s\n%s", e, tb)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno: {type(e).__name__}: {e}",
+        )
+
+
+async def _generate_journey_impl(
+    data: JourneyGenerateRequest,
+    db: AsyncSession,
+    current_user: User,
+) -> JourneyGenerateResponse:
+    """Inner implementation for generate-journey."""
     # Fetch selected products
     products_result = await db.execute(
         select(Product).where(Product.id.in_(data.product_ids))

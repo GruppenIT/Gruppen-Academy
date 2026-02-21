@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.journeys.models import JourneyStatus, QuestionType
 
@@ -20,9 +20,17 @@ class JourneyCreate(BaseModel):
 class JourneyUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
+    domain: str | None = None
     status: JourneyStatus | None = None
     session_duration_minutes: int | None = None
     participant_level: str | None = None
+
+    @field_validator("status", mode="before")
+    @classmethod
+    def normalize_status(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return v.lower()
+        return v
 
 
 class JourneyOut(BaseModel):
@@ -48,6 +56,13 @@ class QuestionCreate(BaseModel):
     expected_lines: int = 10
     order: int = 0
     competency_ids: list[uuid.UUID] = []
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return v.lower()
+        return v
 
 
 class QuestionOut(BaseModel):

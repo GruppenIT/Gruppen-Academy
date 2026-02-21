@@ -37,7 +37,13 @@ class ApiClient {
 
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
-      throw new Error(body.detail || `Erro ${res.status}`)
+      const detail = body.detail
+      const message = typeof detail === 'string'
+        ? detail
+        : Array.isArray(detail)
+          ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join('; ')
+          : `Erro ${res.status}`
+      throw new Error(message)
     }
 
     if (res.status === 204) return {} as T

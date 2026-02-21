@@ -8,10 +8,10 @@ import {
   FileQuestion, Sparkles, Check, AlertCircle,
 } from 'lucide-react'
 
-const STATUS_LABELS: Record<string, string> = { DRAFT: 'Rascunho', PUBLISHED: 'Publicada', ARCHIVED: 'Arquivada' }
-const STATUS_COLORS: Record<string, string> = { DRAFT: 'bg-gray-100 text-gray-500', PUBLISHED: 'bg-emerald-50 text-emerald-600', ARCHIVED: 'bg-orange-50 text-orange-600' }
-const Q_TYPE_LABELS: Record<string, string> = { ESSAY: 'Dissertativa', CASE_STUDY: 'Estudo de Caso', ROLEPLAY: 'Roleplay', OBJECTIVE: 'Objetiva', essay: 'Dissertativa', case_study: 'Estudo de Caso', roleplay: 'Roleplay', objective: 'Objetiva' }
-const Q_TYPE_COLORS: Record<string, string> = { ESSAY: 'bg-blue-50 text-blue-600', CASE_STUDY: 'bg-amber-50 text-amber-600', ROLEPLAY: 'bg-purple-50 text-purple-600', OBJECTIVE: 'bg-emerald-50 text-emerald-600', essay: 'bg-blue-50 text-blue-600', case_study: 'bg-amber-50 text-amber-600', roleplay: 'bg-purple-50 text-purple-600', objective: 'bg-emerald-50 text-emerald-600' }
+const STATUS_LABELS: Record<string, string> = { draft: 'Rascunho', published: 'Publicada', archived: 'Arquivada', DRAFT: 'Rascunho', PUBLISHED: 'Publicada', ARCHIVED: 'Arquivada' }
+const STATUS_COLORS: Record<string, string> = { draft: 'bg-gray-100 text-gray-500', published: 'bg-emerald-50 text-emerald-600', archived: 'bg-orange-50 text-orange-600', DRAFT: 'bg-gray-100 text-gray-500', PUBLISHED: 'bg-emerald-50 text-emerald-600', ARCHIVED: 'bg-orange-50 text-orange-600' }
+const Q_TYPE_LABELS: Record<string, string> = { essay: 'Dissertativa', case_study: 'Estudo de Caso', roleplay: 'Roleplay', objective: 'Objetiva', ESSAY: 'Dissertativa', CASE_STUDY: 'Estudo de Caso', ROLEPLAY: 'Roleplay', OBJECTIVE: 'Objetiva' }
+const Q_TYPE_COLORS: Record<string, string> = { essay: 'bg-blue-50 text-blue-600', case_study: 'bg-amber-50 text-amber-600', roleplay: 'bg-purple-50 text-purple-600', objective: 'bg-emerald-50 text-emerald-600', ESSAY: 'bg-blue-50 text-blue-600', CASE_STUDY: 'bg-amber-50 text-amber-600', ROLEPLAY: 'bg-purple-50 text-purple-600', OBJECTIVE: 'bg-emerald-50 text-emerald-600' }
 
 type ModalMode = 'edit-journey' | 'add-question' | null
 type WizardStep = 'form' | 'generating' | 'review' | 'error'
@@ -83,7 +83,7 @@ export default function AdminJornadasPage() {
     setError(''); setModalMode('edit-journey')
   }
   const openAddQuestion = (journeyId: string) => {
-    setQJourneyId(journeyId); setQText(''); setQType('ESSAY'); setQWeight(1); setQLines(10)
+    setQJourneyId(journeyId); setQText(''); setQType('essay'); setQWeight(1); setQLines(10)
     setQOrder((questions[journeyId]?.length || 0) + 1)
     setError(''); setModalMode('add-question')
   }
@@ -305,9 +305,9 @@ export default function AdminJornadasPage() {
                     <div>
                       <label className="text-sm font-medium text-gray-700 block mb-1">Status</label>
                       <select className="input-field w-full" value={jStatus} onChange={(e) => setJStatus(e.target.value)}>
-                        <option value="DRAFT">Rascunho</option>
-                        <option value="PUBLISHED">Publicada</option>
-                        <option value="ARCHIVED">Arquivada</option>
+                        <option value="draft">Rascunho</option>
+                        <option value="published">Publicada</option>
+                        <option value="archived">Arquivada</option>
                       </select>
                     </div>
                   </div>
@@ -322,10 +322,10 @@ export default function AdminJornadasPage() {
                     <div>
                       <label className="text-sm font-medium text-gray-700 block mb-1">Tipo</label>
                       <select className="input-field w-full" value={qType} onChange={(e) => setQType(e.target.value)}>
-                        <option value="ESSAY">Dissertativa</option>
-                        <option value="CASE_STUDY">Estudo de Caso</option>
-                        <option value="ROLEPLAY">Roleplay</option>
-                        <option value="OBJECTIVE">Objetiva</option>
+                        <option value="essay">Dissertativa</option>
+                        <option value="case_study">Estudo de Caso</option>
+                        <option value="roleplay">Roleplay</option>
+                        <option value="objective">Objetiva</option>
                       </select>
                     </div>
                     <div>

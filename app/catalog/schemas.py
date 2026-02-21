@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.catalog.models import CompetencyType
 
@@ -58,6 +58,13 @@ class CompetencyCreate(BaseModel):
     type: CompetencyType
     domain: str = "vendas"
 
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
 
 class CompetencyUpdate(BaseModel):
     name: str | None = None
@@ -65,6 +72,13 @@ class CompetencyUpdate(BaseModel):
     type: CompetencyType | None = None
     domain: str | None = None
     is_active: bool | None = None
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return v.lower()
+        return v
 
 
 class CompetencyOut(BaseModel):

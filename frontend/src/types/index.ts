@@ -27,7 +27,7 @@ export interface Competency {
   id: string
   name: string
   description: string
-  type: 'HARD' | 'SOFT'
+  type: 'HARD' | 'SOFT' | 'hard' | 'soft'
   domain: string
 }
 
@@ -49,7 +49,7 @@ export interface Journey {
   domain: string
   session_duration_minutes: number
   participant_level: string
-  status: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED'
+  status: string
   created_at: string
   questions?: Question[]
 }
@@ -57,7 +57,7 @@ export interface Journey {
 export interface Question {
   id: string
   text: string
-  type: 'ESSAY' | 'CASE_STUDY' | 'ROLEPLAY' | 'OBJECTIVE'
+  type: string
   weight: number
   rubric: Record<string, unknown> | null
   expected_lines: number

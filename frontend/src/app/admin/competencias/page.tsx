@@ -282,8 +282,8 @@ export default function AdminCompetenciasPage() {
                     <p className="text-xs text-gray-500 line-clamp-1">{c.description}</p>
                   </td>
                   <td className="px-5 py-4">
-                    <span className={`badge-pill ${c.type === 'HARD' ? 'bg-blue-50 text-blue-600' : 'bg-violet-50 text-violet-600'}`}>
-                      {c.type === 'HARD' ? 'Hard Skill' : 'Soft Skill'}
+                    <span className={`badge-pill ${c.type.toUpperCase() === 'HARD' ? 'bg-blue-50 text-blue-600' : 'bg-violet-50 text-violet-600'}`}>
+                      {c.type.toUpperCase() === 'HARD' ? 'Hard Skill' : 'Soft Skill'}
                     </span>
                   </td>
                   <td className="px-5 py-4 text-sm text-gray-600 capitalize">{c.domain}</td>
@@ -573,8 +573,8 @@ export default function AdminCompetenciasPage() {
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
                               <p className="text-sm font-semibold text-gray-900">{s.name}</p>
-                              <span className={`badge-pill text-xs ${s.type === 'HARD' ? 'bg-blue-50 text-blue-600' : 'bg-violet-50 text-violet-600'}`}>
-                                {s.type === 'HARD' ? 'Hard' : 'Soft'}
+                              <span className={`badge-pill text-xs ${s.type.toUpperCase() === 'HARD' ? 'bg-blue-50 text-blue-600' : 'bg-violet-50 text-violet-600'}`}>
+                                {s.type.toUpperCase() === 'HARD' ? 'Hard' : 'Soft'}
                               </span>
                               <span className="badge-pill text-xs bg-gray-100 text-gray-500">{s.domain}</span>
                             </div>

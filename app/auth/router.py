@@ -13,8 +13,8 @@ from app.auth.sso import (
     validate_id_token,
 )
 from app.auth.utils import verify_password
-from app.config import settings
 from app.database import get_db
+from app.settings.service import get_sso_config
 from app.users.models import User, UserRole
 from app.users.service import get_user_by_email
 
@@ -41,20 +41,26 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/sso/authorize", response_model=SSOAuthorizeResponse)
-async def sso_authorize():
+async def sso_authorize(db: AsyncSession = Depends(get_db)):
     """Return the Azure AD authorization URL for OIDC login.
 
     The frontend should redirect the user to `authorize_url`.
     After login, Azure AD redirects back with a `code` and `state`.
     """
-    if not settings.azure_ad_client_id or not settings.azure_ad_tenant_id:
+    sso_cfg = await get_sso_config(db)
+    if sso_cfg.get("sso_enabled") != "true":
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="SSO não configurado. Defina AZURE_AD_TENANT_ID e AZURE_AD_CLIENT_ID.",
+            detail="SSO não está habilitado. Ative nas Configurações do sistema.",
+        )
+    if not sso_cfg.get("sso_client_id") or not sso_cfg.get("sso_tenant_id"):
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="SSO não configurado. Preencha Tenant ID e Client ID nas Configurações.",
         )
     state = generate_state()
     nonce = generate_nonce()
-    url = build_authorize_url(state=state, nonce=nonce)
+    url = build_authorize_url(sso_cfg, state=state, nonce=nonce)
     return SSOAuthorizeResponse(authorize_url=url, state=state)
 
 
@@ -68,15 +74,16 @@ async def sso_callback(data: SSOCallbackRequest, db: AsyncSession = Depends(get_
     3. Find or create the user in the local database.
     4. Return a local JWT access token.
     """
-    if not settings.azure_ad_client_id or not settings.azure_ad_tenant_id:
+    sso_cfg = await get_sso_config(db)
+    if sso_cfg.get("sso_enabled") != "true":
         raise HTTPException(
             status_code=status.HTTP_501_NOT_IMPLEMENTED,
-            detail="SSO não configurado.",
+            detail="SSO não está habilitado.",
         )
 
     # 1. Exchange code for tokens
     try:
-        token_response = await exchange_code_for_tokens(data.code)
+        token_response = await exchange_code_for_tokens(sso_cfg, data.code)
     except Exception as exc:
         logger.error("Falha ao trocar código por tokens: %s", exc)
         raise HTTPException(
@@ -93,7 +100,7 @@ async def sso_callback(data: SSOCallbackRequest, db: AsyncSession = Depends(get_
 
     # 2. Validate id_token
     try:
-        claims = await validate_id_token(id_token)
+        claims = await validate_id_token(sso_cfg, id_token)
     except ValueError as exc:
         logger.error("Falha ao validar id_token: %s", exc)
         raise HTTPException(

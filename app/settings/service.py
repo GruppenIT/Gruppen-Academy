@@ -6,11 +6,11 @@ from app.settings.models import SystemSetting
 # Default settings that are created on first access
 DEFAULTS: dict[str, tuple[str, str]] = {
     "timezone": ("America/Sao_Paulo", "Fuso horário padrão do sistema"),
-    "saml_tenant_id": ("", "Microsoft Entra ID - Tenant ID"),
-    "saml_client_id": ("", "Microsoft Entra ID - Application (Client) ID"),
-    "saml_client_secret": ("", "Microsoft Entra ID - Client Secret"),
-    "saml_metadata_url": ("", "Microsoft Entra ID - Federation Metadata URL"),
-    "saml_enabled": ("false", "Autenticação SAML habilitada"),
+    "sso_enabled": ("false", "Autenticação SSO (Microsoft Entra ID) habilitada"),
+    "sso_tenant_id": ("", "Microsoft Entra ID - Directory (Tenant) ID"),
+    "sso_client_id": ("", "Microsoft Entra ID - Application (Client) ID"),
+    "sso_client_secret": ("", "Microsoft Entra ID - Client Secret"),
+    "sso_redirect_uri": ("", "URL de callback após login (ex: https://academy.gruppen.com.br/auth/callback)"),
 }
 
 
@@ -61,3 +61,13 @@ async def update_settings_bulk(db: AsyncSession, updates: dict[str, str]) -> lis
     for key, value in updates.items():
         await update_setting(db, key, value)
     return await get_all_settings(db)
+
+
+async def get_sso_config(db: AsyncSession) -> dict[str, str]:
+    """Load SSO configuration from system_settings as a flat dict."""
+    sso_keys = ["sso_enabled", "sso_tenant_id", "sso_client_id", "sso_client_secret", "sso_redirect_uri"]
+    config = {}
+    for key in sso_keys:
+        setting = await get_setting(db, key)
+        config[key] = setting.value if setting else ""
+    return config

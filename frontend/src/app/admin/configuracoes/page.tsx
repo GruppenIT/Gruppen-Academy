@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
 import {
   Globe, Save, Loader2, CheckCircle2, AlertCircle, Shield,
-  ExternalLink, Copy, Eye, EyeOff, ChevronDown, ChevronUp,
+  Copy, Eye, EyeOff, ChevronDown, ChevronUp,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -40,7 +40,7 @@ const TIMEZONES = [
   'Europe/Lisbon',
 ]
 
-const SAML_STEPS = [
+const SSO_STEPS = [
   {
     title: 'Criar App Registration no Microsoft Entra ID',
     content: [
@@ -48,7 +48,7 @@ const SAML_STEPS = [
       'Clique em "New registration".',
       'Preencha o nome (ex: "Gruppen Academy SSO").',
       'Em "Supported account types", selecione "Accounts in this organizational directory only (Single tenant)".',
-      'Em "Redirect URI", selecione "Web" e insira a URL de callback da sua aplicação (ex: https://academy.gruppen.com.br/api/auth/saml/callback).',
+      'Em "Redirect URI", selecione "Web" e insira a URL de callback (ex: https://academy.gruppen.com.br/auth/callback).',
       'Clique em "Register".',
     ],
   },
@@ -73,22 +73,22 @@ const SAML_STEPS = [
     ],
   },
   {
-    title: 'Configurar SAML (Enterprise Application)',
+    title: 'Configurar permissões de API (OpenID Connect)',
     content: [
-      'Navegue até Microsoft Entra ID > Enterprise applications.',
-      'Localize a aplicação que você registrou e clique nela.',
-      'Vá em "Single sign-on" e selecione "SAML" como método.',
-      'Em "Basic SAML Configuration", configure:',
-      '  — Identifier (Entity ID): https://academy.gruppen.com.br',
-      '  — Reply URL (ACS URL): https://academy.gruppen.com.br/api/auth/saml/callback',
-      '  — Sign on URL: https://academy.gruppen.com.br/login',
-      'Em "SAML Certificates", copie a "App Federation Metadata Url" e cole no campo abaixo.',
+      'No menu lateral do App Registration, clique em "API permissions".',
+      'Verifique que a permissão "Microsoft Graph > User.Read" já está adicionada (vem por padrão).',
+      'Clique em "Add a permission" > "Microsoft Graph" > "Delegated permissions".',
+      'Adicione as permissões: "openid", "email" e "profile".',
+      'Clique em "Grant admin consent" para aprovar as permissões.',
+      'A autenticação usará OpenID Connect (OIDC) — não é necessário configurar SAML.',
     ],
   },
   {
     title: 'Atribuir Usuários',
     content: [
-      'Ainda no Enterprise Application, vá em "Users and groups".',
+      'Navegue até Microsoft Entra ID > Enterprise applications.',
+      'Localize a aplicação "Gruppen Academy SSO" e clique nela.',
+      'Vá em "Users and groups".',
       'Clique em "Add user/group".',
       'Selecione os usuários ou grupos que terão acesso via SSO.',
       'Clique em "Assign".',
@@ -108,11 +108,11 @@ export default function AdminConfiguracoesPage() {
 
   // Local form state
   const [timezone, setTimezone] = useState('America/Sao_Paulo')
-  const [samlEnabled, setSamlEnabled] = useState(false)
-  const [samlTenantId, setSamlTenantId] = useState('')
-  const [samlClientId, setSamlClientId] = useState('')
-  const [samlClientSecret, setSamlClientSecret] = useState('')
-  const [samlMetadataUrl, setSamlMetadataUrl] = useState('')
+  const [ssoEnabled, setSsoEnabled] = useState(false)
+  const [ssoTenantId, setSsoTenantId] = useState('')
+  const [ssoClientId, setSsoClientId] = useState('')
+  const [ssoClientSecret, setSsoClientSecret] = useState('')
+  const [ssoRedirectUri, setSsoRedirectUri] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -121,11 +121,11 @@ export default function AdminConfiguracoesPage() {
       for (const s of data) {
         switch (s.key) {
           case 'timezone': setTimezone(s.value || 'America/Sao_Paulo'); break
-          case 'saml_enabled': setSamlEnabled(s.value === 'true'); break
-          case 'saml_tenant_id': setSamlTenantId(s.value); break
-          case 'saml_client_id': setSamlClientId(s.value); break
-          case 'saml_client_secret': setSamlClientSecret(s.value); break
-          case 'saml_metadata_url': setSamlMetadataUrl(s.value); break
+          case 'sso_enabled': setSsoEnabled(s.value === 'true'); break
+          case 'sso_tenant_id': setSsoTenantId(s.value); break
+          case 'sso_client_id': setSsoClientId(s.value); break
+          case 'sso_client_secret': setSsoClientSecret(s.value); break
+          case 'sso_redirect_uri': setSsoRedirectUri(s.value); break
         }
       }
     } catch {
@@ -144,11 +144,11 @@ export default function AdminConfiguracoesPage() {
     try {
       await api.updateSettings({
         timezone,
-        saml_enabled: samlEnabled ? 'true' : 'false',
-        saml_tenant_id: samlTenantId,
-        saml_client_id: samlClientId,
-        saml_client_secret: samlClientSecret,
-        saml_metadata_url: samlMetadataUrl,
+        sso_enabled: ssoEnabled ? 'true' : 'false',
+        sso_tenant_id: ssoTenantId,
+        sso_client_id: ssoClientId,
+        sso_client_secret: ssoClientSecret,
+        sso_redirect_uri: ssoRedirectUri,
       })
       setSuccess('Configurações salvas com sucesso.')
       setTimeout(() => setSuccess(''), 4000)
@@ -218,32 +218,32 @@ export default function AdminConfiguracoesPage() {
         </div>
       </section>
 
-      {/* ── Microsoft 365 SAML Section ── */}
+      {/* ── Microsoft 365 SSO Section ── */}
       <section className="card p-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="w-10 h-10 rounded-xl bg-violet-50 flex items-center justify-center">
             <Shield className="w-5 h-5 text-violet-600" />
           </div>
           <div className="flex-1">
-            <h2 className="text-lg font-semibold text-gray-900">Autenticação Microsoft 365 (SAML)</h2>
-            <p className="text-sm text-gray-500">Configure o Single Sign-On com Microsoft Entra ID para permitir login via credenciais corporativas.</p>
+            <h2 className="text-lg font-semibold text-gray-900">Single Sign-On — Microsoft Entra ID</h2>
+            <p className="text-sm text-gray-500">Configure o login via credenciais corporativas Microsoft 365 usando OpenID Connect (OIDC).</p>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
-            <span className="text-sm text-gray-600">{samlEnabled ? 'Ativo' : 'Inativo'}</span>
+            <span className="text-sm text-gray-600">{ssoEnabled ? 'Ativo' : 'Inativo'}</span>
             <button
               type="button"
               role="switch"
-              aria-checked={samlEnabled}
-              onClick={() => setSamlEnabled(!samlEnabled)}
+              aria-checked={ssoEnabled}
+              onClick={() => setSsoEnabled(!ssoEnabled)}
               className={clsx(
                 'relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200',
-                samlEnabled ? 'bg-brand-600' : 'bg-gray-200'
+                ssoEnabled ? 'bg-brand-600' : 'bg-gray-200'
               )}
             >
               <span
                 className={clsx(
                   'inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform duration-200 mt-0.5',
-                  samlEnabled ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'
+                  ssoEnabled ? 'translate-x-5 ml-0.5' : 'translate-x-0.5'
                 )}
               />
             </button>
@@ -254,7 +254,7 @@ export default function AdminConfiguracoesPage() {
         <div className="mb-6">
           <h3 className="text-sm font-semibold text-gray-700 mb-3">Passo a passo da integração</h3>
           <div className="space-y-2">
-            {SAML_STEPS.map((step, index) => (
+            {SSO_STEPS.map((step, index) => (
               <div key={index} className="border border-gray-200 rounded-xl overflow-hidden">
                 <button
                   type="button"
@@ -292,7 +292,7 @@ export default function AdminConfiguracoesPage() {
           </div>
         </div>
 
-        {/* SAML Config Fields */}
+        {/* SSO Config Fields */}
         <div className="border-t border-gray-200 pt-6 space-y-4">
           <h3 className="text-sm font-semibold text-gray-700">Parâmetros de Configuração</h3>
 
@@ -303,15 +303,15 @@ export default function AdminConfiguracoesPage() {
               <div className="relative">
                 <input
                   type="text"
-                  value={samlTenantId}
-                  onChange={(e) => setSamlTenantId(e.target.value)}
+                  value={ssoTenantId}
+                  onChange={(e) => setSsoTenantId(e.target.value)}
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                   className="input-field pr-10 font-mono text-sm"
                 />
-                {samlTenantId && (
+                {ssoTenantId && (
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(samlTenantId)}
+                    onClick={() => copyToClipboard(ssoTenantId)}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     title="Copiar"
                   >
@@ -328,15 +328,15 @@ export default function AdminConfiguracoesPage() {
               <div className="relative">
                 <input
                   type="text"
-                  value={samlClientId}
-                  onChange={(e) => setSamlClientId(e.target.value)}
+                  value={ssoClientId}
+                  onChange={(e) => setSsoClientId(e.target.value)}
                   placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                   className="input-field pr-10 font-mono text-sm"
                 />
-                {samlClientId && (
+                {ssoClientId && (
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(samlClientId)}
+                    onClick={() => copyToClipboard(ssoClientId)}
                     className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
                     title="Copiar"
                   >
@@ -354,8 +354,8 @@ export default function AdminConfiguracoesPage() {
             <div className="relative">
               <input
                 type={showSecret ? 'text' : 'password'}
-                value={samlClientSecret}
-                onChange={(e) => setSamlClientSecret(e.target.value)}
+                value={ssoClientSecret}
+                onChange={(e) => setSsoClientSecret(e.target.value)}
                 placeholder="Insira o client secret gerado no passo 3"
                 className="input-field pr-20 font-mono text-sm"
               />
@@ -368,10 +368,10 @@ export default function AdminConfiguracoesPage() {
                 >
                   {showSecret ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
-                {samlClientSecret && (
+                {ssoClientSecret && (
                   <button
                     type="button"
-                    onClick={() => copyToClipboard(samlClientSecret)}
+                    onClick={() => copyToClipboard(ssoClientSecret)}
                     className="text-gray-400 hover:text-gray-600 p-0.5"
                     title="Copiar"
                   >
@@ -383,30 +383,29 @@ export default function AdminConfiguracoesPage() {
             <p className="text-xs text-gray-400 mt-1">Valor do secret gerado em Certificates & secrets. Armazene com segurança.</p>
           </div>
 
-          {/* Federation Metadata URL */}
+          {/* Redirect URI */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1.5">Federation Metadata URL</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">Redirect URI (Callback)</label>
             <div className="relative">
               <input
                 type="url"
-                value={samlMetadataUrl}
-                onChange={(e) => setSamlMetadataUrl(e.target.value)}
-                placeholder="https://login.microsoftonline.com/{tenant-id}/federationmetadata/2007-06/federationmetadata.xml"
+                value={ssoRedirectUri}
+                onChange={(e) => setSsoRedirectUri(e.target.value)}
+                placeholder="https://academy.gruppen.com.br/auth/callback"
                 className="input-field pr-10 font-mono text-sm"
               />
-              {samlMetadataUrl && (
-                <a
-                  href={samlMetadataUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-brand-600"
-                  title="Abrir URL"
+              {ssoRedirectUri && (
+                <button
+                  type="button"
+                  onClick={() => copyToClipboard(ssoRedirectUri)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                  title="Copiar"
                 >
-                  <ExternalLink className="w-4 h-4" />
-                </a>
+                  <Copy className="w-4 h-4" />
+                </button>
               )}
             </div>
-            <p className="text-xs text-gray-400 mt-1">URL do XML de metadados SAML do Enterprise Application</p>
+            <p className="text-xs text-gray-400 mt-1">URL para onde o Azure redireciona após o login. Deve ser a mesma configurada no App Registration.</p>
           </div>
         </div>
       </section>

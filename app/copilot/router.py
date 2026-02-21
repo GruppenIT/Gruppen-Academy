@@ -334,16 +334,22 @@ async def _generate_journey_impl(
             domain=data.domain,
             session_duration_minutes=data.session_duration_minutes,
             participant_level=data.participant_level,
+            mode=data.mode,
             product_ids=data.product_ids,
         ),
         current_user.id,
     )
+
+    # Compute fallback max_time_seconds if LLM didn't provide it
+    num_q = len(raw_questions) or 1
+    fallback_time = max(60, (data.session_duration_minutes * 60) // num_q)
 
     # Save generated questions to the journey
     saved_questions: list[GeneratedQuestion] = []
     for i, q in enumerate(raw_questions):
         q_type_str = q.get("type", "essay").lower()
         q_type = QUESTION_TYPE_MAP.get(q_type_str, QuestionType.ESSAY)
+        q_max_time = q.get("max_time_seconds") or fallback_time
 
         await add_question(
             db,
@@ -353,6 +359,7 @@ async def _generate_journey_impl(
                 type=q_type,
                 weight=q.get("weight", 1.0),
                 rubric=q.get("rubric"),
+                max_time_seconds=q_max_time,
                 expected_lines=q.get("expected_lines", 10),
                 order=i + 1,
             ),
@@ -363,6 +370,7 @@ async def _generate_journey_impl(
                 text=q.get("text", ""),
                 type=q_type_str,
                 weight=q.get("weight", 1.0),
+                max_time_seconds=q_max_time,
                 expected_lines=q.get("expected_lines", 10),
                 rubric=q.get("rubric"),
                 competency_tags=q.get("competency_tags", []),

@@ -82,6 +82,10 @@ ser incorporadas transversalmente nas perguntas (abordagem, tom, valores, polít
 - Orientações por produto devem ser usadas para perguntas específicas daquele produto.
 - Orientações com domínio especificado são relevantes apenas para aquele domínio.
 
+Distribua o tempo total da sessão entre as perguntas de forma proporcional ao peso e \
+complexidade de cada uma. Cada pergunta DEVE ter um campo max_time_seconds indicando \
+o tempo máximo que o profissional terá para respondê-la.
+
 Retorne um JSON com a lista de perguntas no formato:
 {
   "questions": [
@@ -90,6 +94,7 @@ Retorne um JSON com a lista de perguntas no formato:
       "type": "essay|case_study|roleplay|objective",
       "weight": <float>,
       "expected_lines": <int>,
+      "max_time_seconds": <int — tempo máximo em segundos para responder>,
       "rubric": {
         "criterios": [
           {"nome": "<nome>", "peso": <float>, "descricao": "<o que avaliar>"}

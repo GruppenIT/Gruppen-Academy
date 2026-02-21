@@ -61,6 +61,7 @@ class JourneyGenerateRequest(BaseModel):
     participant_level: str = "intermediario"
     product_ids: list[uuid.UUID]
     description: str | None = None
+    mode: str = "async"
 
 
 class GeneratedQuestion(BaseModel):
@@ -68,6 +69,7 @@ class GeneratedQuestion(BaseModel):
     type: str
     weight: float
     expected_lines: int
+    max_time_seconds: int | None = None
     rubric: dict | None = None
     competency_tags: list[str] = []
 

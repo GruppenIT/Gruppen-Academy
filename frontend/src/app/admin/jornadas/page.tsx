@@ -6,6 +6,7 @@ import type { Journey, Question, Product, Team, CopilotGeneratedQuestion } from 
 import {
   Plus, Search, Pencil, X, Loader2, Route, ChevronDown, ChevronUp,
   FileQuestion, Sparkles, Check, AlertCircle, Clock, UsersRound, Monitor, FileText,
+  Printer, Download,
 } from 'lucide-react'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Rascunho', published: 'Publicada', archived: 'Arquivada', DRAFT: 'Rascunho', PUBLISHED: 'Publicada', ARCHIVED: 'Arquivada' }
@@ -116,6 +117,16 @@ export default function AdminJornadasPage() {
   }
   const closeModal = () => { setModalMode(null); setError('') }
 
+  const [printingPdf, setPrintingPdf] = useState<string | null>(null)
+  const handlePrintPdf = async (journeyId: string) => {
+    setPrintingPdf(journeyId)
+    try {
+      await api.downloadJourneyPdf(journeyId)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Erro ao gerar PDF')
+    } finally { setPrintingPdf(null) }
+  }
+
   const handleSave = async () => {
     setError(''); setSaving(true)
     try {
@@ -160,11 +171,8 @@ export default function AdminJornadasPage() {
         participant_level: wLevel,
         product_ids: wProducts,
         description: wDesc || undefined,
+        mode: wMode,
       })
-      // Update the journey mode if sync
-      if (wMode === 'sync') {
-        await api.updateJourney(result.journey_id, { mode: 'sync' })
-      }
       setGeneratedJourneyId(result.journey_id)
       setGeneratedQuestions(result.questions)
       setWizardStep('review')
@@ -249,8 +257,18 @@ export default function AdminJornadasPage() {
                   <p className="text-xs text-gray-500">{j.domain} · {j.session_duration_minutes}min · {j.participant_level}</p>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
+                  {j.mode === 'sync' && (j.status === 'published' || j.status === 'PUBLISHED') && (
+                    <button
+                      onClick={() => handlePrintPdf(j.id)}
+                      disabled={printingPdf === j.id}
+                      className="p-2 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 disabled:opacity-50"
+                      title="Imprimir PDF"
+                    >
+                      {printingPdf === j.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
+                    </button>
+                  )}
                   <button onClick={() => openAssignTeams(j.id)} className="p-2 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50" title="Atribuir equipes"><UsersRound className="w-4 h-4" /></button>
-                  <button onClick={() => openEditJourney(j)} className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50"><Pencil className="w-4 h-4" /></button>
+                  <button onClick={() => openEditJourney(j)} className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50" title="Editar"><Pencil className="w-4 h-4" /></button>
                   <button onClick={() => toggleExpand(j.id)} className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50">
                     {expanded === j.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </button>
@@ -258,6 +276,29 @@ export default function AdminJornadasPage() {
               </div>
               {expanded === j.id && (
                 <div className="border-t border-gray-100 bg-gray-50/50 p-5">
+                  {/* Sync journey: PDF actions */}
+                  {j.mode === 'sync' && (j.status === 'published' || j.status === 'PUBLISHED') && (
+                    <div className="mb-4 p-4 rounded-xl bg-amber-50 border border-amber-100">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <Printer className="w-5 h-5 text-amber-600" />
+                          <div>
+                            <p className="text-sm font-semibold text-amber-900">Jornada Presencial Publicada</p>
+                            <p className="text-xs text-amber-700">Gere o PDF para impressao com formularios individuais por participante.</p>
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handlePrintPdf(j.id)}
+                          disabled={printingPdf === j.id}
+                          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+                        >
+                          {printingPdf === j.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                          Gerar PDF
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="flex items-center justify-between mb-3">
                     <h4 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
                       <FileQuestion className="w-4 h-4" /> Perguntas ({questions[j.id]?.length || 0})
@@ -583,6 +624,11 @@ export default function AdminJornadasPage() {
                                 </span>
                                 <span className="text-xs text-gray-400">Peso: {q.weight}</span>
                                 <span className="text-xs text-gray-400">{q.expected_lines} linhas</span>
+                                {q.max_time_seconds && (
+                                  <span className="text-xs text-orange-500 flex items-center gap-0.5">
+                                    <Clock className="w-3 h-3" /> {formatTime(q.max_time_seconds)}
+                                  </span>
+                                )}
                                 {q.competency_tags?.map((tag, ti) => (
                                   <span key={ti} className="badge-pill bg-violet-50 text-violet-600 text-xs">{tag}</span>
                                 ))}

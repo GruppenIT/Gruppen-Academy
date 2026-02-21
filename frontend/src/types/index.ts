@@ -220,6 +220,7 @@ export interface CopilotGeneratedQuestion {
   type: string
   weight: number
   expected_lines: number
+  max_time_seconds: number | null
   rubric: Record<string, unknown> | null
   competency_tags: string[]
 }

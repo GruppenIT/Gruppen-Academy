@@ -1,10 +1,14 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_role
 from app.database import get_db
+
+logger = logging.getLogger(__name__)
 from app.journeys.schemas import (
     AsyncAnswerSubmit,
     AsyncQuestionOut,
@@ -162,6 +166,33 @@ async def list_journey_teams(
     if not journey:
         raise HTTPException(status_code=404, detail="Jornada não encontrada")
     return [{"id": str(t.id), "name": t.name} for t in journey.teams]
+
+
+# --- PDF Generation (Sync Journeys) ---
+
+
+@router.get("/{journey_id}/print-pdf")
+async def print_journey_pdf(
+    journey_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Generate a printable PDF for a sync journey, with pages repeated per user."""
+    from app.journeys.pdf import generate_journey_pdf
+
+    try:
+        pdf_bytes = await generate_journey_pdf(db, journey_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Erro ao gerar PDF: %s", e)
+        raise HTTPException(status_code=500, detail=f"Erro ao gerar PDF: {e}")
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="jornada-{journey_id}.pdf"'},
+    )
 
 
 # --- Questions ---

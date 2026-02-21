@@ -193,6 +193,27 @@ class ApiClient {
     return this.request<string[]>(`/api/journeys/${journeyId}/teams`, { method: 'PUT', body: JSON.stringify(teamIds) })
   }
 
+  // PDF Generation (sync journeys)
+  async downloadJourneyPdf(journeyId: string) {
+    const token = this.getToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const res = await fetch(`${API_BASE}/api/journeys/${journeyId}/print-pdf`, { headers })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || `Erro ${res.status}`)
+    }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `jornada-${journeyId}.pdf`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
   // Async Journey Participation
   getMyAvailableJourneys() { return this.request<import('@/types').Journey[]>('/api/journeys/my/available') }
   startJourney(journeyId: string) {
@@ -264,7 +285,7 @@ class ApiClient {
   copilotCreateGuidelinesBulk(items: { product_id?: string | null; title: string; content: string; category: string; is_corporate?: boolean }[]) {
     return this.request<{ created: { id: string; title: string }[]; count: number }>('/api/copilot/create-guidelines-bulk', { method: 'POST', body: JSON.stringify({ items }) })
   }
-  copilotGenerateJourney(data: { title: string; domain: string; session_duration_minutes: number; participant_level: string; product_ids: string[]; description?: string }) {
+  copilotGenerateJourney(data: { title: string; domain: string; session_duration_minutes: number; participant_level: string; product_ids: string[]; description?: string; mode?: string }) {
     return this.request<import('@/types').CopilotJourneyGenerateResponse>('/api/copilot/generate-journey', { method: 'POST', body: JSON.stringify(data) }, 150000)
   }
 

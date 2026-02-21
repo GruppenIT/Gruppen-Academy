@@ -17,6 +17,7 @@ dependencies = [
     "python-multipart>=0.0.18",
     "openai>=1.60,<2",
     "httpx>=0.28,<1",
+    "fpdf2>=2.8,<3",
 ]
 
 [project.optional-dependencies]

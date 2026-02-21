@@ -42,11 +42,30 @@ export interface MasterGuideline {
   created_at: string
 }
 
+export interface Team {
+  id: string
+  name: string
+  description: string | null
+  created_at: string
+  members: TeamMember[]
+}
+
+export interface TeamMember {
+  id: string
+  email: string
+  full_name: string
+  role: string
+  department: string | null
+}
+
+export type JourneyMode = 'sync' | 'async'
+
 export interface Journey {
   id: string
   title: string
   description: string | null
   domain: string
+  mode: JourneyMode
   session_duration_minutes: number
   participant_level: string
   status: string
@@ -60,8 +79,33 @@ export interface Question {
   type: string
   weight: number
   rubric: Record<string, unknown> | null
+  max_time_seconds: number | null
   expected_lines: number
   order: number
+}
+
+export interface AsyncQuestion {
+  question_id: string
+  text: string
+  type: string
+  order: number
+  max_time_seconds: number | null
+  expected_lines: number
+  total_questions: number
+  current_number: number
+  already_answered: boolean
+}
+
+export interface ParticipationStatus {
+  participation_id: string
+  journey_id: string
+  journey_title: string
+  mode: string
+  total_questions: number
+  answered_questions: number
+  current_question_order: number
+  completed: boolean
+  started_at: string
 }
 
 export interface LearningPath {

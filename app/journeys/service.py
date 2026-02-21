@@ -24,6 +24,7 @@ async def create_journey(db: AsyncSession, data: JourneyCreate, created_by: uuid
         domain=data.domain,
         session_duration_minutes=data.session_duration_minutes,
         participant_level=data.participant_level,
+        mode=data.mode,
         created_by=created_by,
     )
     if data.product_ids:
@@ -73,6 +74,7 @@ async def add_question(db: AsyncSession, journey_id: uuid.UUID, data: QuestionCr
         type=data.type,
         weight=data.weight,
         rubric=data.rubric,
+        max_time_seconds=data.max_time_seconds,
         expected_lines=data.expected_lines,
         order=data.order,
     )

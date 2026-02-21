@@ -50,6 +50,11 @@ class JourneyStatus(str, enum.Enum):
     ARCHIVED = "archived"
 
 
+class JourneyMode(str, enum.Enum):
+    SYNC = "sync"       # Presencial — PDF impresso, OCR posterior
+    ASYNC = "async"     # Online — profissional responde no sistema
+
+
 class QuestionType(str, enum.Enum):
     ESSAY = "essay"
     CASE_STUDY = "case_study"
@@ -66,6 +71,9 @@ class Journey(Base):
     domain: Mapped[str] = mapped_column(String(100), nullable=False, default="vendas")
     session_duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=180)
     participant_level: Mapped[str] = mapped_column(String(50), nullable=False, default="intermediario")
+    mode: Mapped[JourneyMode] = mapped_column(
+        Enum(JourneyMode), nullable=False, default=JourneyMode.ASYNC
+    )
     status: Mapped[JourneyStatus] = mapped_column(
         Enum(JourneyStatus), nullable=False, default=JourneyStatus.DRAFT
     )
@@ -81,6 +89,7 @@ class Journey(Base):
     products = relationship("Product", secondary=journey_product)
     competencies = relationship("Competency", secondary=journey_competency)
     participations: Mapped[list["JourneyParticipation"]] = relationship(back_populates="journey")
+    teams = relationship("Team", secondary="journey_teams", back_populates="journeys")
 
 
 class Question(Base):
@@ -94,6 +103,7 @@ class Question(Base):
     type: Mapped[QuestionType] = mapped_column(Enum(QuestionType), nullable=False, default=QuestionType.ESSAY)
     weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     rubric: Mapped[dict | None] = mapped_column(JSONB)
+    max_time_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     expected_lines: Mapped[int] = mapped_column(Integer, default=10)
     order: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -115,6 +125,7 @@ class JourneyParticipation(Base):
     )
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    current_question_order: Mapped[int] = mapped_column(Integer, default=1)
 
     journey: Mapped["Journey"] = relationship(back_populates="participations")
     user: Mapped["User"] = relationship(back_populates="journey_participations")

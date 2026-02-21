@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, field_validator
 
-from app.journeys.models import JourneyStatus, QuestionType
+from app.journeys.models import JourneyMode, JourneyStatus, QuestionType
 
 
 # --- Journey ---
@@ -13,14 +13,23 @@ class JourneyCreate(BaseModel):
     domain: str = "vendas"
     session_duration_minutes: int = 180
     participant_level: str = "intermediario"
+    mode: JourneyMode = JourneyMode.ASYNC
     product_ids: list[uuid.UUID] = []
     competency_ids: list[uuid.UUID] = []
+
+    @field_validator("mode", mode="before")
+    @classmethod
+    def normalize_mode(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return v.lower()
+        return v
 
 
 class JourneyUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     domain: str | None = None
+    mode: JourneyMode | None = None
     status: JourneyStatus | None = None
     session_duration_minutes: int | None = None
     participant_level: str | None = None
@@ -32,12 +41,20 @@ class JourneyUpdate(BaseModel):
             return v.lower()
         return v
 
+    @field_validator("mode", mode="before")
+    @classmethod
+    def normalize_mode(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
 
 class JourneyOut(BaseModel):
     id: uuid.UUID
     title: str
     description: str | None
     domain: str
+    mode: JourneyMode
     session_duration_minutes: int
     participant_level: str
     status: JourneyStatus
@@ -53,6 +70,7 @@ class QuestionCreate(BaseModel):
     type: QuestionType = QuestionType.ESSAY
     weight: float = 1.0
     rubric: dict | None = None
+    max_time_seconds: int | None = None
     expected_lines: int = 10
     order: int = 0
     competency_ids: list[uuid.UUID] = []
@@ -72,6 +90,7 @@ class QuestionOut(BaseModel):
     type: QuestionType
     weight: float
     rubric: dict | None
+    max_time_seconds: int | None
     expected_lines: int
     order: int
     created_at: datetime
@@ -111,6 +130,36 @@ class ResponseOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# --- Async Participation Flow ---
+class AsyncQuestionOut(BaseModel):
+    """Single question shown to the professional during async participation."""
+    question_id: uuid.UUID
+    text: str
+    type: QuestionType
+    order: int
+    max_time_seconds: int | None
+    expected_lines: int
+    total_questions: int
+    current_number: int
+    already_answered: bool = False
+
+
+class AsyncAnswerSubmit(BaseModel):
+    answer_text: str
+
+
+class ParticipationStatusOut(BaseModel):
+    participation_id: uuid.UUID
+    journey_id: uuid.UUID
+    journey_title: str
+    mode: str
+    total_questions: int
+    answered_questions: int
+    current_question_order: int
+    completed: bool
+    started_at: datetime
 
 
 # --- AI Generation Request ---

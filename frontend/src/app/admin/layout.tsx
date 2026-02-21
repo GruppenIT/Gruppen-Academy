@@ -7,11 +7,12 @@ import { useEffect } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { clsx } from 'clsx'
 import {
-  Users, Package, Brain, Route, BookOpen, Award, BarChart3, Settings, Cog,
+  Users, UsersRound, Package, Brain, Route, BookOpen, Award, BarChart3, Settings, Cog,
 } from 'lucide-react'
 
 const adminTabs = [
   { href: '/admin', label: 'Usuarios', icon: Users },
+  { href: '/admin/equipes', label: 'Equipes', icon: UsersRound },
   { href: '/admin/produtos', label: 'Produtos', icon: Package },
   { href: '/admin/competencias', label: 'Competencias', icon: Brain },
   { href: '/admin/jornadas', label: 'Jornadas', icon: Route },

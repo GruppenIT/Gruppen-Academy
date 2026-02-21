@@ -140,6 +140,22 @@ class ApiClient {
     return this.request<import('@/types').MasterGuideline>(`/api/catalog/guidelines/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
   }
 
+  // Teams
+  getTeams() { return this.request<import('@/types').Team[]>('/api/teams') }
+  getTeam(id: string) { return this.request<import('@/types').Team>(`/api/teams/${id}`) }
+  createTeam(data: { name: string; description?: string; member_ids?: string[] }) {
+    return this.request<import('@/types').Team>('/api/teams', { method: 'POST', body: JSON.stringify(data) })
+  }
+  updateTeam(id: string, data: { name?: string; description?: string }) {
+    return this.request<import('@/types').Team>(`/api/teams/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+  setTeamMembers(teamId: string, memberIds: string[]) {
+    return this.request<import('@/types').Team>(`/api/teams/${teamId}/members`, { method: 'PUT', body: JSON.stringify(memberIds) })
+  }
+  deleteTeam(id: string) {
+    return this.request<void>(`/api/teams/${id}`, { method: 'DELETE' })
+  }
+
   // Journeys
   getJourneys(skip = 0, limit = 50, domain?: string) {
     const q = domain ? `&domain=${domain}` : ''
@@ -147,14 +163,32 @@ class ApiClient {
   }
   getJourney(id: string) { return this.request<import('@/types').Journey>(`/api/journeys/${id}`) }
   getJourneyQuestions(id: string) { return this.request<import('@/types').Question[]>(`/api/journeys/${id}/questions`) }
-  createJourney(data: { title: string; description?: string; domain?: string; session_duration_minutes?: number; participant_level?: string; product_ids?: string[]; competency_ids?: string[] }) {
+  createJourney(data: { title: string; description?: string; domain?: string; session_duration_minutes?: number; participant_level?: string; mode?: string; product_ids?: string[]; competency_ids?: string[] }) {
     return this.request<import('@/types').Journey>('/api/journeys', { method: 'POST', body: JSON.stringify(data) })
   }
   updateJourney(id: string, data: Record<string, unknown>) {
     return this.request<import('@/types').Journey>(`/api/journeys/${id}`, { method: 'PATCH', body: JSON.stringify(data) })
   }
-  createQuestion(journeyId: string, data: { text: string; type?: string; weight?: number; rubric?: Record<string, unknown>; expected_lines?: number; order?: number; competency_ids?: string[] }) {
+  createQuestion(journeyId: string, data: { text: string; type?: string; weight?: number; rubric?: Record<string, unknown>; max_time_seconds?: number | null; expected_lines?: number; order?: number; competency_ids?: string[] }) {
     return this.request<import('@/types').Question>(`/api/journeys/${journeyId}/questions`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  getJourneyTeams(journeyId: string) {
+    return this.request<{ id: string; name: string }[]>(`/api/journeys/${journeyId}/teams`)
+  }
+  assignJourneyTeams(journeyId: string, teamIds: string[]) {
+    return this.request<string[]>(`/api/journeys/${journeyId}/teams`, { method: 'PUT', body: JSON.stringify(teamIds) })
+  }
+
+  // Async Journey Participation
+  getMyAvailableJourneys() { return this.request<import('@/types').Journey[]>('/api/journeys/my/available') }
+  startJourney(journeyId: string) {
+    return this.request<import('@/types').ParticipationStatus>(`/api/journeys/${journeyId}/start`, { method: 'POST' })
+  }
+  getCurrentQuestion(journeyId: string) {
+    return this.request<import('@/types').AsyncQuestion>(`/api/journeys/${journeyId}/current-question`)
+  }
+  submitAnswer(journeyId: string, answerText: string) {
+    return this.request<import('@/types').ParticipationStatus>(`/api/journeys/${journeyId}/answer`, { method: 'POST', body: JSON.stringify({ answer_text: answerText }) })
   }
 
   // Learning

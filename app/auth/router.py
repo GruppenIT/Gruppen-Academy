@@ -40,6 +40,18 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
     return TokenResponse(access_token=token)
 
 
+@router.get("/sso/check")
+async def sso_check(db: AsyncSession = Depends(get_db)):
+    """Public endpoint: check if SSO is enabled (used by login page)."""
+    sso_cfg = await get_sso_config(db)
+    enabled = (
+        sso_cfg.get("sso_enabled") == "true"
+        and bool(sso_cfg.get("sso_client_id"))
+        and bool(sso_cfg.get("sso_tenant_id"))
+    )
+    return {"enabled": enabled}
+
+
 @router.get("/sso/authorize", response_model=SSOAuthorizeResponse)
 async def sso_authorize(db: AsyncSession = Depends(get_db)):
     """Return the Azure AD authorization URL for OIDC login.

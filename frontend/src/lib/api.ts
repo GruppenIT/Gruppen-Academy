@@ -67,6 +67,30 @@ class ApiClient {
     this.setToken(null)
   }
 
+  // SSO
+  ssoAuthorize() {
+    return this.request<{ authorize_url: string; state: string }>('/api/auth/sso/authorize')
+  }
+
+  async ssoCallback(code: string, state: string) {
+    const res = await fetch(`${API_BASE}/api/auth/sso/callback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, state }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || 'Falha na autenticação SSO')
+    }
+    const json = await res.json()
+    this.setToken(json.access_token)
+    return json
+  }
+
+  ssoCheck() {
+    return this.request<{ enabled: boolean }>('/api/auth/sso/check')
+  }
+
   // Users
   getMe() { return this.request<import('@/types').User>('/api/users/me') }
   getUsers(skip = 0, limit = 50) { return this.request<import('@/types').User[]>(`/api/users?skip=${skip}&limit=${limit}`) }

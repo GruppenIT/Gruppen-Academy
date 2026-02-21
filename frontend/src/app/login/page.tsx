@@ -1,9 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
-import { GraduationCap, LogIn, Eye, EyeOff, AlertCircle } from 'lucide-react'
+import { api } from '@/lib/api'
+import { GraduationCap, LogIn, Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react'
+
+function MicrosoftIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="1" y="1" width="9" height="9" fill="#F25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7FBA00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00A4EF" />
+      <rect x="11" y="11" width="9" height="9" fill="#FFB900" />
+    </svg>
+  )
+}
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -11,8 +23,16 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [ssoEnabled, setSsoEnabled] = useState(false)
+  const [ssoLoading, setSsoLoading] = useState(false)
   const { login } = useAuth()
   const router = useRouter()
+
+  useEffect(() => {
+    api.ssoCheck()
+      .then((res) => setSsoEnabled(res.enabled))
+      .catch(() => {})
+  }, [])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -25,6 +45,21 @@ export default function LoginPage() {
       setError('Email ou senha incorretos. Verifique suas credenciais.')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleSsoLogin = async () => {
+    setSsoLoading(true)
+    setError('')
+    try {
+      const { authorize_url, state } = await api.ssoAuthorize()
+      if (typeof window !== 'undefined') {
+        sessionStorage.setItem('sso_state', state)
+      }
+      window.location.href = authorize_url
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao iniciar login SSO.')
+      setSsoLoading(false)
     }
   }
 
@@ -98,6 +133,36 @@ export default function LoginPage() {
             </div>
           )}
 
+          {/* SSO Button */}
+          {ssoEnabled && (
+            <>
+              <button
+                type="button"
+                onClick={handleSsoLogin}
+                disabled={ssoLoading}
+                className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 rounded-xl text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors disabled:opacity-60"
+              >
+                {ssoLoading ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+                ) : (
+                  <>
+                    <MicrosoftIcon className="w-5 h-5" />
+                    Entrar com Microsoft 365
+                  </>
+                )}
+              </button>
+
+              <div className="relative my-6">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-200" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-3 bg-white text-gray-400">ou</span>
+                </div>
+              </div>
+            </>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1.5">Email</label>
@@ -108,7 +173,7 @@ export default function LoginPage() {
                 placeholder="seu.email@gruppen.com.br"
                 className="input-field"
                 required
-                autoFocus
+                autoFocus={!ssoEnabled}
               />
             </div>
 

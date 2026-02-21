@@ -185,7 +185,7 @@ export default function AdminCompetenciasPage() {
   const totalSuggestions = tab === 'competencies' ? compSuggestions.length : guideSuggestions.length
 
   // Derive available domains from data
-  const compDomains = [...new Set(competencies.map(c => c.domain))].sort()
+  const compDomains = Array.from(new Set(competencies.map(c => c.domain))).sort()
 
   const filteredComps = competencies.filter((c) => {
     const q = search.toLowerCase()

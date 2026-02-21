@@ -141,7 +141,7 @@ export default function AdminJornadasPage() {
     closeWizard(); load()
   }
 
-  const journeyDomains = [...new Set(journeys.map(j => j.domain))].sort()
+  const journeyDomains = Array.from(new Set(journeys.map(j => j.domain))).sort()
 
   const filtered = journeys.filter((j) => {
     const q = search.toLowerCase()

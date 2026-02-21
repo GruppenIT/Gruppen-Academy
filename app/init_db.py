@@ -31,6 +31,15 @@ async def init_db():
         await conn.execute(text(
             "ALTER TABLE products ADD COLUMN IF NOT EXISTS technology TEXT"
         ))
+        await conn.execute(text(
+            "ALTER TABLE users ALTER COLUMN hashed_password DROP NOT NULL"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_provider VARCHAR(50)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS sso_sub VARCHAR(255)"
+        ))
 
     logger.info("Database tables created/verified.")
 

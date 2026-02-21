@@ -19,7 +19,7 @@ class ApiClient {
     return this.token
   }
 
-  private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  private async request<T>(path: string, options: RequestInit = {}, timeoutMs?: number): Promise<T> {
     const token = this.getToken()
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -27,7 +27,21 @@ class ApiClient {
     }
     if (token) headers['Authorization'] = `Bearer ${token}`
 
-    const res = await fetch(`${API_BASE}${path}`, { ...options, headers })
+    const controller = new AbortController()
+    const timeout = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : undefined
+    const fetchOptions = { ...options, headers, signal: controller.signal }
+
+    let res: Response
+    try {
+      res = await fetch(`${API_BASE}${path}`, fetchOptions)
+    } catch (err) {
+      if (controller.signal.aborted) {
+        throw new Error('Tempo limite excedido. A requisição demorou demais.')
+      }
+      throw new Error(`Erro de conexão com o servidor. Verifique se a API está rodando. (${err instanceof Error ? err.message : err})`)
+    } finally {
+      if (timeout) clearTimeout(timeout)
+    }
 
     if (res.status === 401) {
       this.setToken(null)
@@ -239,19 +253,19 @@ class ApiClient {
 
   // Copilot
   copilotSuggestCompetencies() {
-    return this.request<import('@/types').CopilotCompetencySuggestResponse>('/api/copilot/suggest-competencies', { method: 'POST' })
+    return this.request<import('@/types').CopilotCompetencySuggestResponse>('/api/copilot/suggest-competencies', { method: 'POST' }, 150000)
   }
   copilotCreateCompetenciesBulk(items: { name: string; description: string; type: string; domain: string }[]) {
     return this.request<{ created: { id: string; name: string }[]; count: number }>('/api/copilot/create-competencies-bulk', { method: 'POST', body: JSON.stringify({ items }) })
   }
   copilotSuggestGuidelines() {
-    return this.request<import('@/types').CopilotGuidelineSuggestResponse>('/api/copilot/suggest-guidelines', { method: 'POST' })
+    return this.request<import('@/types').CopilotGuidelineSuggestResponse>('/api/copilot/suggest-guidelines', { method: 'POST' }, 150000)
   }
   copilotCreateGuidelinesBulk(items: { product_id?: string | null; title: string; content: string; category: string; is_corporate?: boolean }[]) {
     return this.request<{ created: { id: string; title: string }[]; count: number }>('/api/copilot/create-guidelines-bulk', { method: 'POST', body: JSON.stringify({ items }) })
   }
   copilotGenerateJourney(data: { title: string; domain: string; session_duration_minutes: number; participant_level: string; product_ids: string[]; description?: string }) {
-    return this.request<import('@/types').CopilotJourneyGenerateResponse>('/api/copilot/generate-journey', { method: 'POST', body: JSON.stringify(data) })
+    return this.request<import('@/types').CopilotJourneyGenerateResponse>('/api/copilot/generate-journey', { method: 'POST', body: JSON.stringify(data) }, 150000)
   }
 
   // Settings

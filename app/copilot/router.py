@@ -29,6 +29,35 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+# --- Health / Diagnostics ---
+
+
+@router.get("/health")
+async def copilot_health(
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Test if LLM service is configured and reachable."""
+    from app.config import settings
+
+    if not settings.openai_api_key:
+        return {"status": "error", "detail": "OPENAI_API_KEY não configurada"}
+
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=15.0)
+        response = await client.chat.completions.create(
+            model=settings.openai_model,
+            max_tokens=10,
+            messages=[{"role": "user", "content": "Responda apenas: ok"}],
+        )
+        content = response.choices[0].message.content
+        return {"status": "ok", "model": settings.openai_model, "test_response": content}
+    except Exception as e:
+        logger.error("Copilot health check failed: %s", e)
+        return {"status": "error", "detail": str(e)}
+
+
 # --- Competency Copilot ---
 
 

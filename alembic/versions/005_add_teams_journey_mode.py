@@ -1,7 +1,7 @@
 """Add teams, journey mode, question max_time_seconds
 
 Revision ID: 005_teams_mode
-Revises: 004_add_sso_fields_to_users
+Revises: 004_sso_fields
 Create Date: 2026-02-21
 """
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects.postgresql import UUID
 
 revision = "005_teams_mode"
-down_revision = "004_add_sso_fields_to_users"
+down_revision = "004_sso_fields"
 branch_labels = None
 depends_on = None
 

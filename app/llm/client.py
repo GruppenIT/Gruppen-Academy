@@ -209,6 +209,39 @@ Orientações já existentes:
     return result.get("suggestions", [])
 
 
+async def generate_tutor_summary(
+    messages: list[dict],
+    topic: str,
+) -> dict:
+    """Generate a structured summary for a tutor session."""
+    from app.llm.prompts import TUTOR_SUMMARY_SYSTEM_PROMPT
+
+    client = _get_client()
+
+    conversation_text = "\n".join(
+        f"{'Profissional' if m['role'] == 'user' else 'Tutor'}: {m['content']}"
+        for m in messages
+        if m["role"] in ("user", "assistant")
+    )
+
+    user_content = f"""Sessão de prática sobre: {topic}
+
+Conversa:
+{conversation_text}"""
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=2048,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": TUTOR_SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    return json.loads(response.choices[0].message.content)
+
+
 async def tutor_chat(
     messages: list[dict],
     system_context: str,

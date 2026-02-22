@@ -323,6 +323,30 @@ export interface CopilotJourneyGenerateResponse {
   questions: CopilotGeneratedQuestion[]
 }
 
+// Streak
+export interface UserStreak {
+  current_streak: number
+  longest_streak: number
+  total_active_days: number
+}
+
+// Tutor Summary
+export interface TutorSummary {
+  desempenho: string
+  competencias_treinadas: string[]
+  pontos_fortes: string[]
+  areas_melhoria: string[]
+  proximos_passos: string[]
+  nota_sessao: number
+}
+
+// Suggested Topic
+export interface SuggestedTopic {
+  label: string
+  topic: string
+  source: 'product' | 'gap' | 'default'
+}
+
 // Gamification levels
 export const LEVELS = [
   { name: 'Iniciante', minPoints: 0, icon: '🌱' },

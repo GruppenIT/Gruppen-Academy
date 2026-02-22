@@ -16,11 +16,13 @@ from app.gamification.schemas import (
 from app.gamification.service import (
     add_score,
     award_badge,
+    check_and_award_badges,
     create_badge,
     get_leaderboard,
     get_user_badges,
     get_user_points,
     get_user_scores,
+    get_user_streak,
     list_badges,
 )
 from app.users.models import User, UserRole
@@ -115,3 +117,27 @@ async def get_my_badges(
     current_user: User = Depends(get_current_user),
 ):
     return await get_user_badges(db, current_user.id)
+
+
+# --- Streak ---
+
+
+@router.get("/streak/me")
+async def get_my_streak(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    return await get_user_streak(db, current_user.id)
+
+
+# --- Auto-badge check ---
+
+
+@router.post("/badges/check")
+async def trigger_badge_check(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Manually trigger badge check for the current user."""
+    awarded = await check_and_award_badges(db, current_user.id)
+    return {"newly_awarded": len(awarded)}

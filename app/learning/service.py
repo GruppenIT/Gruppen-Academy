@@ -196,13 +196,123 @@ async def send_tutor_message(
     messages = list(session.messages)
     messages.append({"role": "user", "content": user_message})
 
-    system_context = f"{TUTOR_SYSTEM_PROMPT}\n\nTópico da sessão: {session.topic}"
+    # Build rich context for the tutor
+    system_context = await _build_tutor_context(db, session)
 
     api_messages = [{"role": m["role"], "content": m["content"]} for m in messages]
     assistant_reply = await tutor_chat(messages=api_messages, system_context=system_context)
 
     messages.append({"role": "assistant", "content": assistant_reply})
     session.messages = messages
+
+    # Award points for tutor usage (every 5 user messages = 5 pts)
+    user_msg_count = sum(1 for m in messages if m["role"] == "user")
+    if user_msg_count > 0 and user_msg_count % 5 == 0:
+        from app.gamification.models import Score
+        score = Score(
+            user_id=session.user_id,
+            points=5,
+            source="tutor_usage",
+            source_id=session.id,
+            description=f"Prática no tutor IA: {session.topic}",
+        )
+        db.add(score)
+
     await db.commit()
     await db.refresh(session)
     return session
+
+
+async def generate_session_summary(
+    db: AsyncSession, session: TutorSession
+) -> TutorSession:
+    """Generate a post-session summary for a tutor session."""
+    if not session.messages:
+        return session
+
+    from app.llm.client import generate_tutor_summary
+
+    user_messages = [m for m in session.messages if m["role"] == "user"]
+    if len(user_messages) < 2:
+        return session
+
+    summary = await generate_tutor_summary(session.messages, session.topic)
+    session.summary = summary
+
+    # Award completion points for substantial sessions (5+ user messages)
+    if len(user_messages) >= 5:
+        from app.gamification.models import Score
+        existing = await db.execute(
+            select(Score).where(
+                Score.user_id == session.user_id,
+                Score.source == "tutor_session_complete",
+                Score.source_id == session.id,
+            )
+        )
+        if not existing.scalar_one_or_none():
+            score = Score(
+                user_id=session.user_id,
+                points=15,
+                source="tutor_session_complete",
+                source_id=session.id,
+                description=f"Sessão de tutor concluída: {session.topic}",
+            )
+            db.add(score)
+
+    await db.commit()
+    await db.refresh(session)
+    return session
+
+
+async def _build_tutor_context(db: AsyncSession, session: TutorSession) -> str:
+    """Build rich context for the tutor including user profile, gaps, and guidelines."""
+    context_parts = [TUTOR_SYSTEM_PROMPT]
+    context_parts.append(f"\nTópico da sessão: {session.topic}")
+
+    # Fetch user profile
+    from app.users.models import User
+    user_result = await db.execute(select(User).where(User.id == session.user_id))
+    user = user_result.scalar_one_or_none()
+    if user:
+        context_parts.append(f"\nPerfil do profissional: {user.full_name}, departamento: {user.department or 'não informado'}")
+
+    # Fetch recent evaluation gaps if available
+    try:
+        from app.evaluations.models import ResponseEvaluation
+        from app.journeys.models import JourneyParticipation, QuestionResponse
+        evals_result = await db.execute(
+            select(ResponseEvaluation)
+            .join(QuestionResponse, ResponseEvaluation.response_id == QuestionResponse.id)
+            .join(JourneyParticipation, QuestionResponse.participation_id == JourneyParticipation.id)
+            .where(JourneyParticipation.user_id == session.user_id)
+            .order_by(ResponseEvaluation.created_at.desc())
+            .limit(5)
+        )
+        recent_evals = list(evals_result.scalars().all())
+        if recent_evals:
+            recommendations = []
+            for ev in recent_evals:
+                if ev.recommendations:
+                    recommendations.extend(ev.recommendations[:2])
+            if recommendations:
+                context_parts.append(
+                    f"\nÁreas de melhoria identificadas em avaliações recentes:\n- "
+                    + "\n- ".join(recommendations[:6])
+                )
+    except Exception:
+        pass  # Graceful fallback if evaluation tables not accessible
+
+    # Fetch relevant guidelines
+    try:
+        from app.catalog.models import MasterGuideline
+        guidelines_result = await db.execute(
+            select(MasterGuideline).where(MasterGuideline.is_corporate == True).limit(3)
+        )
+        guidelines = list(guidelines_result.scalars().all())
+        if guidelines:
+            guidelines_text = "; ".join(f"{g.title}: {g.content[:200]}" for g in guidelines)
+            context_parts.append(f"\nOrientações corporativas relevantes: {guidelines_text}")
+    except Exception:
+        pass
+
+    return "\n".join(context_parts)

@@ -21,37 +21,37 @@ Atualizar este arquivo conforme os itens forem concluídos.
 
 ## LOTE 2 — DASHBOARD DO GESTOR
 
-- [ ] **2.1** Dashboard do gestor com visão de evolução dos times
-- [ ] **2.2** Histórico de jornadas do time com notas por membro
-- [ ] **2.3** Gestor disparar jornada para time (hoje só admin)
+- [x] **2.1** Dashboard do gestor com visão de evolução dos times
+- [x] **2.2** Histórico de jornadas do time com notas por membro
+- [x] **2.3** Gestor disparar jornada para time (hoje só admin)
 
 ---
 
 ## LOTE 3 — TRILHAS DE APRENDIZAGEM
 
-- [ ] **3.1** Modelo ActivityCompletion + endpoint para marcar atividade concluída + pontos automáticos
-- [ ] **3.2** Cálculo de progresso na trilha (% de atividades concluídas)
-- [ ] **3.3** Atividades interativas: quiz, simulação, estudo de caso (não só título/descrição)
+- [x] **3.1** Modelo ActivityCompletion + endpoint para marcar atividade concluída + pontos automáticos
+- [x] **3.2** Cálculo de progresso na trilha (% de atividades concluídas)
+- [x] **3.3** Frontend de trilhas com progresso real e botão "Concluir"
 - [ ] **3.4** Sugestão de trilha por gap de competência (baseado em avaliações)
 
 ---
 
 ## LOTE 4 — GAMIFICAÇÃO AUTOMÁTICA
 
-- [ ] **5.1** Pontos automáticos por conclusão de jornada (proporcional ao desempenho)
-- [ ] **5.2** Pontos automáticos por conclusão de atividade de trilha
-- [ ] **5.3** Pontos por uso do tutor IA
-- [ ] **5.4** Badges automáticos (verificar critérios e conceder)
-- [ ] **5.5** Cálculo de streak real (dias consecutivos de atividade)
+- [x] **5.1** Pontos automáticos por conclusão de jornada (50pts ao completar)
+- [x] **5.2** Pontos automáticos por conclusão de atividade de trilha
+- [x] **5.3** Pontos por uso do tutor IA (5pts a cada 5 msgs + 15pts ao gerar resumo)
+- [x] **5.4** Badges automáticos (check_and_award_badges com critérios: points, journeys, activities, streak, tutor_sessions)
+- [x] **5.5** Cálculo de streak real (dias consecutivos de atividade) + endpoint GET /streak/me
 
 ---
 
 ## LOTE 5 — TUTOR IA (Melhorias)
 
-- [ ] **4.1** Contexto rico no tutor: perfil, histórico, gaps, orientações master
-- [ ] **4.2** Resumo pós-sessão automático (desempenho, competências, sugestões)
-- [ ] **4.3** Histórico de sessões (frontend — listar sessões passadas)
-- [ ] **4.4** Tópicos dinâmicos baseados nos produtos/gaps do usuário
+- [x] **4.1** Contexto rico no tutor: perfil, histórico, gaps, orientações master
+- [x] **4.2** Resumo pós-sessão automático (desempenho, competências, sugestões)
+- [x] **4.3** Histórico de sessões (frontend — listar, retomar, ver resumo)
+- [x] **4.4** Tópicos dinâmicos baseados nos produtos/gaps do usuário
 
 ---
 
@@ -72,4 +72,4 @@ Atualizar este arquivo conforme os itens forem concluídos.
 
 ---
 
-_Última atualização: 2026-02-21_
+_Última atualização: 2026-02-22_

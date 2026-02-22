@@ -21,6 +21,7 @@ from app.learning.service import (
     complete_activity,
     create_learning_path,
     create_tutor_session,
+    generate_session_summary,
     get_learning_path,
     get_path_progress,
     get_tutor_session,
@@ -171,3 +172,84 @@ async def send_message_to_tutor(
     if not session:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
     return await send_tutor_message(db, session, data.message)
+
+
+@router.post("/tutor/sessions/{session_id}/summary", response_model=TutorSessionOut)
+async def generate_tutor_summary(
+    session_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """Generate a post-session summary for a tutor session."""
+    session = await get_tutor_session(db, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    return await generate_session_summary(db, session)
+
+
+@router.get("/tutor/suggested-topics")
+async def get_suggested_topics(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get dynamic topic suggestions based on user's context."""
+    from sqlalchemy import select
+
+    topics = []
+
+    # Suggest topics from products
+    try:
+        from app.catalog.models import Product
+        products_result = await db.execute(
+            select(Product).where(Product.is_active == True).limit(4)
+        )
+        products = list(products_result.scalars().all())
+        for p in products:
+            topics.append({
+                "label": f"Pitch de {p.name}",
+                "topic": f"Simulação de pitch de {p.name} ({p.description[:80] if p.description else ''}) para um potencial cliente",
+                "source": "product",
+            })
+    except Exception:
+        pass
+
+    # Suggest topics from recent evaluation gaps
+    try:
+        from app.evaluations.models import ResponseEvaluation
+        from app.journeys.models import JourneyParticipation, QuestionResponse
+        evals_result = await db.execute(
+            select(ResponseEvaluation)
+            .join(QuestionResponse, ResponseEvaluation.response_id == QuestionResponse.id)
+            .join(JourneyParticipation, QuestionResponse.participation_id == JourneyParticipation.id)
+            .where(JourneyParticipation.user_id == current_user.id)
+            .order_by(ResponseEvaluation.created_at.desc())
+            .limit(3)
+        )
+        evals = list(evals_result.scalars().all())
+        for ev in evals:
+            if ev.recommendations:
+                rec = ev.recommendations[0] if ev.recommendations else None
+                if rec:
+                    topics.append({
+                        "label": "Melhorar: " + rec[:30],
+                        "topic": f"Praticar melhoria em: {rec}",
+                        "source": "gap",
+                    })
+    except Exception:
+        pass
+
+    # Fallback default topics
+    if len(topics) < 4:
+        defaults = [
+            {"label": "Objeções de preço", "topic": "Praticar respostas a objeções de preço em vendas de segurança", "source": "default"},
+            {"label": "Discovery call", "topic": "Simular uma discovery call para identificar dores de segurança do cliente", "source": "default"},
+            {"label": "Valor do SIEM", "topic": "Como explicar o valor de negócio do SIEM as a Service para um CFO", "source": "default"},
+            {"label": "Pitch de BaaS", "topic": "Simulação de pitch do BaaS (Backup como Serviço) para um CTO", "source": "default"},
+        ]
+        for d in defaults:
+            if len(topics) >= 6:
+                break
+            if not any(t["label"] == d["label"] for t in topics):
+                topics.append(d)
+
+    return topics[:8]

@@ -263,11 +263,21 @@ class ApiClient {
       body: JSON.stringify({ message }),
     })
   }
+  generateSessionSummary(sessionId: string) {
+    return this.request<import('@/types').TutorSession>(`/api/learning/tutor/sessions/${sessionId}/summary`, {
+      method: 'POST',
+    }, 120000)
+  }
+  getSuggestedTopics() {
+    return this.request<import('@/types').SuggestedTopic[]>('/api/learning/tutor/suggested-topics')
+  }
 
   // Gamification
   getMyPoints() { return this.request<import('@/types').UserPointsSummary>('/api/gamification/scores/me') }
   getMyHistory(skip = 0, limit = 20) { return this.request<import('@/types').Score[]>(`/api/gamification/scores/me/history?skip=${skip}&limit=${limit}`) }
   getLeaderboard(limit = 10) { return this.request<import('@/types').UserPointsSummary[]>(`/api/gamification/leaderboard?limit=${limit}`) }
+  getMyStreak() { return this.request<import('@/types').UserStreak>('/api/gamification/streak/me') }
+  checkBadges() { return this.request<{ newly_awarded: number }>('/api/gamification/badges/check', { method: 'POST' }) }
   getBadges() { return this.request<import('@/types').Badge[]>('/api/gamification/badges') }
   getMyBadges() { return this.request<import('@/types').UserBadge[]>('/api/gamification/badges/me') }
   createBadge(data: { name: string; description: string; icon?: string; criteria: string; points_threshold?: number }) {

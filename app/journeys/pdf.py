@@ -20,6 +20,8 @@ Q_TYPE_LABELS = {
     "OBJECTIVE": "Objetiva",
 }
 
+DEJAVU_DIR = "/usr/share/fonts/truetype/dejavu"
+
 
 class JourneyPDF(FPDF):
     """Custom PDF for journey printing."""
@@ -27,16 +29,19 @@ class JourneyPDF(FPDF):
     def __init__(self, journey_title: str):
         super().__init__()
         self.journey_title = journey_title
+        self.add_font("DejaVu", "", f"{DEJAVU_DIR}/DejaVuSans.ttf", uni=True)
+        self.add_font("DejaVu", "B", f"{DEJAVU_DIR}/DejaVuSans-Bold.ttf", uni=True)
+        self.add_font("DejaVu", "I", f"{DEJAVU_DIR}/DejaVuSans-Oblique.ttf", uni=True)
 
     def header(self):
-        self.set_font("Helvetica", "B", 10)
+        self.set_font("DejaVu", "B", 10)
         self.set_text_color(100, 100, 100)
         self.cell(0, 6, "Gruppen Academy", align="L")
         self.ln(8)
 
     def footer(self):
         self.set_y(-15)
-        self.set_font("Helvetica", "", 8)
+        self.set_font("DejaVu", "", 8)
         self.set_text_color(150, 150, 150)
         self.cell(0, 10, f"Pagina {self.page_no()}/{{nb}}", align="C")
 
@@ -103,13 +108,13 @@ def _render_user_pages(
     pdf.add_page()
 
     # --- Cover / Header ---
-    pdf.set_font("Helvetica", "B", 18)
+    pdf.set_font("DejaVu", "B", 18)
     pdf.set_text_color(30, 30, 30)
     pdf.cell(0, 12, journey.title, align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(2)
 
     if journey.description:
-        pdf.set_font("Helvetica", "", 10)
+        pdf.set_font("DejaVu", "", 10)
         pdf.set_text_color(80, 80, 80)
         pdf.multi_cell(0, 5, journey.description, align="C")
         pdf.ln(4)
@@ -126,33 +131,33 @@ def _render_user_pages(
     pdf.rect(pdf.l_margin, box_y, pdf.w - pdf.l_margin - pdf.r_margin, 22, style="DF")
 
     pdf.set_xy(pdf.l_margin + 4, box_y + 3)
-    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_font("DejaVu", "B", 10)
     pdf.set_text_color(50, 50, 50)
     pdf.cell(30, 6, "Nome:")
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "", 10)
     pdf.cell(80, 6, user.full_name or "")
-    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_font("DejaVu", "B", 10)
     pdf.cell(15, 6, "Data:")
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "", 10)
     pdf.cell(0, 6, date_str)
     pdf.ln(8)
 
     pdf.set_x(pdf.l_margin + 4)
-    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_font("DejaVu", "B", 10)
     pdf.cell(30, 6, "E-mail:")
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "", 10)
     pdf.cell(80, 6, user.email or "")
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(22, 6, "Dominio:")
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "B", 10)
+    pdf.cell(22, 6, u"Dom\u00ednio:")
+    pdf.set_font("DejaVu", "", 10)
     pdf.cell(0, 6, (journey.domain or "").capitalize())
 
     pdf.set_y(box_y + 26)
 
     # Journey metadata
-    pdf.set_font("Helvetica", "", 9)
+    pdf.set_font("DejaVu", "", 9)
     pdf.set_text_color(100, 100, 100)
-    meta = f"Duracao: {journey.session_duration_minutes}min  |  Nivel: {journey.participant_level}  |  {len(questions)} perguntas"
+    meta = f"Dura\u00e7\u00e3o: {journey.session_duration_minutes}min  |  N\u00edvel: {journey.participant_level}  |  {len(questions)} perguntas"
     pdf.cell(0, 6, meta, align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(6)
 
@@ -174,12 +179,12 @@ def _render_question(pdf: JourneyPDF, q: Question, number: int):
     # Question number + type
     q_type_str = Q_TYPE_LABELS.get(str(q.type).upper().replace(".", ""), str(q.type))
 
-    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_font("DejaVu", "B", 11)
     pdf.set_text_color(30, 30, 30)
-    pdf.cell(0, 7, f"Pergunta {number}  ({q_type_str} — Peso: {q.weight})", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 7, f"Pergunta {number}  ({q_type_str} \u2014 Peso: {q.weight})", new_x="LMARGIN", new_y="NEXT")
 
     # Question text
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("DejaVu", "", 10)
     pdf.set_text_color(50, 50, 50)
     pdf.multi_cell(0, 5, q.text)
     pdf.ln(3)

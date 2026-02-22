@@ -13,6 +13,8 @@ from app.llm.prompts import (
     QUESTION_GENERATION_SYSTEM_PROMPT,
     REPORT_MANAGER_SYSTEM_PROMPT,
     REPORT_PROFESSIONAL_SYSTEM_PROMPT,
+    TRAINING_CONTENT_SYSTEM_PROMPT,
+    TRAINING_QUIZ_SYSTEM_PROMPT,
     TUTOR_SUMMARY_SYSTEM_PROMPT,
 )
 
@@ -329,3 +331,73 @@ async def tutor_chat(
     if not content:
         raise LLMResponseError("A IA retornou uma resposta vazia. Tente novamente.")
     return content
+
+
+async def generate_training_content(
+    module_title: str,
+    training_title: str,
+    domain: str,
+    participant_level: str,
+    orientation: str | None = None,
+    reference_text: str | None = None,
+) -> dict:
+    """Generate structured educational content for a training module."""
+    client = _get_client()
+
+    user_content = f"""Gere conteúdo educacional para o seguinte módulo de treinamento:
+
+Treinamento: {training_title}
+Módulo: {module_title}
+Domínio: {domain}
+Nível dos participantes: {participant_level}
+"""
+    if orientation:
+        user_content += f"\nOrientações do administrador:\n{_sanitize_user_input(orientation)}\n"
+    if reference_text:
+        user_content += f"\nMaterial de referência (base para o conteúdo):\n{_sanitize_user_input(reference_text)}\n"
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=4096,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": TRAINING_CONTENT_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    return _parse_json_response(response)
+
+
+async def generate_training_quiz(
+    module_title: str,
+    content_text: str,
+    participant_level: str,
+    num_questions: int | None = None,
+) -> list[dict]:
+    """Generate quiz questions based on training module content."""
+    client = _get_client()
+
+    user_content = f"""Gere perguntas de quiz para verificar a compreensão do seguinte conteúdo:
+
+Módulo: {module_title}
+Nível dos participantes: {participant_level}
+
+Conteúdo do módulo:
+{_sanitize_user_input(content_text)}
+"""
+    if num_questions:
+        user_content += f"\nNúmero desejado de perguntas: {num_questions}"
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=4096,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": TRAINING_QUIZ_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    result = _parse_json_response(response)
+    return result.get("questions", [result]) if isinstance(result, dict) else result

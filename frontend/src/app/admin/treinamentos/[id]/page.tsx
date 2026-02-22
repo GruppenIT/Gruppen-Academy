@@ -7,7 +7,7 @@ import type { Training, TrainingModule, Team, ModuleQuiz, QuizQuestion, QuizQues
 import {
   ArrowLeft, Plus, Trash2, Upload, Loader2, Save, Send,
   GripVertical, FileText, CheckCircle2, X, ChevronDown, ChevronUp,
-  ClipboardCheck, Pencil, Star,
+  ClipboardCheck, Pencil, Star, Sparkles, Wand2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { clsx } from 'clsx'
@@ -309,36 +309,15 @@ export default function AdminTrainingDetailPage() {
                 )}
 
                 {/* Content section */}
-                <div>
-                  <p className="text-sm font-medium text-gray-700 mb-2">Conteudo</p>
-                  {mod.original_filename ? (
-                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-                      <FileText className="w-5 h-5 text-gray-400" />
-                      <span className="text-sm text-gray-700 flex-1">{mod.original_filename}</span>
-                      <a href={api.getModuleFileUrl(id, mod.id)} target="_blank" rel="noopener noreferrer"
-                        className="text-sm text-brand-600 hover:text-brand-700 font-medium">
-                        Visualizar
-                      </a>
-                    </div>
-                  ) : mod.content_type === 'ai_generated' || mod.content_type === 'rich_text' ? (
-                    <div className="p-3 bg-gray-50 rounded-xl text-sm text-gray-600">
-                      Conteudo gerado. {mod.content_data ? 'Disponivel.' : 'Aguardando.'}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-400">Nenhum conteudo adicionado.</p>
-                  )}
-                  {isDraft && (
-                    <div className="mt-2">
-                      <label className="btn-secondary inline-flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer">
-                        {uploadingModule === mod.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                        Enviar arquivo
-                        <input type="file" className="hidden" accept=".pdf,.pptx,.docx,.ppt,.doc,.zip"
-                          onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUpload(mod.id, file); e.target.value = '' }}
-                          disabled={uploadingModule === mod.id} />
-                      </label>
-                    </div>
-                  )}
-                </div>
+                <ContentPanel
+                  trainingId={id}
+                  mod={mod}
+                  isDraft={isDraft}
+                  uploadingModule={uploadingModule}
+                  onUpload={(file) => handleUpload(mod.id, file)}
+                  onReload={load}
+                  onError={setError}
+                />
 
                 {/* Quiz section */}
                 <QuizPanel
@@ -453,6 +432,144 @@ function ModuleSettingsPanel({ mod, onUpdate }: {
   )
 }
 
+// ── Content Panel ──
+function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onReload, onError }: {
+  trainingId: string
+  mod: TrainingModule
+  isDraft: boolean
+  uploadingModule: string | null
+  onUpload: (file: File) => void
+  onReload: () => void
+  onError: (msg: string) => void
+}) {
+  const [showAiForm, setShowAiForm] = useState(false)
+  const [aiOrientation, setAiOrientation] = useState('')
+  const [aiFile, setAiFile] = useState<File | null>(null)
+  const [generating, setGenerating] = useState(false)
+
+  const handleGenerate = async () => {
+    setGenerating(true)
+    try {
+      await api.generateModuleContent(trainingId, mod.id, aiOrientation, aiFile || undefined)
+      setShowAiForm(false)
+      setAiOrientation('')
+      setAiFile(null)
+      onReload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao gerar conteudo com IA')
+    } finally { setGenerating(false) }
+  }
+
+  // Render AI-generated content preview
+  const renderAiContent = () => {
+    if (!mod.content_data) return null
+    const data = mod.content_data as { title?: string; sections?: { heading: string; content: string }[]; summary?: string; key_concepts?: string[] }
+    return (
+      <div className="p-4 bg-gradient-to-br from-violet-50/50 to-indigo-50/50 rounded-xl border border-violet-100 space-y-3">
+        {data.title && <h4 className="font-semibold text-gray-900 text-sm">{data.title}</h4>}
+        {data.summary && <p className="text-xs text-gray-500 italic">{data.summary}</p>}
+        {data.sections && (
+          <div className="space-y-2 max-h-48 overflow-y-auto">
+            {data.sections.map((sec, i) => (
+              <div key={i}>
+                <p className="text-xs font-medium text-indigo-700">{sec.heading}</p>
+                <p className="text-xs text-gray-600 line-clamp-3">{sec.content}</p>
+              </div>
+            ))}
+          </div>
+        )}
+        {data.key_concepts && data.key_concepts.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {data.key_concepts.map((c, i) => (
+              <span key={i} className="badge-pill bg-violet-100 text-violet-600 text-xs">{c}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <p className="text-sm font-medium text-gray-700 mb-2">Conteudo</p>
+
+      {/* Existing file */}
+      {mod.original_filename ? (
+        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+          <FileText className="w-5 h-5 text-gray-400" />
+          <span className="text-sm text-gray-700 flex-1">{mod.original_filename}</span>
+          <a href={api.getModuleFileUrl(trainingId, mod.id)} target="_blank" rel="noopener noreferrer"
+            className="text-sm text-brand-600 hover:text-brand-700 font-medium">
+            Visualizar
+          </a>
+        </div>
+      ) : mod.content_type === 'ai_generated' && mod.content_data ? (
+        renderAiContent()
+      ) : mod.content_type === 'rich_text' ? (
+        <div className="p-3 bg-gray-50 rounded-xl text-sm text-gray-600">
+          Conteudo texto rico. {mod.content_data ? 'Disponivel.' : 'Aguardando.'}
+        </div>
+      ) : (
+        <p className="text-sm text-gray-400">Nenhum conteudo adicionado.</p>
+      )}
+
+      {/* Actions */}
+      {isDraft && (
+        <div className="mt-2 flex items-center gap-2 flex-wrap">
+          <label className="btn-secondary inline-flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer">
+            {uploadingModule === mod.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+            Enviar arquivo
+            <input type="file" className="hidden" accept=".pdf,.pptx,.docx,.ppt,.doc,.zip"
+              onChange={(e) => { const file = e.target.files?.[0]; if (file) onUpload(file); e.target.value = '' }}
+              disabled={uploadingModule === mod.id} />
+          </label>
+          <button onClick={() => setShowAiForm(!showAiForm)}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 rounded-lg transition-colors">
+            <Sparkles className="w-4 h-4" /> Criar com IA
+          </button>
+        </div>
+      )}
+
+      {/* AI Generation Form */}
+      {showAiForm && (
+        <div className="mt-3 p-4 border-2 border-violet-200 rounded-xl bg-violet-50/30 space-y-3">
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-violet-700 flex items-center gap-1.5">
+              <Wand2 className="w-4 h-4" /> Gerar conteudo com IA
+            </span>
+            <button onClick={() => setShowAiForm(false)} className="text-gray-400 hover:text-gray-600">
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 block mb-1">Orientacoes (o que a IA deve cobrir)</label>
+            <textarea className="input-field w-full text-sm" rows={3} placeholder="Ex: Foque em beneficios do BaaS para PMEs, inclua cenarios praticos..."
+              value={aiOrientation} onChange={(e) => setAiOrientation(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 block mb-1">Material de referencia (opcional)</label>
+            <label className="btn-secondary inline-flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer">
+              <Upload className="w-3.5 h-3.5" />
+              {aiFile ? aiFile.name : 'Anexar arquivo'}
+              <input type="file" className="hidden" accept=".txt,.pdf,.md,.docx"
+                onChange={(e) => { setAiFile(e.target.files?.[0] || null); e.target.value = '' }} />
+            </label>
+            {aiFile && (
+              <button onClick={() => setAiFile(null)} className="text-xs text-red-400 hover:text-red-600 ml-2">Remover</button>
+            )}
+          </div>
+          <div className="flex justify-end">
+            <button onClick={handleGenerate} disabled={generating}
+              className="btn-primary text-sm flex items-center gap-2">
+              {generating ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando...</> : <><Sparkles className="w-4 h-4" /> Gerar conteudo</>}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Quiz Panel ──
 function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDraft, onReload, onError }: {
   trainingId: string
@@ -468,6 +585,7 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
   const [addingQuestion, setAddingQuestion] = useState(false)
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
   const [savingQuiz, setSavingQuiz] = useState(false)
+  const [generatingQuiz, setGeneratingQuiz] = useState(false)
   const [passingScore, setPassingScore] = useState(quiz?.passing_score ?? 0.7)
   const [quizRequired, setQuizRequired] = useState(quizRequiredProp)
 
@@ -549,6 +667,16 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
     }
   }
 
+  const handleGenerateQuiz = async () => {
+    setGeneratingQuiz(true)
+    try {
+      await api.generateModuleQuiz(trainingId, moduleId)
+      onReload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao gerar quiz com IA')
+    } finally { setGeneratingQuiz(false) }
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-2">
@@ -556,11 +684,18 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
           <ClipboardCheck className="w-4 h-4 text-indigo-500" /> Quiz
         </p>
         {isDraft && !quiz && (
-          <button onClick={handleCreateQuiz} disabled={creating}
-            className="btn-secondary text-xs px-3 py-1 flex items-center gap-1">
-            {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
-            Criar quiz
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={handleCreateQuiz} disabled={creating}
+              className="btn-secondary text-xs px-3 py-1 flex items-center gap-1">
+              {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+              Criar quiz
+            </button>
+            <button onClick={handleGenerateQuiz} disabled={generatingQuiz}
+              className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 rounded-lg transition-colors">
+              {generatingQuiz ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+              Gerar com IA
+            </button>
+          </div>
         )}
       </div>
 
@@ -642,12 +777,19 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
             />
           )}
 
-          {/* Add question button */}
+          {/* Add question buttons */}
           {isDraft && !addingQuestion && (
-            <button onClick={() => setAddingQuestion(true)}
-              className="w-full p-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors flex items-center justify-center gap-1.5">
-              <Plus className="w-4 h-4" /> Adicionar pergunta
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setAddingQuestion(true)}
+                className="flex-1 p-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors flex items-center justify-center gap-1.5">
+                <Plus className="w-4 h-4" /> Adicionar pergunta
+              </button>
+              <button onClick={handleGenerateQuiz} disabled={generatingQuiz}
+                className="p-3 border-2 border-dashed border-violet-200 rounded-xl text-sm text-violet-500 hover:border-violet-300 hover:text-violet-600 transition-colors flex items-center justify-center gap-1.5">
+                {generatingQuiz ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                Gerar com IA
+              </button>
+            </div>
           )}
         </div>
       )}

@@ -536,6 +536,28 @@ class ApiClient {
     return this.request<import('@/types').TrainingEnrollment[]>(`/api/trainings/${trainingId}/enrollments`)
   }
 
+  // Trainings — AI Generation
+  async generateModuleContent(trainingId: string, moduleId: string, orientation: string, referenceFile?: File): Promise<Record<string, unknown>> {
+    const formData = new FormData()
+    formData.append('orientation', orientation)
+    if (referenceFile) formData.append('reference_file', referenceFile)
+    const res = await fetch(`${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/generate-content`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || `Erro ${res.status}`)
+    }
+    return res.json()
+  }
+  generateModuleQuiz(trainingId: string, moduleId: string) {
+    return this.request<{ quiz_id: string; questions_count: number; questions: import('@/types').QuizQuestion[] }>(
+      `/api/trainings/${trainingId}/modules/${moduleId}/generate-quiz`, { method: 'POST' }
+    )
+  }
+
   // Trainings — Professional
   getMyTrainings() {
     return this.request<import('@/types').MyTrainingSummary[]>('/api/trainings/my/trainings')

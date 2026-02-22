@@ -1,7 +1,8 @@
+import logging
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -9,6 +10,8 @@ from app.auth.dependencies import get_current_user, require_role
 from app.config import settings
 from app.database import get_db
 from app.trainings.models import ModuleContentType, TrainingStatus
+
+logger = logging.getLogger(__name__)
 from app.trainings.schemas import (
     EnrollmentDetailOut,
     ModuleCreate,
@@ -553,6 +556,149 @@ async def list_enrollments_endpoint(
             )
         )
     return result
+
+
+# ──────────────────────────────────────────────
+# AI Generation (Admin)
+# ──────────────────────────────────────────────
+
+
+@router.post("/{training_id}/modules/{module_id}/generate-content")
+async def generate_module_content_endpoint(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    orientation: str = Form(""),
+    reference_file: UploadFile | None = File(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Generate AI content for a training module, optionally from a reference file."""
+    from app.llm.client import generate_training_content
+
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível gerar conteúdo em rascunho.")
+
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    # Extract text from reference file if provided
+    reference_text = None
+    if reference_file:
+        try:
+            raw_bytes = await reference_file.read()
+            reference_text = raw_bytes.decode("utf-8", errors="replace")[:15000]
+        except Exception:
+            reference_text = None
+
+    try:
+        result = await generate_training_content(
+            module_title=module.title,
+            training_title=training.title,
+            domain=training.domain,
+            participant_level=training.participant_level,
+            orientation=orientation or None,
+            reference_text=reference_text,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Erro na geração de conteúdo via IA: %s", e)
+        raise HTTPException(status_code=502, detail="Erro ao comunicar com o serviço de IA.")
+
+    # Save generated content to module
+    await update_module(
+        db,
+        module,
+        ModuleUpdate(
+            content_type=ModuleContentType.AI_GENERATED,
+            content_data=result,
+        ),
+    )
+
+    return result
+
+
+@router.post("/{training_id}/modules/{module_id}/generate-quiz")
+async def generate_module_quiz_endpoint(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Generate quiz questions based on module content using AI."""
+    from app.llm.client import generate_training_quiz
+
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível gerar quiz em rascunho.")
+
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    # Collect content text for the LLM
+    content_text = ""
+    if module.content_data:
+        # AI-generated or rich text content
+        sections = module.content_data.get("sections", [])
+        for sec in sections:
+            content_text += f"## {sec.get('heading', '')}\n{sec.get('content', '')}\n\n"
+        if not content_text:
+            content_text = str(module.content_data)
+
+    if not content_text.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="O módulo precisa ter conteúdo para gerar o quiz.",
+        )
+
+    try:
+        raw_questions = await generate_training_quiz(
+            module_title=module.title,
+            content_text=content_text[:10000],
+            participant_level=training.participant_level,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Erro na geração de quiz via IA: %s", e)
+        raise HTTPException(status_code=502, detail="Erro ao comunicar com o serviço de IA.")
+
+    # Create or update quiz
+    quiz = await create_or_update_quiz(
+        db,
+        module_id,
+        QuizCreate(title="Quiz", passing_score=0.7),
+    )
+
+    # Add generated questions
+    saved = []
+    for i, q in enumerate(raw_questions):
+        question = await add_quiz_question(
+            db,
+            quiz.id,
+            QuizQuestionCreate(
+                text=q.get("text", ""),
+                type=q.get("type", "multiple_choice"),
+                options=q.get("options"),
+                correct_answer=q.get("correct_answer"),
+                explanation=q.get("explanation"),
+                weight=q.get("weight", 1.0),
+                order=i + 1,
+            ),
+        )
+        saved.append(QuizQuestionOut.model_validate(question))
+
+    # Enable quiz on module
+    await update_module(db, module, ModuleUpdate(has_quiz=True))
+
+    return {"quiz_id": str(quiz.id), "questions_count": len(saved), "questions": saved}
 
 
 # ──────────────────────────────────────────────

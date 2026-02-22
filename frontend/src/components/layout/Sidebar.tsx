@@ -6,7 +6,7 @@ import { useAuth } from '@/lib/auth'
 import { clsx } from 'clsx'
 import {
   LayoutDashboard, Route, BookOpen, MessageSquareMore,
-  Trophy, User, Settings, LogOut, GraduationCap, Shield, ClipboardList,
+  Trophy, User, Settings, LogOut, GraduationCap, Shield, ClipboardList, BarChart3,
 } from 'lucide-react'
 
 const navItems = [
@@ -20,6 +20,7 @@ const navItems = [
 ]
 
 const adminItems = [
+  { href: '/gestor', label: 'Gestor', icon: BarChart3, roles: ['manager', 'admin', 'super_admin'] },
   { href: '/admin', label: 'Admin', icon: Settings, roles: ['admin', 'super_admin'] },
 ]
 

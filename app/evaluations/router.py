@@ -22,6 +22,7 @@ from app.evaluations.service import (
     generate_analytical_report,
     get_evaluation,
     get_evaluation_by_response,
+    get_manager_dashboard,
     get_my_participations,
     get_participation_evaluations,
     list_participations_for_evaluation,
@@ -30,6 +31,15 @@ from app.evaluations.service import (
 from app.users.models import User, UserRole
 
 router = APIRouter()
+
+
+@router.get("/dashboard/manager")
+async def manager_dashboard(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Get manager dashboard data: teams, members, performance."""
+    return await get_manager_dashboard(db, current_user.id)
 
 
 @router.post("/evaluate", response_model=EvaluationOut, status_code=status.HTTP_201_CREATED)

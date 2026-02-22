@@ -272,6 +272,11 @@ class ApiClient {
   }
   getUserPoints(userId: string) { return this.request<import('@/types').UserPointsSummary>(`/api/gamification/scores/${userId}`) }
 
+  // Manager Dashboard
+  getManagerDashboard() {
+    return this.request<import('@/types').ManagerDashboard>('/api/evaluations/dashboard/manager')
+  }
+
   // Evaluations
   evaluateResponse(responseId: string) {
     return this.request<import('@/types').Evaluation>('/api/evaluations/evaluate', {

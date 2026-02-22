@@ -9,6 +9,7 @@ from app.evaluations.models import AnalyticalReport, Evaluation, EvaluationStatu
 from app.evaluations.schemas import EvaluationResult, EvaluationReview
 from app.journeys.models import Journey, JourneyParticipation, Question, QuestionResponse, journey_product
 from app.llm.client import evaluate_response, generate_report
+from app.teams.models import Team, team_member
 
 # Valid status transitions
 _VALID_TRANSITIONS: dict[EvaluationStatus, set[EvaluationStatus]] = {
@@ -342,3 +343,135 @@ async def generate_analytical_report(
     await db.commit()
     await db.refresh(report)
     return report
+
+
+async def get_manager_dashboard(db: AsyncSession, manager_id: uuid.UUID) -> dict:
+    """Build dashboard data for a manager: teams, members, performance summary."""
+    from sqlalchemy import func as sqla_func
+
+    # Get teams the manager belongs to (managers are team members too)
+    my_team_ids_q = select(team_member.c.team_id).where(team_member.c.user_id == manager_id)
+    teams_result = await db.execute(
+        select(Team)
+        .where(Team.id.in_(my_team_ids_q))
+        .options(selectinload(Team.members))
+    )
+    teams = list(teams_result.scalars().all())
+
+    # If manager is not in any team, show all teams (fallback for admins)
+    if not teams:
+        teams_result = await db.execute(
+            select(Team).options(selectinload(Team.members)).order_by(Team.name)
+        )
+        teams = list(teams_result.scalars().all())
+
+    team_data = []
+    all_member_ids = set()
+
+    for team in teams:
+        member_ids = [m.id for m in team.members]
+        all_member_ids.update(member_ids)
+
+        # Get participations for team members
+        if not member_ids:
+            team_data.append({
+                "team_id": team.id,
+                "team_name": team.name,
+                "member_count": 0,
+                "members": [],
+                "total_participations": 0,
+                "completed_participations": 0,
+                "avg_score": None,
+            })
+            continue
+
+        participations_result = await db.execute(
+            select(JourneyParticipation)
+            .options(selectinload(JourneyParticipation.journey), selectinload(JourneyParticipation.user))
+            .where(JourneyParticipation.user_id.in_(member_ids))
+            .order_by(JourneyParticipation.started_at.desc())
+        )
+        participations = list(participations_result.scalars().all())
+
+        total_participations = len(participations)
+        completed_participations = sum(1 for p in participations if p.completed_at)
+
+        # Calculate avg score across all team evaluations
+        all_scores = []
+        member_summaries = {}
+
+        for p in participations:
+            resp_result = await db.execute(
+                select(QuestionResponse.id).where(QuestionResponse.participation_id == p.id)
+            )
+            response_ids = [row[0] for row in resp_result.all()]
+
+            if response_ids:
+                eval_result = await db.execute(
+                    select(Evaluation.score_global).where(Evaluation.response_id.in_(response_ids))
+                )
+                scores = [row[0] for row in eval_result.all()]
+                all_scores.extend(scores)
+
+                user_id_str = str(p.user_id)
+                if user_id_str not in member_summaries:
+                    member_summaries[user_id_str] = {
+                        "user_id": p.user_id,
+                        "user_name": p.user.full_name if p.user else "—",
+                        "user_email": p.user.email if p.user else "—",
+                        "participations": 0,
+                        "completed": 0,
+                        "scores": [],
+                    }
+                member_summaries[user_id_str]["participations"] += 1
+                if p.completed_at:
+                    member_summaries[user_id_str]["completed"] += 1
+                member_summaries[user_id_str]["scores"].extend(scores)
+
+        # Also add members with zero participations
+        for m in team.members:
+            uid = str(m.id)
+            if uid not in member_summaries:
+                member_summaries[uid] = {
+                    "user_id": m.id,
+                    "user_name": m.full_name,
+                    "user_email": m.email,
+                    "participations": 0,
+                    "completed": 0,
+                    "scores": [],
+                }
+
+        # Finalize member data
+        members_list = []
+        for ms in member_summaries.values():
+            avg = round(sum(ms["scores"]) / len(ms["scores"]), 2) if ms["scores"] else None
+            members_list.append({
+                "user_id": ms["user_id"],
+                "user_name": ms["user_name"],
+                "user_email": ms["user_email"],
+                "participations": ms["participations"],
+                "completed": ms["completed"],
+                "avg_score": avg,
+            })
+
+        team_avg = round(sum(all_scores) / len(all_scores), 2) if all_scores else None
+
+        team_data.append({
+            "team_id": team.id,
+            "team_name": team.name,
+            "member_count": len(team.members),
+            "members": sorted(members_list, key=lambda x: x["avg_score"] or 0, reverse=True),
+            "total_participations": total_participations,
+            "completed_participations": completed_participations,
+            "avg_score": team_avg,
+        })
+
+    # Global stats
+    total_members = len(all_member_ids)
+    total_teams = len(teams)
+
+    return {
+        "total_teams": total_teams,
+        "total_members": total_members,
+        "teams": team_data,
+    }

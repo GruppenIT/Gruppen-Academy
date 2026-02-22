@@ -238,6 +238,32 @@ export interface AnalyticalReport {
   created_at: string
 }
 
+// Manager Dashboard types
+export interface ManagerTeamMemberSummary {
+  user_id: string
+  user_name: string
+  user_email: string
+  participations: number
+  completed: number
+  avg_score: number | null
+}
+
+export interface ManagerTeamSummary {
+  team_id: string
+  team_name: string
+  member_count: number
+  members: ManagerTeamMemberSummary[]
+  total_participations: number
+  completed_participations: number
+  avg_score: number | null
+}
+
+export interface ManagerDashboard {
+  total_teams: number
+  total_members: number
+  teams: ManagerTeamSummary[]
+}
+
 // Copilot types
 export interface CopilotCompetencySuggestion {
   name: string

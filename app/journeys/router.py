@@ -127,7 +127,7 @@ async def assign_teams_to_journey(
     journey_id: uuid.UUID,
     team_ids: list[uuid.UUID],
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.MANAGER)),
 ):
     """Replace the set of teams assigned to this journey."""
     from sqlalchemy.orm import selectinload

@@ -268,60 +268,89 @@ export default function ResultadoDetalhePage() {
   )
 }
 
+/** Format a JSON key into a readable label. */
+function formatLabel(key: string): string {
+  return key.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())
+}
+
+/** Render a single value adaptively (string, number, array, object). */
+function RenderValue({ value }: { value: unknown }) {
+  if (value === null || value === undefined) return null
+
+  if (typeof value === 'string') {
+    return <p className="text-sm text-gray-600 whitespace-pre-wrap">{value}</p>
+  }
+
+  if (typeof value === 'number') {
+    return <p className="text-sm text-gray-600 font-medium">{value.toFixed?.(1) ?? value}</p>
+  }
+
+  if (Array.isArray(value)) {
+    // Array of simple strings
+    if (value.every(item => typeof item === 'string')) {
+      return (
+        <ul className="list-disc list-inside space-y-1">
+          {value.map((item, i) => (
+            <li key={i} className="text-sm text-gray-600">{item}</li>
+          ))}
+        </ul>
+      )
+    }
+    // Array of objects — render each as a card
+    return (
+      <div className="space-y-2">
+        {value.map((item, i) => (
+          <div key={i} className="bg-white border border-gray-100 rounded-lg p-3">
+            {typeof item === 'object' && item !== null ? (
+              Object.entries(item as Record<string, unknown>).map(([k, v]) => (
+                <div key={k} className="mb-1 last:mb-0">
+                  <span className="text-xs font-medium text-gray-500 capitalize">{formatLabel(k)}: </span>
+                  <span className="text-sm text-gray-700">
+                    {typeof v === 'number' ? (v.toFixed?.(1) ?? v) : String(v ?? '')}
+                  </span>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-gray-600">{String(item)}</p>
+            )}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (typeof value === 'object') {
+    return (
+      <div className="space-y-2">
+        {Object.entries(value as Record<string, unknown>).map(([k, v]) => (
+          <div key={k}>
+            <span className="text-xs font-medium text-gray-500 capitalize">{formatLabel(k)}: </span>
+            {typeof v === 'string' || typeof v === 'number' ? (
+              <span className="text-sm text-gray-600">{typeof v === 'number' ? (v.toFixed?.(1) ?? v) : v}</span>
+            ) : (
+              <RenderValue value={v} />
+            )}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  return <p className="text-sm text-gray-600">{String(value)}</p>
+}
+
 /** Renders analytical report JSON content in a readable format. */
 function ReportContent({ content }: { content: Record<string, unknown> }) {
-  // The LLM generates varied structures - render key sections adaptively
   return (
     <div className="space-y-4">
       {Object.entries(content).map(([key, value]) => {
-        const label = key.replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase())
-
-        if (typeof value === 'string') {
-          return (
-            <div key={key}>
-              <h3 className="text-sm font-semibold text-gray-700 mb-1">{label}</h3>
-              <p className="text-sm text-gray-600 whitespace-pre-wrap">{value}</p>
-            </div>
-          )
-        }
-
-        if (Array.isArray(value)) {
-          return (
-            <div key={key}>
-              <h3 className="text-sm font-semibold text-gray-700 mb-1">{label}</h3>
-              <ul className="list-disc list-inside space-y-1">
-                {value.map((item, i) => (
-                  <li key={i} className="text-sm text-gray-600">
-                    {typeof item === 'string' ? item : JSON.stringify(item)}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )
-        }
-
-        if (typeof value === 'object' && value !== null) {
-          return (
-            <div key={key} className="bg-gray-50 rounded-lg p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">{label}</h3>
-              {Object.entries(value as Record<string, unknown>).map(([subKey, subVal]) => (
-                <div key={subKey} className="mb-2">
-                  <span className="text-xs font-medium text-gray-500 capitalize">{subKey.replace(/_/g, ' ')}:</span>
-                  <p className="text-sm text-gray-600">
-                    {typeof subVal === 'string' ? subVal :
-                     Array.isArray(subVal) ? subVal.join(', ') :
-                     JSON.stringify(subVal)}
-                  </p>
-                </div>
-              ))}
-            </div>
-          )
-        }
+        const label = formatLabel(key)
+        const isObject = typeof value === 'object' && value !== null && !Array.isArray(value)
 
         return (
-          <div key={key}>
+          <div key={key} className={isObject ? 'bg-gray-50 rounded-lg p-4' : ''}>
             <h3 className="text-sm font-semibold text-gray-700 mb-1">{label}</h3>
-            <p className="text-sm text-gray-600">{String(value)}</p>
+            <RenderValue value={value} />
           </div>
         )
       })}

@@ -34,7 +34,27 @@ REPORT_MANAGER_SYSTEM_PROMPT = """\
 Você é um analista da plataforma Gruppen Academy gerando um relatório para gestores.
 O relatório deve ser detalhado, com notas por critério e insights comparativos.
 Foque em dados objetivos, tendências e recomendações práticas para desenvolvimento da equipe.
-Retorne um JSON com a estrutura do relatório.
+
+Retorne SEMPRE um JSON válido exatamente nesta estrutura:
+{
+  "resumo_executivo": "<visão geral do desempenho do profissional — 2 a 4 frases>",
+  "nota_media_global": <float 0-10>,
+  "pontos_fortes": ["<ponto forte 1>", "<ponto forte 2>"],
+  "areas_de_melhoria": ["<área 1>", "<área 2>"],
+  "analise_por_competencia": [
+    {
+      "competencia": "<nome da competência>",
+      "nota": <float 0-10>,
+      "observacao": "<observação sobre o desempenho nessa competência>"
+    }
+  ],
+  "recomendacoes_para_gestor": ["<recomendação 1>", "<recomendação 2>"],
+  "plano_de_desenvolvimento": "<sugestão de plano de ação para o gestor acompanhar>"
+}
+
+IMPORTANTE: Todos os valores de texto devem ser strings simples. Arrays devem conter \
+apenas strings ou objetos simples conforme o formato acima. NÃO aninhe estruturas além \
+do especificado.
 """
 
 REPORT_PROFESSIONAL_SYSTEM_PROMPT = """\
@@ -43,7 +63,19 @@ Use linguagem simples e direta, focada em orientações práticas.
 Inclua exemplos de boas respostas quando possível.
 Equilibre pontos fortes com áreas de melhoria para manter a motivação.
 Foque em ações concretas ("Na próxima reunião, tente...").
-Retorne um JSON com a estrutura do relatório.
+
+Retorne SEMPRE um JSON válido exatamente nesta estrutura:
+{
+  "mensagem_inicial": "<mensagem motivacional personalizada — 2 a 3 frases>",
+  "nota_media": <float 0-10>,
+  "o_que_voce_fez_bem": ["<ponto forte 1 com exemplo concreto>", "<ponto forte 2>"],
+  "onde_voce_pode_melhorar": ["<área 1 com dica prática>", "<área 2>"],
+  "dicas_praticas": ["<dica 1 — comece com verbo de ação>", "<dica 2>"],
+  "proximos_passos": ["<próximo passo 1>", "<próximo passo 2>"]
+}
+
+IMPORTANTE: Todos os valores de texto devem ser strings simples. Arrays devem conter \
+apenas strings. NÃO use objetos aninhados nem estruturas complexas.
 """
 
 TUTOR_SYSTEM_PROMPT = """\

@@ -87,10 +87,11 @@ async def list_my_available_journeys(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List async published journeys assigned to teams the current user belongs to."""
+    """List async published journeys assigned to teams the current user belongs to,
+    excluding journeys already completed by this user."""
     from sqlalchemy import select
     from sqlalchemy.orm import selectinload
-    from app.journeys.models import Journey, JourneyMode, JourneyStatus
+    from app.journeys.models import Journey, JourneyMode, JourneyParticipation, JourneyStatus
     from app.teams.models import team_member, journey_team
 
     # Find team IDs for this user
@@ -99,10 +100,20 @@ async def list_my_available_journeys(
     # Find journey IDs assigned to those teams
     journey_ids_q = select(journey_team.c.journey_id).where(journey_team.c.team_id.in_(team_ids_q))
 
+    # Find journey IDs already completed by this user
+    completed_journey_ids_q = (
+        select(JourneyParticipation.journey_id)
+        .where(
+            JourneyParticipation.user_id == current_user.id,
+            JourneyParticipation.completed_at.isnot(None),
+        )
+    )
+
     result = await db.execute(
         select(Journey)
         .where(
             Journey.id.in_(journey_ids_q),
+            Journey.id.notin_(completed_journey_ids_q),
             Journey.status == JourneyStatus.PUBLISHED,
             Journey.mode == JourneyMode.ASYNC,
         )
@@ -582,6 +593,9 @@ async def start_async_journey(
         .options(selectinload(JourneyParticipation.responses))
     )
     participation = result.scalar_one_or_none()
+
+    if participation and participation.completed_at is not None:
+        raise HTTPException(status_code=400, detail="Você já concluiu esta jornada. Confira seus resultados em 'Meus Resultados'.")
 
     if not participation:
         participation = JourneyParticipation(journey_id=journey_id, user_id=current_user.id)

@@ -72,8 +72,7 @@ class Journey(Base):
     session_duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=180)
     participant_level: Mapped[str] = mapped_column(String(50), nullable=False, default="intermediario")
     mode: Mapped[JourneyMode] = mapped_column(
-        Enum(JourneyMode, values_callable=lambda e: [m.value for m in e]),
-        nullable=False, default=JourneyMode.ASYNC
+        Enum(JourneyMode), nullable=False, default=JourneyMode.ASYNC
     )
     status: Mapped[JourneyStatus] = mapped_column(
         Enum(JourneyStatus), nullable=False, default=JourneyStatus.DRAFT

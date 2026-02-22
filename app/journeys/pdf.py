@@ -176,7 +176,7 @@ def _render_question(pdf: JourneyPDF, q: Question, number: int):
         pdf.add_page()
 
     # Question number + type
-    q_type_str = Q_TYPE_LABELS.get(str(q.type).upper().replace(".", ""), str(q.type))
+    q_type_str = Q_TYPE_LABELS.get(q.type.name, q.type.value)
 
     pdf.set_font("DejaVu", "B", 11)
     pdf.set_text_color(30, 30, 30)

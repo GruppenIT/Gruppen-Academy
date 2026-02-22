@@ -1,6 +1,8 @@
 import logging
+import time
+from collections import defaultdict
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.schemas import LoginRequest, SSOAuthorizeResponse, SSOCallbackRequest, TokenResponse
@@ -10,9 +12,11 @@ from app.auth.sso import (
     exchange_code_for_tokens,
     generate_nonce,
     generate_state,
+    store_sso_state,
+    validate_and_consume_state,
     validate_id_token,
 )
-from app.auth.utils import verify_password
+from app.auth.utils import get_password_hash, verify_password
 from app.database import get_db
 from app.settings.service import get_sso_config
 from app.users.models import User, UserRole
@@ -22,11 +26,46 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# --- Simple in-memory rate limiter for login ---
+_login_attempts: dict[str, list[float]] = defaultdict(list)
+_MAX_LOGIN_ATTEMPTS = 5
+_LOGIN_WINDOW_SECONDS = 300  # 5 minutes
+
+
+def _check_rate_limit(key: str) -> None:
+    """Raise 429 if too many login attempts from this key."""
+    now = time.monotonic()
+    attempts = _login_attempts[key]
+    _login_attempts[key] = [t for t in attempts if now - t < _LOGIN_WINDOW_SECONDS]
+    if len(_login_attempts[key]) >= _MAX_LOGIN_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Muitas tentativas de login. Aguarde alguns minutos.",
+        )
+
+
+def _record_attempt(key: str) -> None:
+    _login_attempts[key].append(time.monotonic())
+
 
 @router.post("/login", response_model=TokenResponse)
-async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
+async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    client_ip = request.client.host if request.client else "unknown"
+    rate_key = f"{client_ip}:{data.email}"
+    _check_rate_limit(rate_key)
+
     user = await get_user_by_email(db, data.email)
-    if not user or not user.hashed_password or not verify_password(data.password, user.hashed_password):
+
+    # Timing-safe: always hash even if user not found to prevent timing attacks
+    if not user or not user.hashed_password:
+        get_password_hash("dummy-password-to-prevent-timing-attack")
+        _record_attempt(rate_key)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Credenciais inválidas",
+        )
+    if not verify_password(data.password, user.hashed_password):
+        _record_attempt(rate_key)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Credenciais inválidas",
@@ -36,6 +75,8 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)):
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Usuário inativo",
         )
+
+    logger.info("Login bem-sucedido: user_id=%s, ip=%s", user.id, client_ip)
     token = create_access_token(subject=str(user.id))
     return TokenResponse(access_token=token)
 
@@ -72,6 +113,8 @@ async def sso_authorize(db: AsyncSession = Depends(get_db)):
         )
     state = generate_state()
     nonce = generate_nonce()
+    # Store state+nonce server-side for validation on callback
+    store_sso_state(state, nonce)
     url = build_authorize_url(sso_cfg, state=state, nonce=nonce)
     return SSOAuthorizeResponse(authorize_url=url, state=state)
 
@@ -81,10 +124,11 @@ async def sso_callback(data: SSOCallbackRequest, db: AsyncSession = Depends(get_
     """Exchange the Azure AD authorization code for tokens and authenticate the user.
 
     Flow:
-    1. Exchange `code` for tokens at Azure AD token endpoint.
-    2. Validate the `id_token` using Azure AD JWKS.
-    3. Find or create the user in the local database.
-    4. Return a local JWT access token.
+    1. Validate state parameter (CSRF protection).
+    2. Exchange `code` for tokens at Azure AD token endpoint.
+    3. Validate the `id_token` using Azure AD JWKS + nonce.
+    4. Find or create the user in the local database.
+    5. Return a local JWT access token.
     """
     sso_cfg = await get_sso_config(db)
     if sso_cfg.get("sso_enabled") != "true":
@@ -93,11 +137,19 @@ async def sso_callback(data: SSOCallbackRequest, db: AsyncSession = Depends(get_
             detail="SSO não está habilitado.",
         )
 
-    # 1. Exchange code for tokens
+    # 1. Validate state and recover nonce
+    expected_nonce = validate_and_consume_state(data.state)
+    if expected_nonce is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Estado de autenticação inválido ou expirado. Tente novamente.",
+        )
+
+    # 2. Exchange code for tokens
     try:
         token_response = await exchange_code_for_tokens(sso_cfg, data.code)
     except Exception as exc:
-        logger.error("Falha ao trocar código por tokens: %s", exc)
+        logger.error("Falha ao trocar código por tokens: %s", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Falha ao autenticar com Azure AD. Código inválido ou expirado.",
@@ -110,14 +162,14 @@ async def sso_callback(data: SSOCallbackRequest, db: AsyncSession = Depends(get_
             detail="Azure AD não retornou id_token.",
         )
 
-    # 2. Validate id_token
+    # 3. Validate id_token with nonce
     try:
-        claims = await validate_id_token(sso_cfg, id_token)
+        claims = await validate_id_token(sso_cfg, id_token, expected_nonce=expected_nonce)
     except ValueError as exc:
-        logger.error("Falha ao validar id_token: %s", exc)
+        logger.error("Falha ao validar id_token: %s", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Token inválido: {exc}",
+            detail="Token de autenticação inválido. Tente novamente.",
         ) from exc
 
     azure_sub = claims["sub"]

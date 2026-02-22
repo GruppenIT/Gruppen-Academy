@@ -2,15 +2,15 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: gruppen
-      POSTGRES_PASSWORD: gruppen
-      POSTGRES_DB: gruppen_academy
+      POSTGRES_USER: ${POSTGRES_USER:-gruppen}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+      POSTGRES_DB: ${POSTGRES_DB:-gruppen_academy}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U gruppen -d gruppen_academy"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-gruppen} -d ${POSTGRES_DB:-gruppen_academy}"]
       interval: 5s
       timeout: 5s
       retries: 5

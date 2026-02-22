@@ -1,8 +1,9 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.auth.router import router as auth_router
 from app.catalog.router import router as catalog_router
@@ -21,6 +22,28 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+# --- Security Headers Middleware ---
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if settings.app_env == "production":
+            response.headers["Strict-Transport-Security"] = (
+                "max-age=31536000; includeSubDomains"
+            )
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; font-src 'self'; connect-src 'self'"
+            )
+        return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_secrets()
@@ -29,26 +52,36 @@ async def lifespan(app: FastAPI):
     yield
 
 
+# Disable interactive docs in production
+_docs_url = "/docs" if settings.app_env != "production" else None
+_redoc_url = "/redoc" if settings.app_env != "production" else None
+
 app = FastAPI(
     title="Gruppen Academy",
     description="Plataforma interna de aprendizagem corporativa da Gruppen",
     version="0.1.0",
     root_path="",
     lifespan=lifespan,
+    docs_url=_docs_url,
+    redoc_url=_redoc_url,
 )
 
+# Security headers must be added first (outermost middleware)
+app.add_middleware(SecurityHeadersMiddleware)
+
 cors_origins = list(settings.cors_origins)
-# Ensure common local dev origins are included
-for origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
-    if origin not in cors_origins:
-        cors_origins.append(origin)
+# Only include localhost in non-production environments
+if settings.app_env != "production":
+    for origin in ["http://localhost:3000", "http://127.0.0.1:3000"]:
+        if origin not in cors_origins:
+            cors_origins.append(origin)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])

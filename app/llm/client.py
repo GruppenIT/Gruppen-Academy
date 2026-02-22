@@ -43,6 +43,11 @@ def _get_client() -> AsyncOpenAI:
     return AsyncOpenAI(api_key=settings.openai_api_key, timeout=120.0)
 
 
+def _sanitize_user_input(text: str) -> str:
+    """Wrap user-provided text with clear boundaries to mitigate prompt injection."""
+    return f"<user_input>{text}</user_input>"
+
+
 async def evaluate_response(
     question_text: str,
     answer_text: str,
@@ -51,9 +56,9 @@ async def evaluate_response(
 ) -> EvaluationResult:
     client = _get_client()
 
-    user_content = f"""Pergunta: {question_text}
+    user_content = f"""Pergunta: {_sanitize_user_input(question_text)}
 
-Resposta do profissional: {answer_text}
+Resposta do profissional: {_sanitize_user_input(answer_text)}
 """
     if rubric:
         user_content += f"\nRubrica de avaliação: {json.dumps(rubric, ensure_ascii=False)}"

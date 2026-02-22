@@ -201,7 +201,7 @@ async def print_journey_pdf(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("Erro ao gerar PDF: %s", e)
-        raise HTTPException(status_code=500, detail=f"Erro ao gerar PDF: {e}")
+        raise HTTPException(status_code=500, detail="Erro interno ao gerar PDF.")
 
     return Response(
         content=pdf_bytes,
@@ -314,11 +314,13 @@ async def submit_question_response(
     participation_id: uuid.UUID,
     data: ResponseCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     participation = await get_participation(db, participation_id)
     if not participation:
         raise HTTPException(status_code=404, detail="Participação não encontrada")
+    if participation.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Sem permissão para esta participação")
     return await submit_response(db, participation_id, data)
 
 
@@ -553,10 +555,24 @@ async def upload_ocr_pdf(
     upload_dir = os.path.join(settings.upload_dir, "ocr")
     os.makedirs(upload_dir, exist_ok=True)
 
-    # Save file
+    # Read and validate file content
+    content = await file.read()
+
+    # Enforce file size limit
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Arquivo excede o limite de {settings.max_upload_size_mb}MB",
+        )
+
+    # Validate PDF magic bytes (%PDF-)
+    if not content[:5].startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="Arquivo não é um PDF válido")
+
+    # Save file with UUID name (prevents path traversal)
     file_id = str(uuid.uuid4())
     file_path = os.path.join(upload_dir, f"{file_id}.pdf")
-    content = await file.read()
     with open(file_path, "wb") as f:
         f.write(content)
 

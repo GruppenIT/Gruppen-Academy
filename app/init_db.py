@@ -2,10 +2,12 @@
 
 import asyncio
 import logging
+import secrets
 
 from sqlalchemy import select, text
 
 from app.auth.utils import get_password_hash
+from app.config import settings
 from app.database import Base, engine, async_session
 from app.users.models import User, UserRole
 
@@ -66,16 +68,26 @@ async def seed_admin():
             logger.info("Super admin already exists, skipping seed.")
             return
 
+        # Use password from env var; fall back to a random password if not set
+        password = settings.admin_seed_password
+        if not password:
+            password = secrets.token_urlsafe(20)
+            logger.warning(
+                "ADMIN_SEED_PASSWORD não configurada. Senha gerada aleatoriamente. "
+                "Defina ADMIN_SEED_PASSWORD no .env para controlar a senha do admin."
+            )
+
         admin = User(
             email="admin@gruppen.com.br",
-            hashed_password=get_password_hash("Admin@123"),
+            hashed_password=get_password_hash(password),
             full_name="Super Admin",
             role=UserRole.SUPER_ADMIN,
             department="TI",
         )
         db.add(admin)
         await db.commit()
-        logger.info("Seeded super admin: admin@gruppen.com.br / Admin@123")
+        # Never log the actual password
+        logger.info("Seeded super admin: admin@gruppen.com.br")
 
 
 # ---------------------------------------------------------------------------

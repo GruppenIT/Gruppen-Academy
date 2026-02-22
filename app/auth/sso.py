@@ -9,6 +9,7 @@ Expected keys in sso_config:
 
 import logging
 import secrets
+import time
 import urllib.parse
 
 import httpx
@@ -19,6 +20,11 @@ logger = logging.getLogger(__name__)
 
 # In-memory JWKS cache keyed by tenant_id (refreshed on cache miss)
 _jwks_cache: dict[str, dict] = {}
+
+# In-memory SSO state/nonce store with TTL for CSRF and replay protection
+# Key: state string, Value: (nonce, expiry_timestamp)
+_sso_pending: dict[str, tuple[str, float]] = {}
+_SSO_STATE_TTL = 600  # 10 minutes
 
 
 def _authority(tenant_id: str) -> str:
@@ -66,6 +72,32 @@ def generate_nonce() -> str:
     return secrets.token_urlsafe(32)
 
 
+def store_sso_state(state: str, nonce: str) -> None:
+    """Store SSO state and nonce for later validation."""
+    _cleanup_expired()
+    _sso_pending[state] = (nonce, time.monotonic() + _SSO_STATE_TTL)
+
+
+def validate_and_consume_state(state: str) -> str | None:
+    """Validate SSO state and return the associated nonce. Consumes the entry."""
+    _cleanup_expired()
+    entry = _sso_pending.pop(state, None)
+    if entry is None:
+        return None
+    nonce, expiry = entry
+    if time.monotonic() > expiry:
+        return None
+    return nonce
+
+
+def _cleanup_expired() -> None:
+    """Remove expired entries from the pending store."""
+    now = time.monotonic()
+    expired = [k for k, (_, exp) in _sso_pending.items() if now > exp]
+    for k in expired:
+        _sso_pending.pop(k, None)
+
+
 async def exchange_code_for_tokens(sso_config: dict, code: str) -> dict:
     """Exchange authorization code for tokens via Azure AD token endpoint."""
     data = {
@@ -101,7 +133,9 @@ async def _get_jwks(tenant_id: str) -> dict:
     return await _fetch_jwks(tenant_id)
 
 
-async def validate_id_token(sso_config: dict, id_token: str) -> dict:
+async def validate_id_token(
+    sso_config: dict, id_token: str, expected_nonce: str | None = None
+) -> dict:
     """Validate and decode the Azure AD id_token.
 
     Returns the decoded claims dict with at minimum: sub, email, name.
@@ -146,6 +180,12 @@ async def validate_id_token(sso_config: dict, id_token: str) -> dict:
         )
     except JWTError as exc:
         raise ValueError(f"Token inválido: {exc}") from exc
+
+    # Validate nonce to prevent token replay attacks
+    if expected_nonce is not None:
+        token_nonce = claims.get("nonce")
+        if token_nonce != expected_nonce:
+            raise ValueError("Nonce inválido — possível ataque de replay")
 
     sub = claims.get("sub")
     email = claims.get("email") or claims.get("preferred_username")

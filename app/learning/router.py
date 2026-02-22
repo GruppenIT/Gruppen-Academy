@@ -225,11 +225,13 @@ async def list_my_tutor_sessions(
 async def get_single_tutor_session(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     session = await get_tutor_session(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Sem permissão para esta sessão")
     return session
 
 
@@ -238,11 +240,13 @@ async def send_message_to_tutor(
     session_id: uuid.UUID,
     data: TutorMessageRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     session = await get_tutor_session(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Sem permissão para esta sessão")
     try:
         return await send_tutor_message(db, session, data.message)
     except LLMResponseError as e:
@@ -253,12 +257,14 @@ async def send_message_to_tutor(
 async def generate_tutor_summary(
     session_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     """Generate a post-session summary for a tutor session."""
     session = await get_tutor_session(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
+    if session.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Sem permissão para esta sessão")
     try:
         return await generate_session_summary(db, session)
     except LLMResponseError as e:

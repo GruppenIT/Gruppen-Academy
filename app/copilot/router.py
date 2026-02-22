@@ -104,7 +104,7 @@ async def copilot_suggest_competencies(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("Erro na sugestão de competências via IA: %s", e)
-        raise HTTPException(status_code=502, detail=f"Erro ao comunicar com o serviço de IA: {e}")
+        raise HTTPException(status_code=502, detail="Erro ao comunicar com o serviço de IA.")
     return CompetencySuggestResponse(suggestions=suggestions)
 
 
@@ -180,7 +180,7 @@ async def copilot_suggest_guidelines(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("Erro na sugestão de orientações via IA: %s", e)
-        raise HTTPException(status_code=502, detail=f"Erro ao comunicar com o serviço de IA: {e}")
+        raise HTTPException(status_code=502, detail="Erro ao comunicar com o serviço de IA.")
     return GuidelineSuggestResponse(suggestions=suggestions)
 
 
@@ -234,7 +234,7 @@ async def copilot_generate_journey(
         logger.error("Erro inesperado em generate-journey: %s\n%s", e, tb)
         raise HTTPException(
             status_code=500,
-            detail=f"Erro interno: {type(e).__name__}: {e}",
+            detail="Erro interno ao gerar jornada. Tente novamente.",
         )
 
 
@@ -322,7 +322,7 @@ async def _generate_journey_impl(
         logger.error("Erro na geração de perguntas via IA: %s", e)
         raise HTTPException(
             status_code=502,
-            detail=f"Erro ao comunicar com o serviço de IA: {e}",
+            detail="Erro ao comunicar com o serviço de IA.",
         )
 
     # Create the journey

@@ -8,6 +8,7 @@ from app.gamification.models import Badge, Score, UserBadge
 from app.gamification.schemas import BadgeCreate, ScoreCreate, UserPointsSummary
 from app.journeys.models import JourneyParticipation
 from app.learning.models import ActivityCompletion, TutorSession
+from app.users.models import User
 
 
 # --- Scores ---
@@ -27,7 +28,15 @@ async def get_user_points(db: AsyncSession, user_id: uuid.UUID) -> UserPointsSum
         ).where(Score.user_id == user_id)
     )
     row = result.one()
-    return UserPointsSummary(user_id=user_id, total_points=row.total, scores_count=row.count)
+    # Fetch user name
+    user_result = await db.execute(select(User.full_name).where(User.id == user_id))
+    user_row = user_result.one_or_none()
+    return UserPointsSummary(
+        user_id=user_id,
+        full_name=user_row.full_name if user_row else None,
+        total_points=row.total,
+        scores_count=row.count,
+    )
 
 
 async def get_user_scores(
@@ -47,15 +56,22 @@ async def get_leaderboard(db: AsyncSession, limit: int = 20) -> list[UserPointsS
     result = await db.execute(
         select(
             Score.user_id,
+            User.full_name,
             func.sum(Score.points).label("total"),
             func.count(Score.id).label("count"),
         )
-        .group_by(Score.user_id)
+        .join(User, Score.user_id == User.id)
+        .group_by(Score.user_id, User.full_name)
         .order_by(func.sum(Score.points).desc())
         .limit(limit)
     )
     return [
-        UserPointsSummary(user_id=row.user_id, total_points=row.total, scores_count=row.count)
+        UserPointsSummary(
+            user_id=row.user_id,
+            full_name=row.full_name,
+            total_points=row.total,
+            scores_count=row.count,
+        )
         for row in result.all()
     ]
 

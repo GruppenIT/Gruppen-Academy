@@ -133,7 +133,9 @@ async def evaluate_participation_bulk(
 ) -> list[Evaluation]:
     """Evaluate all unevaluated responses in a participation."""
     participation_result = await db.execute(
-        select(JourneyParticipation).where(JourneyParticipation.id == participation_id)
+        select(JourneyParticipation)
+        .options(selectinload(JourneyParticipation.journey))
+        .where(JourneyParticipation.id == participation_id)
     )
     participation = participation_result.scalar_one_or_none()
     if not participation:
@@ -148,6 +150,7 @@ async def evaluate_participation_bulk(
         raise ValueError("Nenhuma resposta encontrada para esta participação")
 
     evaluations = []
+    had_new_evaluations = False
     for resp in responses:
         # Skip already evaluated responses
         existing = await get_evaluation_by_response(db, resp.id)
@@ -157,8 +160,54 @@ async def evaluate_participation_bulk(
 
         evaluation = await evaluate_question_response(db, resp.id)
         evaluations.append(evaluation)
+        had_new_evaluations = True
+
+    # Award performance XP when new evaluations were created
+    if had_new_evaluations and evaluations:
+        await _award_performance_xp(db, participation, evaluations)
 
     return evaluations
+
+
+async def _award_performance_xp(
+    db: AsyncSession,
+    participation: JourneyParticipation,
+    evaluations: list[Evaluation],
+) -> None:
+    """Award XP based on the average score_global of all evaluations.
+
+    Formula: round(avg_score * 100) XP.
+    A perfect score (1.0) yields 100 XP; 0.6 yields 60 XP.
+    """
+    from app.gamification.models import Score
+
+    # Guard against duplicate award: check if performance XP already given
+    existing = await db.execute(
+        select(Score.id).where(
+            Score.user_id == participation.user_id,
+            Score.source == "journey_performance",
+            Score.source_id == participation.journey_id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        return
+
+    avg_score = sum(e.score_global for e in evaluations) / len(evaluations)
+    xp = round(avg_score * 100)
+
+    if xp <= 0:
+        return
+
+    journey_title = participation.journey.title if participation.journey else "Jornada"
+    score = Score(
+        user_id=participation.user_id,
+        points=xp,
+        source="journey_performance",
+        source_id=participation.journey_id,
+        description=f"Desempenho na jornada: {journey_title} (média {avg_score:.0%})",
+    )
+    db.add(score)
+    await db.commit()
 
 
 async def get_participation_evaluations(

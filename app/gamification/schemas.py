@@ -29,6 +29,7 @@ class UserPointsSummary(BaseModel):
     user_id: uuid.UUID
     total_points: int
     scores_count: int
+    full_name: str | None = None
 
 
 # --- Badge ---

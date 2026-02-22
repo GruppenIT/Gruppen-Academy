@@ -3,13 +3,31 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
-import type { Training, TrainingModule, Team } from '@/types'
+import type { Training, TrainingModule, Team, ModuleQuiz, QuizQuestion, QuizQuestionType } from '@/types'
 import {
   ArrowLeft, Plus, Trash2, Upload, Loader2, Save, Send,
   GripVertical, FileText, CheckCircle2, X, ChevronDown, ChevronUp,
+  ClipboardCheck, Pencil, Star,
 } from 'lucide-react'
 import Link from 'next/link'
+import { clsx } from 'clsx'
 
+// ── Question Form Types ──
+interface QuestionFormData {
+  text: string
+  type: QuizQuestionType
+  options: { text: string }[]
+  correct_answer: string
+  explanation: string
+  weight: number
+}
+
+const emptyQuestion: QuestionFormData = {
+  text: '', type: 'multiple_choice', options: [{ text: '' }, { text: '' }, { text: '' }, { text: '' }],
+  correct_answer: '', explanation: '', weight: 1,
+}
+
+// ── Main Page ──
 export default function AdminTrainingDetailPage() {
   const { id } = useParams<{ id: string }>()
   const router = useRouter()
@@ -67,9 +85,7 @@ export default function AdminTrainingDetailPage() {
 
   const handleSave = async () => {
     if (!isDraft) return
-    setSaving(true)
-    setError('')
-    setSuccess('')
+    setSaving(true); setError(''); setSuccess('')
     try {
       await api.updateTraining(id, { title, description, domain, participant_level: level, estimated_duration_minutes: duration, xp_reward: xpReward })
       setSuccess('Treinamento salvo.')
@@ -113,6 +129,15 @@ export default function AdminTrainingDetailPage() {
     } finally { setUploadingModule(null) }
   }
 
+  const handleUpdateModuleSettings = async (moduleId: string, data: Record<string, unknown>) => {
+    try {
+      await api.updateTrainingModule(id, moduleId, data)
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao atualizar modulo')
+    }
+  }
+
   const handleOpenPublish = async () => {
     try {
       const t = await api.getTeams()
@@ -123,12 +148,8 @@ export default function AdminTrainingDetailPage() {
   }
 
   const handlePublish = async () => {
-    if (selectedTeams.length === 0) {
-      setError('Selecione pelo menos uma equipe.')
-      return
-    }
-    setPublishing(true)
-    setError('')
+    if (selectedTeams.length === 0) { setError('Selecione pelo menos uma equipe.'); return }
+    setPublishing(true); setError('')
     try {
       await api.publishTraining(id, selectedTeams)
       setShowPublish(false)
@@ -176,8 +197,7 @@ export default function AdminTrainingDetailPage() {
               Salvar
             </button>
             <button onClick={handleOpenPublish} className="btn-primary flex items-center gap-2 px-4 py-2">
-              <Send className="w-4 h-4" />
-              Publicar
+              <Send className="w-4 h-4" /> Publicar
             </button>
           </div>
         )}
@@ -266,23 +286,28 @@ export default function AdminTrainingDetailPage() {
                   {mod.content_type
                     ? mod.content_type === 'document'
                       ? `Documento: ${mod.original_filename || 'Enviado'}`
-                      : mod.content_type === 'scorm'
-                        ? 'SCORM'
-                        : mod.content_type === 'ai_generated'
-                          ? 'Conteudo IA'
-                          : 'Texto rico'
+                      : mod.content_type === 'scorm' ? 'SCORM' : mod.content_type === 'ai_generated' ? 'Conteudo IA' : 'Texto rico'
                     : 'Sem conteudo'}
-                  {mod.has_quiz && ` · Quiz${mod.quiz_required_to_advance ? ' (obrigatorio)' : ''}`}
+                  {mod.has_quiz && ` · Quiz (${mod.quiz?.questions?.length || 0} perguntas)${mod.quiz_required_to_advance ? ' obrigatorio' : ''}`}
                   {` · ${mod.xp_reward} XP`}
                 </p>
               </div>
               {mod.content_type && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
+              {mod.has_quiz && <ClipboardCheck className="w-4 h-4 text-indigo-500 flex-shrink-0" />}
               {expandedModule === mod.id ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
             </div>
 
             {/* Module expanded content */}
             {expandedModule === mod.id && (
-              <div className="border-t border-gray-100 p-4 space-y-4">
+              <div className="border-t border-gray-100 p-4 space-y-5">
+                {/* Module settings (draft only) */}
+                {isDraft && (
+                  <ModuleSettingsPanel
+                    mod={mod}
+                    onUpdate={(data) => handleUpdateModuleSettings(mod.id, data)}
+                  />
+                )}
+
                 {/* Content section */}
                 <div>
                   <p className="text-sm font-medium text-gray-700 mb-2">Conteudo</p>
@@ -290,12 +315,8 @@ export default function AdminTrainingDetailPage() {
                     <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
                       <FileText className="w-5 h-5 text-gray-400" />
                       <span className="text-sm text-gray-700 flex-1">{mod.original_filename}</span>
-                      <a
-                        href={api.getModuleFileUrl(id, mod.id)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-brand-600 hover:text-brand-700 font-medium"
-                      >
+                      <a href={api.getModuleFileUrl(id, mod.id)} target="_blank" rel="noopener noreferrer"
+                        className="text-sm text-brand-600 hover:text-brand-700 font-medium">
                         Visualizar
                       </a>
                     </div>
@@ -306,53 +327,37 @@ export default function AdminTrainingDetailPage() {
                   ) : (
                     <p className="text-sm text-gray-400">Nenhum conteudo adicionado.</p>
                   )}
-
                   {isDraft && (
                     <div className="mt-2">
                       <label className="btn-secondary inline-flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer">
-                        {uploadingModule === mod.id ? (
-                          <Loader2 className="w-4 h-4 animate-spin" />
-                        ) : (
-                          <Upload className="w-4 h-4" />
-                        )}
+                        {uploadingModule === mod.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                         Enviar arquivo
-                        <input
-                          type="file"
-                          className="hidden"
-                          accept=".pdf,.pptx,.docx,.ppt,.doc,.zip"
-                          onChange={(e) => {
-                            const file = e.target.files?.[0]
-                            if (file) handleUpload(mod.id, file)
-                            e.target.value = ''
-                          }}
-                          disabled={uploadingModule === mod.id}
-                        />
+                        <input type="file" className="hidden" accept=".pdf,.pptx,.docx,.ppt,.doc,.zip"
+                          onChange={(e) => { const file = e.target.files?.[0]; if (file) handleUpload(mod.id, file); e.target.value = '' }}
+                          disabled={uploadingModule === mod.id} />
                       </label>
                     </div>
                   )}
                 </div>
 
                 {/* Quiz section */}
-                <div>
-                  <p className="text-sm font-medium text-gray-700 mb-2">Quiz</p>
-                  {mod.quiz ? (
-                    <div className="p-3 bg-gray-50 rounded-xl text-sm text-gray-600">
-                      {mod.quiz.title} · {mod.quiz.questions?.length || 0} perguntas · Nota minima: {Math.round(mod.quiz.passing_score * 100)}%
-                    </div>
-                  ) : (
-                    <p className="text-sm text-gray-400">Nenhum quiz configurado.</p>
-                  )}
-                </div>
+                <QuizPanel
+                  trainingId={id}
+                  moduleId={mod.id}
+                  quiz={mod.quiz || null}
+                  hasQuiz={mod.has_quiz}
+                  quizRequiredProp={mod.quiz_required_to_advance}
+                  isDraft={isDraft}
+                  onReload={load}
+                  onError={setError}
+                />
 
-                {/* Actions */}
+                {/* Delete module */}
                 {isDraft && (
-                  <div className="flex justify-end">
-                    <button
-                      onClick={() => handleDeleteModule(mod.id)}
-                      className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      Remover modulo
+                  <div className="flex justify-end pt-2 border-t border-gray-100">
+                    <button onClick={() => handleDeleteModule(mod.id)}
+                      className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1">
+                      <Trash2 className="w-3.5 h-3.5" /> Remover modulo
                     </button>
                   </div>
                 )}
@@ -365,19 +370,11 @@ export default function AdminTrainingDetailPage() {
       {/* Add module */}
       {isDraft && (
         <div className="card p-4 flex items-center gap-3">
-          <input
-            type="text"
-            placeholder="Titulo do novo modulo..."
-            className="input-field flex-1"
-            value={newModuleTitle}
-            onChange={(e) => setNewModuleTitle(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleAddModule()}
-          />
-          <button
-            onClick={handleAddModule}
-            disabled={addingModule || !newModuleTitle.trim()}
-            className="btn-primary flex items-center gap-2 px-4 py-2"
-          >
+          <input type="text" placeholder="Titulo do novo modulo..." className="input-field flex-1"
+            value={newModuleTitle} onChange={(e) => setNewModuleTitle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddModule()} />
+          <button onClick={handleAddModule} disabled={addingModule || !newModuleTitle.trim()}
+            className="btn-primary flex items-center gap-2 px-4 py-2">
             {addingModule ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
             Adicionar
           </button>
@@ -390,52 +387,34 @@ export default function AdminTrainingDetailPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md animate-slide-up">
             <div className="flex items-center justify-between p-5 border-b border-gray-100">
               <h3 className="font-bold text-gray-900">Publicar Treinamento</h3>
-              <button onClick={() => setShowPublish(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setShowPublish(false)} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
-
             <div className="p-5">
-              <p className="text-sm text-gray-600 mb-4">
-                <strong>{training.title}</strong> sera publicado e ficara disponivel para as equipes selecionadas.
-              </p>
-
+              <p className="text-sm text-gray-600 mb-4"><strong>{training.title}</strong> sera publicado e ficara disponivel para as equipes selecionadas.</p>
               <div className="space-y-2 max-h-60 overflow-y-auto">
                 {teams.map((team) => (
                   <label key={team.id} className="flex items-center gap-3 p-3 rounded-xl hover:bg-gray-50 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={selectedTeams.includes(team.id)}
-                      onChange={() => toggleTeam(team.id)}
-                      className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
-                    />
+                    <input type="checkbox" checked={selectedTeams.includes(team.id)} onChange={() => toggleTeam(team.id)}
+                      className="rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
                     <div>
                       <p className="text-sm font-medium text-gray-900">{team.name}</p>
                       <p className="text-xs text-gray-500">{team.members?.length || 0} membros</p>
                     </div>
                   </label>
                 ))}
-                {teams.length === 0 && (
-                  <p className="text-sm text-gray-400 text-center py-4">Nenhuma equipe cadastrada.</p>
-                )}
+                {teams.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Nenhuma equipe cadastrada.</p>}
               </div>
-
               {selectedTeams.length > 0 && (
                 <p className="text-xs text-gray-500 mt-3">
                   {teams.filter((t) => selectedTeams.includes(t.id)).reduce((sum, t) => sum + (t.members?.length || 0), 0)} profissionais receberao este treinamento.
                 </p>
               )}
             </div>
-
             <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-100">
               <button onClick={() => setShowPublish(false)} className="btn-secondary px-4 py-2">Cancelar</button>
-              <button
-                onClick={handlePublish}
-                disabled={publishing || selectedTeams.length === 0}
-                className="btn-primary flex items-center gap-2 px-4 py-2"
-              >
-                {publishing && <Loader2 className="w-4 h-4 animate-spin" />}
-                Publicar
+              <button onClick={handlePublish} disabled={publishing || selectedTeams.length === 0}
+                className="btn-primary flex items-center gap-2 px-4 py-2">
+                {publishing && <Loader2 className="w-4 h-4 animate-spin" />} Publicar
               </button>
             </div>
           </div>
@@ -443,4 +422,439 @@ export default function AdminTrainingDetailPage() {
       )}
     </div>
   )
+}
+
+// ── Module Settings Panel ──
+function ModuleSettingsPanel({ mod, onUpdate }: {
+  mod: TrainingModule
+  onUpdate: (data: Record<string, unknown>) => void
+}) {
+  return (
+    <div className="p-3 bg-gray-50 rounded-xl space-y-3">
+      <p className="text-sm font-medium text-gray-700">Configuracoes do modulo</p>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Titulo</label>
+          <input type="text" className="input-field w-full text-sm" defaultValue={mod.title}
+            onBlur={(e) => { if (e.target.value !== mod.title) onUpdate({ title: e.target.value }) }} />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">XP do modulo</label>
+          <input type="number" className="input-field w-full text-sm" defaultValue={mod.xp_reward} min={0}
+            onBlur={(e) => { const v = Number(e.target.value); if (v !== mod.xp_reward) onUpdate({ xp_reward: v }) }} />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Descricao</label>
+          <input type="text" className="input-field w-full text-sm" defaultValue={mod.description || ''} placeholder="Opcional"
+            onBlur={(e) => { if (e.target.value !== (mod.description || '')) onUpdate({ description: e.target.value || null }) }} />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Quiz Panel ──
+function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDraft, onReload, onError }: {
+  trainingId: string
+  moduleId: string
+  quiz: ModuleQuiz | null
+  hasQuiz: boolean
+  quizRequiredProp: boolean
+  isDraft: boolean
+  onReload: () => void
+  onError: (msg: string) => void
+}) {
+  const [creating, setCreating] = useState(false)
+  const [addingQuestion, setAddingQuestion] = useState(false)
+  const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
+  const [savingQuiz, setSavingQuiz] = useState(false)
+  const [passingScore, setPassingScore] = useState(quiz?.passing_score ?? 0.7)
+  const [quizRequired, setQuizRequired] = useState(quizRequiredProp)
+
+  useEffect(() => { setPassingScore(quiz?.passing_score ?? 0.7) }, [quiz])
+  useEffect(() => { setQuizRequired(quizRequiredProp) }, [quizRequiredProp])
+
+  const handleCreateQuiz = async () => {
+    setCreating(true)
+    try {
+      await api.createModuleQuiz(trainingId, moduleId, { title: 'Quiz', passing_score: 0.7 })
+      await api.updateTrainingModule(trainingId, moduleId, { has_quiz: true })
+      onReload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao criar quiz')
+    } finally { setCreating(false) }
+  }
+
+  const handleUpdatePassingScore = async (score: number) => {
+    setSavingQuiz(true)
+    try {
+      await api.createModuleQuiz(trainingId, moduleId, { title: quiz?.title || 'Quiz', passing_score: score })
+      onReload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao atualizar quiz')
+    } finally { setSavingQuiz(false) }
+  }
+
+  const handleToggleRequired = async (required: boolean) => {
+    setQuizRequired(required)
+    try {
+      await api.updateTrainingModule(trainingId, moduleId, { quiz_required_to_advance: required })
+      onReload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao atualizar modulo')
+    }
+  }
+
+  const handleAddQuestion = async (data: QuestionFormData) => {
+    try {
+      await api.addQuizQuestion(trainingId, moduleId, {
+        text: data.text,
+        type: data.type,
+        options: data.type === 'multiple_choice' ? data.options.filter(o => o.text.trim()) : undefined,
+        correct_answer: data.correct_answer || undefined,
+        explanation: data.explanation || undefined,
+        weight: data.weight,
+      })
+      setAddingQuestion(false)
+      onReload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao adicionar pergunta')
+    }
+  }
+
+  const handleUpdateQuestion = async (questionId: string, data: QuestionFormData) => {
+    try {
+      await api.updateQuizQuestion(trainingId, moduleId, questionId, {
+        text: data.text,
+        type: data.type,
+        options: data.type === 'multiple_choice' ? data.options.filter(o => o.text.trim()) : undefined,
+        correct_answer: data.correct_answer || undefined,
+        explanation: data.explanation || undefined,
+        weight: data.weight,
+      })
+      setEditingQuestion(null)
+      onReload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao atualizar pergunta')
+    }
+  }
+
+  const handleDeleteQuestion = async (questionId: string) => {
+    if (!confirm('Remover esta pergunta?')) return
+    try {
+      await api.deleteQuizQuestion(trainingId, moduleId, questionId)
+      onReload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao remover pergunta')
+    }
+  }
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className="text-sm font-medium text-gray-700 flex items-center gap-1.5">
+          <ClipboardCheck className="w-4 h-4 text-indigo-500" /> Quiz
+        </p>
+        {isDraft && !quiz && (
+          <button onClick={handleCreateQuiz} disabled={creating}
+            className="btn-secondary text-xs px-3 py-1 flex items-center gap-1">
+            {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+            Criar quiz
+          </button>
+        )}
+      </div>
+
+      {!quiz ? (
+        <p className="text-sm text-gray-400">Nenhum quiz configurado.</p>
+      ) : (
+        <div className="space-y-3">
+          {/* Quiz settings */}
+          {isDraft && (
+            <div className="p-3 bg-indigo-50/50 rounded-xl space-y-3">
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <label className="text-xs text-gray-600">Nota minima:</label>
+                  <select
+                    className="input-field text-xs py-1 px-2"
+                    value={passingScore}
+                    onChange={(e) => {
+                      const v = parseFloat(e.target.value)
+                      setPassingScore(v)
+                      handleUpdatePassingScore(v)
+                    }}
+                    disabled={savingQuiz}
+                  >
+                    {[0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map(v => (
+                      <option key={v} value={v}>{Math.round(v * 100)}%</option>
+                    ))}
+                  </select>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={quizRequired}
+                    onChange={(e) => handleToggleRequired(e.target.checked)}
+                    className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+                  <span className="text-xs text-gray-600">Obrigatorio para avancar</span>
+                </label>
+              </div>
+            </div>
+          )}
+
+          {/* Read-only quiz info */}
+          {!isDraft && (
+            <div className="p-3 bg-gray-50 rounded-xl text-sm text-gray-600">
+              {quiz.title} · {quiz.questions?.length || 0} perguntas · Nota minima: {Math.round(quiz.passing_score * 100)}%
+            </div>
+          )}
+
+          {/* Questions list */}
+          <div className="space-y-2">
+            {(quiz.questions || [])
+              .sort((a, b) => a.order - b.order)
+              .map((q, idx) => (
+                <div key={q.id}>
+                  {editingQuestion === q.id && isDraft ? (
+                    <QuestionForm
+                      initial={questionToFormData(q)}
+                      onSave={(data) => handleUpdateQuestion(q.id, data)}
+                      onCancel={() => setEditingQuestion(null)}
+                      index={idx}
+                    />
+                  ) : (
+                    <QuestionCard
+                      question={q}
+                      index={idx}
+                      isDraft={isDraft}
+                      onEdit={() => setEditingQuestion(q.id)}
+                      onDelete={() => handleDeleteQuestion(q.id)}
+                    />
+                  )}
+                </div>
+              ))}
+          </div>
+
+          {/* Add question form */}
+          {isDraft && addingQuestion && (
+            <QuestionForm
+              initial={emptyQuestion}
+              onSave={handleAddQuestion}
+              onCancel={() => setAddingQuestion(false)}
+              index={(quiz.questions?.length || 0)}
+            />
+          )}
+
+          {/* Add question button */}
+          {isDraft && !addingQuestion && (
+            <button onClick={() => setAddingQuestion(true)}
+              className="w-full p-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-500 hover:border-indigo-300 hover:text-indigo-600 transition-colors flex items-center justify-center gap-1.5">
+              <Plus className="w-4 h-4" /> Adicionar pergunta
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Question Card (read-only) ──
+function QuestionCard({ question: q, index, isDraft, onEdit, onDelete }: {
+  question: QuizQuestion; index: number; isDraft: boolean
+  onEdit: () => void; onDelete: () => void
+}) {
+  const typeLabel = q.type === 'multiple_choice' ? 'Multipla escolha' : q.type === 'true_false' ? 'V ou F' : 'Dissertativa'
+
+  return (
+    <div className="p-3 border border-gray-200 rounded-xl group">
+      <div className="flex items-start gap-2">
+        <span className="text-xs font-bold text-gray-400 mt-0.5 shrink-0">{index + 1}.</span>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm text-gray-900">{q.text}</p>
+          <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+            <span className="badge-pill bg-gray-100 text-gray-500 text-xs">{typeLabel}</span>
+            <span className="text-xs text-gray-400 flex items-center gap-0.5">
+              <Star className="w-3 h-3" /> Peso: {q.weight}
+            </span>
+            {q.correct_answer && (
+              <span className="text-xs text-emerald-600">Resp: {q.correct_answer}</span>
+            )}
+          </div>
+          {q.type === 'multiple_choice' && q.options && (
+            <div className="mt-2 space-y-1">
+              {q.options.map((opt, i) => {
+                const letter = String.fromCharCode(65 + i)
+                const isCorrect = q.correct_answer?.toUpperCase() === letter
+                return (
+                  <div key={i} className={clsx(
+                    'text-xs px-2 py-1 rounded',
+                    isCorrect ? 'bg-emerald-50 text-emerald-700 font-medium' : 'text-gray-500'
+                  )}>
+                    {letter}. {opt.text}
+                    {isCorrect && <CheckCircle2 className="w-3 h-3 inline ml-1" />}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          {q.explanation && (
+            <p className="text-xs text-gray-400 mt-1 italic">Explicacao: {q.explanation}</p>
+          )}
+        </div>
+        {isDraft && (
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+            <button onClick={onEdit} className="p-1 text-gray-400 hover:text-indigo-600"><Pencil className="w-3.5 h-3.5" /></button>
+            <button onClick={onDelete} className="p-1 text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Question Form (create/edit) ──
+function QuestionForm({ initial, onSave, onCancel, index }: {
+  initial: QuestionFormData; onSave: (data: QuestionFormData) => void; onCancel: () => void; index: number
+}) {
+  const [form, setForm] = useState<QuestionFormData>(initial)
+  const [saving, setSaving] = useState(false)
+
+  const update = (patch: Partial<QuestionFormData>) => setForm(f => ({ ...f, ...patch }))
+
+  const handleSubmit = async () => {
+    if (!form.text.trim()) return
+    setSaving(true)
+    try { await onSave(form) } finally { setSaving(false) }
+  }
+
+  return (
+    <div className="p-4 border-2 border-indigo-200 rounded-xl bg-indigo-50/30 space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-indigo-700">Pergunta {index + 1}</span>
+        <button onClick={onCancel} className="text-gray-400 hover:text-gray-600"><X className="w-4 h-4" /></button>
+      </div>
+
+      {/* Question text */}
+      <textarea
+        className="input-field w-full text-sm"
+        rows={2}
+        placeholder="Texto da pergunta..."
+        value={form.text}
+        onChange={(e) => update({ text: e.target.value })}
+      />
+
+      {/* Type + Weight row */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Tipo</label>
+          <select className="input-field w-full text-sm" value={form.type}
+            onChange={(e) => {
+              const type = e.target.value as QuizQuestionType
+              update({
+                type,
+                correct_answer: '',
+                options: type === 'multiple_choice' ? [{ text: '' }, { text: '' }, { text: '' }, { text: '' }] : [],
+              })
+            }}>
+            <option value="multiple_choice">Multipla escolha</option>
+            <option value="true_false">Verdadeiro ou Falso</option>
+            <option value="essay">Dissertativa</option>
+          </select>
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Peso</label>
+          <input type="number" className="input-field w-full text-sm" value={form.weight} min={0.1} step={0.1}
+            onChange={(e) => update({ weight: parseFloat(e.target.value) || 1 })} />
+        </div>
+        {form.type === 'true_false' && (
+          <div>
+            <label className="text-xs text-gray-500 block mb-1">Resposta correta</label>
+            <select className="input-field w-full text-sm" value={form.correct_answer}
+              onChange={(e) => update({ correct_answer: e.target.value })}>
+              <option value="">Selecionar...</option>
+              <option value="true">Verdadeiro</option>
+              <option value="false">Falso</option>
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* Multiple choice options */}
+      {form.type === 'multiple_choice' && (
+        <div className="space-y-2">
+          <label className="text-xs text-gray-500">Opcoes (marque a correta):</label>
+          {form.options.map((opt, i) => {
+            const letter = String.fromCharCode(65 + i)
+            const isCorrect = form.correct_answer === letter
+            return (
+              <div key={i} className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => update({ correct_answer: letter })}
+                  className={clsx(
+                    'w-7 h-7 rounded-lg text-xs font-bold flex items-center justify-center border-2 transition-colors shrink-0',
+                    isCorrect ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-gray-200 text-gray-400 hover:border-emerald-300'
+                  )}
+                >
+                  {letter}
+                </button>
+                <input
+                  type="text"
+                  className="input-field flex-1 text-sm"
+                  placeholder={`Opcao ${letter}...`}
+                  value={opt.text}
+                  onChange={(e) => {
+                    const newOptions = [...form.options]
+                    newOptions[i] = { text: e.target.value }
+                    update({ options: newOptions })
+                  }}
+                />
+                {form.options.length > 2 && (
+                  <button onClick={() => {
+                    const newOptions = form.options.filter((_, j) => j !== i)
+                    const newCorrect = form.correct_answer === letter ? '' : form.correct_answer
+                    update({ options: newOptions, correct_answer: newCorrect })
+                  }} className="text-gray-300 hover:text-red-400">
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )
+          })}
+          {form.options.length < 6 && (
+            <button onClick={() => update({ options: [...form.options, { text: '' }] })}
+              className="text-xs text-indigo-600 hover:text-indigo-700 flex items-center gap-1 mt-1">
+              <Plus className="w-3 h-3" /> Adicionar opcao
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Explanation */}
+      <div>
+        <label className="text-xs text-gray-500 block mb-1">Explicacao (exibida apos resposta)</label>
+        <input type="text" className="input-field w-full text-sm" placeholder="Opcional..."
+          value={form.explanation} onChange={(e) => update({ explanation: e.target.value })} />
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end gap-2 pt-1">
+        <button onClick={onCancel} className="btn-secondary text-xs px-3 py-1.5">Cancelar</button>
+        <button onClick={handleSubmit} disabled={!form.text.trim() || saving}
+          className="btn-primary text-xs px-3 py-1.5 flex items-center gap-1">
+          {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+          Salvar
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Helpers ──
+function questionToFormData(q: QuizQuestion): QuestionFormData {
+  return {
+    text: q.text,
+    type: q.type,
+    options: q.type === 'multiple_choice' && q.options ? q.options.map(o => ({ text: o.text })) : [{ text: '' }, { text: '' }],
+    correct_answer: q.correct_answer || '',
+    explanation: q.explanation || '',
+    weight: q.weight,
+  }
 }

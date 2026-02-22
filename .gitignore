@@ -17,6 +17,9 @@ env/
 .env
 .env.*
 
+# RSA keys (never commit private keys)
+*.pem
+
 # Uploads (may contain sensitive OCR data)
 uploads/
 /tmp/gruppen-academy-uploads/

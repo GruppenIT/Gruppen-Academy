@@ -29,12 +29,17 @@ mudanças arquiteturais ou de infraestrutura.
   `app/auth/router.py`, `app/auth/dependencies.py`, `app/main.py`,
   `docker-compose.yml`, `pyproject.toml`
 
-### 3. Considerar RS256 (assimétrico) para JWT
-- **Status:** PENDENTE
+### 3. Migrar JWT para RS256 (assimétrico)
+- **Status:** CONCLUÍDO (2026-02-22)
 - **OWASP:** A02 — Cryptographic Failures
 - **Risco:** HS256 usa segredo compartilhado — qualquer serviço que valida
   tokens também pode emiti-los.
-- **Solução:** Gerar par RSA, assinar com chave privada, validar com pública.
+- **Solução:** Default alterado para RS256. Chave privada assina, pública valida.
+  Em dev, par RSA efêmero é gerado automaticamente. Em produção, exige
+  `JWT_PRIVATE_KEY` e `JWT_PUBLIC_KEY` via env vars. Script helper em
+  `python -m app.auth.generate_keys`. HS256 ainda funciona se `JWT_ALGORITHM=HS256`.
+- **Arquivos alterados:** `app/config.py`, `app/auth/service.py`,
+  `app/auth/generate_keys.py`, `.gitignore`
 
 ### 4. Audit logging estruturado
 - **Status:** PENDENTE

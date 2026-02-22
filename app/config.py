@@ -19,8 +19,12 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
 
     jwt_secret_key: str = _INSECURE_DEFAULT
-    jwt_algorithm: str = "HS256"
+    jwt_algorithm: str = "RS256"
     jwt_access_token_expire_minutes: int = 30
+
+    # RSA keys for RS256 — PEM content or file paths
+    jwt_private_key: str = ""  # PEM-encoded RSA private key (for signing)
+    jwt_public_key: str = ""   # PEM-encoded RSA public key (for verification)
 
     cors_origins: list[str] = ["https://academy.gruppen.com.br", "http://localhost:3000"]
 
@@ -41,12 +45,59 @@ class Settings(BaseSettings):
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
+    def _resolve_rsa_keys(self) -> None:
+        """Load RSA keys from file paths if they point to files, or auto-generate for dev."""
+        import os
+
+        # If the value looks like a file path, read its content
+        for attr in ("jwt_private_key", "jwt_public_key"):
+            val = getattr(self, attr)
+            if val and not val.startswith("-----") and os.path.isfile(val):
+                with open(val) as f:
+                    object.__setattr__(self, attr, f.read())
+
+        # In non-production without keys, auto-generate an ephemeral pair
+        if self.jwt_algorithm == "RS256" and not self.jwt_private_key:
+            if self.app_env == "production":
+                raise ValueError(
+                    "RS256 requer JWT_PRIVATE_KEY e JWT_PUBLIC_KEY em produção. "
+                    "Gere com: python -m app.auth.generate_keys"
+                )
+            from cryptography.hazmat.primitives.asymmetric import rsa
+            from cryptography.hazmat.primitives import serialization
+
+            logger.warning(
+                "SEGURANÇA: Gerando par RSA efêmero para desenvolvimento. "
+                "Configure JWT_PRIVATE_KEY e JWT_PUBLIC_KEY para produção."
+            )
+            private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+            object.__setattr__(
+                self,
+                "jwt_private_key",
+                private_key.private_bytes(
+                    serialization.Encoding.PEM,
+                    serialization.PrivateFormat.PKCS8,
+                    serialization.NoEncryption(),
+                ).decode(),
+            )
+            object.__setattr__(
+                self,
+                "jwt_public_key",
+                private_key.public_key()
+                .public_bytes(
+                    serialization.Encoding.PEM,
+                    serialization.PublicFormat.SubjectPublicKeyInfo,
+                )
+                .decode(),
+            )
+
     def validate_secrets(self) -> None:
         """Raise if running with insecure default secrets."""
         insecure = []
         if self.app_secret_key == _INSECURE_DEFAULT:
             insecure.append("APP_SECRET_KEY")
-        if self.jwt_secret_key == _INSECURE_DEFAULT:
+        # jwt_secret_key only matters for HS256
+        if self.jwt_algorithm == "HS256" and self.jwt_secret_key == _INSECURE_DEFAULT:
             insecure.append("JWT_SECRET_KEY")
         if insecure:
             if self.app_env == "production":
@@ -61,7 +112,7 @@ class Settings(BaseSettings):
 
         # Validate minimum length for secrets in production
         if self.app_env == "production":
-            if len(self.jwt_secret_key) < _MIN_SECRET_LENGTH:
+            if self.jwt_algorithm == "HS256" and len(self.jwt_secret_key) < _MIN_SECRET_LENGTH:
                 raise ValueError(
                     f"JWT_SECRET_KEY deve ter no mínimo {_MIN_SECRET_LENGTH} caracteres."
                 )
@@ -69,6 +120,9 @@ class Settings(BaseSettings):
                 raise ValueError(
                     f"APP_SECRET_KEY deve ter no mínimo {_MIN_SECRET_LENGTH} caracteres."
                 )
+
+        # Resolve RSA keys (load from file or auto-generate for dev)
+        self._resolve_rsa_keys()
 
 
 settings = Settings()

@@ -12,6 +12,7 @@ from app.copilot.router import router as copilot_router
 from app.evaluations.router import router as evaluations_router
 from app.gamification.router import router as gamification_router
 from app.init_db import startup as init_startup
+from app.redis import close_redis
 from app.journeys.router import router as journeys_router
 from app.learning.router import router as learning_router
 from app.settings.router import router as settings_router
@@ -50,6 +51,7 @@ async def lifespan(app: FastAPI):
     logger.info("CORS origins: %s", settings.cors_origins)
     await init_startup()
     yield
+    await close_redis()
 
 
 # Disable interactive docs in production

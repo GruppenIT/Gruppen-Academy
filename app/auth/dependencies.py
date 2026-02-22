@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.blacklist import is_token_revoked
 from app.auth.service import decode_access_token
 from app.config import settings
 from app.database import get_db
@@ -51,6 +52,14 @@ async def get_current_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token inválido",
+        )
+
+    # Check if token was revoked (logout)
+    jti = payload.get("jti")
+    if jti and await is_token_revoked(jti):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token revogado",
         )
     user = await get_user_by_id(db, user_id)
     if not user or not user.is_active:

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     cookie_samesite: str = "lax"
     cookie_domain: str | None = None  # None = current domain only
 
+    # Redis (used for token blacklist)
+    redis_url: str = "redis://redis:6379/0"
+
     # Admin seed password — MUST be overridden via env var in production
     admin_seed_password: str = ""
 

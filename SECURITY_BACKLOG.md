@@ -18,12 +18,16 @@ mudanças arquiteturais ou de infraestrutura.
 ## Prioridade Média
 
 ### 2. Token revocation / blacklist com Redis
-- **Status:** PENDENTE
+- **Status:** CONCLUÍDO (2026-02-22)
 - **OWASP:** A07
 - **Risco:** Tokens válidos por 30 min sem possibilidade de revogação (logout
   real inexistente).
-- **Solução:** Adicionar Redis, manter blacklist de `jti`. Endpoint
-  `POST /api/auth/logout` invalida o token.
+- **Solução:** Redis adicionado ao stack. `POST /api/auth/logout` extrai o `jti`
+  do JWT e armazena em `revoked:<jti>` com TTL igual ao tempo restante do token.
+  `get_current_user` verifica a blacklist antes de autorizar.
+- **Arquivos alterados:** `app/config.py`, `app/redis.py`, `app/auth/blacklist.py`,
+  `app/auth/router.py`, `app/auth/dependencies.py`, `app/main.py`,
+  `docker-compose.yml`, `pyproject.toml`
 
 ### 3. Considerar RS256 (assimétrico) para JWT
 - **Status:** PENDENTE

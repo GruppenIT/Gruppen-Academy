@@ -18,6 +18,7 @@ dependencies = [
     "openai>=1.60,<2",
     "httpx>=0.28,<1",
     "fpdf2>=2.8,<3",
+    "redis>=5.0,<6",
 ]
 
 [project.optional-dependencies]

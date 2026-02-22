@@ -5,8 +5,10 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.blacklist import revoke_token
+from app.auth.dependencies import get_current_user
 from app.auth.schemas import LoginRequest, SSOAuthorizeResponse, SSOCallbackRequest, TokenResponse
-from app.auth.service import create_access_token
+from app.auth.service import create_access_token, decode_access_token
 from app.config import settings as app_settings
 from app.auth.sso import (
     build_authorize_url,
@@ -238,6 +240,17 @@ async def sso_callback(data: SSOCallbackRequest, response: Response, db: AsyncSe
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-async def logout(response: Response):
-    """Clear the auth cookie (server-side logout)."""
+async def logout(request: Request, response: Response):
+    """Revoke the current JWT and clear the auth cookie."""
+    # Best-effort: try to blacklist the token so it can't be reused
+    cookie_token = request.cookies.get(app_settings.cookie_name)
+    if cookie_token:
+        try:
+            payload = decode_access_token(cookie_token)
+            jti = payload.get("jti")
+            exp = payload.get("exp")
+            if jti and exp:
+                await revoke_token(jti, int(exp))
+        except Exception:
+            pass  # Token may already be invalid — still clear the cookie
     _clear_auth_cookie(response)

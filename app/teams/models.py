@@ -35,5 +35,5 @@ class Team(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    members = relationship("User", secondary=team_member, backref="teams")
+    members = relationship("User", secondary=team_member, back_populates="teams")
     journeys = relationship("Journey", secondary=journey_team, back_populates="teams")

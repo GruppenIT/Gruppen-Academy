@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.gamification.models import Badge, Score, UserBadge
 from app.gamification.schemas import BadgeCreate, ScoreCreate, UserPointsSummary
+from app.journeys.models import JourneyParticipation
+from app.learning.models import ActivityCompletion, TutorSession
 
 
 # --- Scores ---
@@ -191,7 +193,6 @@ async def _check_criteria(
 
     if criteria.startswith("journeys>="):
         threshold = int(criteria.split(">=")[1])
-        from app.journeys.models import JourneyParticipation
         result = await db.execute(
             select(func.count(JourneyParticipation.id)).where(
                 JourneyParticipation.user_id == user_id,
@@ -202,7 +203,6 @@ async def _check_criteria(
 
     if criteria.startswith("activities>="):
         threshold = int(criteria.split(">=")[1])
-        from app.learning.models import ActivityCompletion
         result = await db.execute(
             select(func.count(ActivityCompletion.id)).where(
                 ActivityCompletion.user_id == user_id
@@ -217,7 +217,6 @@ async def _check_criteria(
 
     if criteria.startswith("tutor_sessions>="):
         threshold = int(criteria.split(">=")[1])
-        from app.learning.models import TutorSession
         result = await db.execute(
             select(func.count(TutorSession.id)).where(
                 TutorSession.user_id == user_id

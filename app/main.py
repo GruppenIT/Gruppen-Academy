@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    settings.validate_secrets()
     logger.info("CORS origins: %s", settings.cors_origins)
     await init_startup()
     yield

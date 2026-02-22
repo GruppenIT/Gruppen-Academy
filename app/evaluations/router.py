@@ -16,6 +16,7 @@ from app.evaluations.schemas import (
     ReportOut,
     UserParticipationSummary,
 )
+from app.llm.client import LLMResponseError
 from app.evaluations.service import (
     evaluate_participation_bulk,
     evaluate_question_response,
@@ -55,6 +56,8 @@ async def evaluate_response(
         return await evaluate_question_response(db, data.response_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except LLMResponseError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.post("/evaluate-bulk", response_model=list[EvaluationOut], status_code=status.HTTP_201_CREATED)
@@ -68,6 +71,8 @@ async def evaluate_bulk(
         return await evaluate_participation_bulk(db, data.participation_id)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except LLMResponseError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.get("/participations", response_model=list[ParticipationEvaluationSummary])
@@ -162,6 +167,8 @@ async def create_report(
         return await generate_analytical_report(db, data.participation_id, data.report_type)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except LLMResponseError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.get("/reports/{report_id}", response_model=ReportOut)

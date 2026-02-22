@@ -67,7 +67,9 @@ async def evaluate_question_response(db: AsyncSession, response_id: uuid.UUID) -
     question_result = await db.execute(
         select(Question).where(Question.id == response.question_id)
     )
-    question = question_result.scalar_one()
+    question = question_result.scalar_one_or_none()
+    if not question:
+        raise ValueError("Pergunta associada não encontrada")
 
     # Fetch relevant guidelines for this question's journey and products
     guidelines = await _fetch_guidelines_for_question(db, question.id)
@@ -175,7 +177,9 @@ async def get_participation_evaluations(
         question_result = await db.execute(
             select(Question).where(Question.id == resp.question_id)
         )
-        question = question_result.scalar_one()
+        question = question_result.scalar_one_or_none()
+        if not question:
+            continue
 
         eval_result = await db.execute(
             select(Evaluation).where(Evaluation.response_id == resp.id)

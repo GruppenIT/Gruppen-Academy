@@ -36,3 +36,4 @@ class User(Base):
     # Relationships
     journey_participations = relationship("JourneyParticipation", back_populates="user")
     scores = relationship("Score", back_populates="user")
+    teams = relationship("Team", secondary="team_members", back_populates="members")

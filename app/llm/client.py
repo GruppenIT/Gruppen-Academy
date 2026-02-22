@@ -12,9 +12,29 @@ from app.llm.prompts import (
     QUESTION_GENERATION_SYSTEM_PROMPT,
     REPORT_MANAGER_SYSTEM_PROMPT,
     REPORT_PROFESSIONAL_SYSTEM_PROMPT,
+    TUTOR_SUMMARY_SYSTEM_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
+
+
+class LLMResponseError(Exception):
+    """Raised when the LLM returns an invalid or empty response."""
+
+
+def _parse_json_response(response) -> dict | list:
+    """Safely extract and parse JSON from an OpenAI chat completion response."""
+    content = response.choices[0].message.content
+    if not content:
+        logger.error("LLM returned empty content")
+        raise LLMResponseError("A IA retornou uma resposta vazia. Tente novamente.")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as exc:
+        logger.error("Failed to parse LLM JSON response: %s", content[:500])
+        raise LLMResponseError(
+            "A IA retornou uma resposta em formato inválido. Tente novamente."
+        ) from exc
 
 
 def _get_client() -> AsyncOpenAI:
@@ -55,8 +75,7 @@ Resposta do profissional: {answer_text}
         ],
     )
 
-    result_text = response.choices[0].message.content
-    result_json = json.loads(result_text)
+    result_json = _parse_json_response(response)
     return EvaluationResult(**result_json)
 
 
@@ -109,7 +128,7 @@ Orientações Master por Produto:
         ],
     )
 
-    result = json.loads(response.choices[0].message.content)
+    result = _parse_json_response(response)
     return result if isinstance(result, list) else result.get("questions", [result])
 
 
@@ -146,7 +165,7 @@ async def generate_report(evaluations: list, report_type: str) -> dict:
         ],
     )
 
-    return json.loads(response.choices[0].message.content)
+    return _parse_json_response(response)
 
 
 async def suggest_competencies(
@@ -175,7 +194,7 @@ Competências já existentes:
         ],
     )
 
-    result = json.loads(response.choices[0].message.content)
+    result = _parse_json_response(response)
     return result.get("suggestions", [])
 
 
@@ -205,7 +224,7 @@ Orientações já existentes:
         ],
     )
 
-    result = json.loads(response.choices[0].message.content)
+    result = _parse_json_response(response)
     return result.get("suggestions", [])
 
 
@@ -214,8 +233,6 @@ async def generate_tutor_summary(
     topic: str,
 ) -> dict:
     """Generate a structured summary for a tutor session."""
-    from app.llm.prompts import TUTOR_SUMMARY_SYSTEM_PROMPT
-
     client = _get_client()
 
     conversation_text = "\n".join(
@@ -239,7 +256,7 @@ Conversa:
         ],
     )
 
-    return json.loads(response.choices[0].message.content)
+    return _parse_json_response(response)
 
 
 async def tutor_chat(
@@ -256,4 +273,7 @@ async def tutor_chat(
         messages=api_messages,
     )
 
-    return response.choices[0].message.content
+    content = response.choices[0].message.content
+    if not content:
+        raise LLMResponseError("A IA retornou uma resposta vazia. Tente novamente.")
+    return content

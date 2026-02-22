@@ -27,7 +27,7 @@ export interface Competency {
   id: string
   name: string
   description: string
-  type: 'HARD' | 'SOFT' | 'hard' | 'soft'
+  type: 'hard' | 'soft'
   domain: string
 }
 

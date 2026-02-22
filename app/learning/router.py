@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_role
 from app.database import get_db
+from app.llm.client import LLMResponseError
 from app.learning.schemas import (
     ActivityCompletionOut,
     LearningActivityCreate,
@@ -242,7 +243,10 @@ async def send_message_to_tutor(
     session = await get_tutor_session(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
-    return await send_tutor_message(db, session, data.message)
+    try:
+        return await send_tutor_message(db, session, data.message)
+    except LLMResponseError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.post("/tutor/sessions/{session_id}/summary", response_model=TutorSessionOut)
@@ -255,7 +259,10 @@ async def generate_tutor_summary(
     session = await get_tutor_session(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Sessão não encontrada")
-    return await generate_session_summary(db, session)
+    try:
+        return await generate_session_summary(db, session)
+    except LLMResponseError as e:
+        raise HTTPException(status_code=502, detail=str(e))
 
 
 @router.get("/tutor/suggested-topics")

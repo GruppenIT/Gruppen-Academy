@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.catalog.models import Competency, Product
-from app.journeys.models import Journey, JourneyParticipation, Question, QuestionResponse
+from app.journeys.models import Journey, JourneyParticipation, OCRUpload, OCRUploadStatus, Question, QuestionResponse
 from app.journeys.schemas import (
     JourneyCreate,
     JourneyUpdate,
@@ -208,8 +208,7 @@ async def create_ocr_upload(
     participation_id: uuid.UUID,
     file_path: str,
     original_filename: str,
-) -> "OCRUpload":
-    from app.journeys.models import OCRUpload
+) -> OCRUpload:
     upload = OCRUpload(
         participation_id=participation_id,
         file_path=file_path,
@@ -221,29 +220,25 @@ async def create_ocr_upload(
     return upload
 
 
-async def list_ocr_uploads(db: AsyncSession, skip: int = 0, limit: int = 50) -> list:
-    from app.journeys.models import OCRUpload
+async def list_ocr_uploads(db: AsyncSession, skip: int = 0, limit: int = 50) -> list[OCRUpload]:
     result = await db.execute(
         select(OCRUpload).order_by(OCRUpload.created_at.desc()).offset(skip).limit(limit)
     )
     return list(result.scalars().all())
 
 
-async def get_ocr_upload(db: AsyncSession, upload_id: uuid.UUID):
-    from app.journeys.models import OCRUpload
+async def get_ocr_upload(db: AsyncSession, upload_id: uuid.UUID) -> OCRUpload | None:
     result = await db.execute(select(OCRUpload).where(OCRUpload.id == upload_id))
     return result.scalar_one_or_none()
 
 
-async def process_ocr_upload(db: AsyncSession, upload_id: uuid.UUID) -> "OCRUpload":
+async def process_ocr_upload(db: AsyncSession, upload_id: uuid.UUID) -> OCRUpload:
     """Process an OCR upload — extract text from PDF pages.
 
     In production, this would use pytesseract + pdf2image or a cloud OCR API.
     Currently extracts text from PDF using PyPDF2/pdfplumber if available,
     or returns a placeholder for manual entry.
     """
-    from app.journeys.models import OCRUpload, OCRUploadStatus
-
     upload = await get_ocr_upload(db, upload_id)
     if not upload:
         raise ValueError("Upload não encontrado")
@@ -320,10 +315,8 @@ async def review_ocr_upload(
     upload_id: uuid.UUID,
     extracted_responses: list[dict],
     reviewer_id: uuid.UUID,
-) -> "OCRUpload":
+) -> OCRUpload:
     """Admin reviews and corrects OCR-extracted text."""
-    from app.journeys.models import OCRUpload, OCRUploadStatus
-
     upload = await get_ocr_upload(db, upload_id)
     if not upload:
         raise ValueError("Upload não encontrado")
@@ -340,8 +333,6 @@ async def approve_ocr_upload(
     db: AsyncSession, upload_id: uuid.UUID
 ) -> list[QuestionResponse]:
     """Approve OCR results and create QuestionResponses from reviewed text."""
-    from app.journeys.models import OCRUpload, OCRUploadStatus
-
     upload = await get_ocr_upload(db, upload_id)
     if not upload:
         raise ValueError("Upload não encontrado")

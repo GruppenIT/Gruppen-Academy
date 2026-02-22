@@ -13,7 +13,7 @@ from app.catalog.models import Competency, MasterGuideline, Product  # noqa: F40
 from app.evaluations.models import AnalyticalReport, Evaluation  # noqa: F401
 from app.gamification.models import Badge, Score, UserBadge  # noqa: F401
 from app.journeys.models import Journey, JourneyParticipation, Question, QuestionResponse  # noqa: F401
-from app.learning.models import LearningActivity, LearningPath, TutorSession  # noqa: F401
+from app.learning.models import ActivityCompletion, LearningActivity, LearningPath, TutorSession  # noqa: F401
 from app.settings.models import SystemSetting  # noqa: F401
 from app.users.models import User  # noqa: F401
 

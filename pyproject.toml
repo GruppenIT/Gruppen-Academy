@@ -22,6 +22,8 @@ dependencies = [
     "pytesseract>=0.3.10,<1",
     "pdf2image>=1.16,<2",
     "Pillow>=10.0,<11",
+    "qrcode>=8.0,<9",
+    "pyzbar>=0.1.9,<1",
     "redis>=5.0,<6",
 ]
 

@@ -10,6 +10,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.journeys.models import Journey, Question
+from app.journeys.qr_utils import (
+    draw_corner_markers,
+    encode_qr_payload,
+    generate_qr_image,
+    make_short_code,
+)
 from app.teams.models import Team, journey_team, team_member
 from app.users.models import User
 
@@ -24,7 +30,7 @@ DEJAVU_DIR = "/usr/share/fonts/truetype/dejavu"
 
 
 class JourneyPDF(FPDF):
-    """Custom PDF for journey printing."""
+    """Custom PDF for journey printing with QR codes and fiducial markers."""
 
     def __init__(self, journey_title: str):
         super().__init__()
@@ -32,13 +38,71 @@ class JourneyPDF(FPDF):
         self.add_font("DejaVu", "", f"{DEJAVU_DIR}/DejaVuSans.ttf", uni=True)
         self.add_font("DejaVu", "B", f"{DEJAVU_DIR}/DejaVuSans-Bold.ttf", uni=True)
 
+        # Current user context for QR generation (set before rendering pages)
+        self._journey_id: uuid.UUID | None = None
+        self._user_id: uuid.UUID | None = None
+        self._user_page: int = 0  # page counter per user (1-based)
+
+        # Pre-generated QR image bytes cache: (journey_id, user_id, page) -> png
+        self._qr_cache: dict[tuple, bytes] = {}
+
+    def set_user_context(
+        self, journey_id: uuid.UUID, user_id: uuid.UUID,
+    ):
+        """Set the current user context. Call before add_page() for each user."""
+        self._journey_id = journey_id
+        self._user_id = user_id
+        self._user_page = 0  # reset; incremented in header()
+
     def header(self):
+        # Increment user page counter
+        self._user_page += 1
+
+        # Fiducial corner markers for deskewing
+        draw_corner_markers(self, margin=5.0)
+
         self.set_font("DejaVu", "B", 10)
         self.set_text_color(100, 100, 100)
+        # Leave space for top-left marker
+        self.set_xy(self.l_margin, 12)
         self.cell(0, 6, "Gruppen Academy", align="L")
-        self.ln(8)
+
+        # Short code in top-right area (human-readable fallback)
+        if self._journey_id and self._user_id:
+            short = make_short_code(self._journey_id, self._user_id, self._user_page)
+            self.set_font("DejaVu", "", 7)
+            self.set_text_color(120, 120, 120)
+            self.set_xy(self.w - self.r_margin - 50, 12)
+            self.cell(50, 6, short, align="R")
+
+        self.set_xy(self.l_margin, 20)
 
     def footer(self):
+        if self._journey_id and self._user_id:
+            short = make_short_code(self._journey_id, self._user_id, self._user_page)
+
+            # QR code in bottom-right corner
+            qr_size = 18  # mm
+            qr_x = self.w - self.r_margin - qr_size - 3
+            qr_y = self.h - 20 - qr_size
+
+            cache_key = (self._journey_id, self._user_id, self._user_page)
+            if cache_key not in self._qr_cache:
+                payload = encode_qr_payload(
+                    self._journey_id, self._user_id, self._user_page,
+                )
+                self._qr_cache[cache_key] = generate_qr_image(payload)
+
+            qr_png = self._qr_cache[cache_key]
+            self.image(io.BytesIO(qr_png), x=qr_x, y=qr_y, w=qr_size, h=qr_size)
+
+            # Short code label below QR
+            self.set_font("DejaVu", "", 6)
+            self.set_text_color(100, 100, 100)
+            self.set_xy(qr_x - 2, qr_y + qr_size + 0.5)
+            self.cell(qr_size + 4, 4, short, align="C")
+
+        # Page number (centered, avoiding QR area)
         self.set_y(-15)
         self.set_font("DejaVu", "", 8)
         self.set_text_color(150, 150, 150)
@@ -104,6 +168,7 @@ def _render_user_pages(
     date_str: str,
 ):
     """Render all journey pages for a single user."""
+    pdf.set_user_context(journey.id, user.id)
     pdf.add_page()
 
     # --- Cover / Header ---

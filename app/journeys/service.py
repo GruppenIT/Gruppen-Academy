@@ -1,6 +1,7 @@
 import logging
 import re
 import uuid
+from collections import defaultdict
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -8,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.catalog.models import Competency, Product
+from app.journeys.qr_utils import read_qr_from_pdf_pages
 from app.journeys.models import Journey, JourneyParticipation, OCRUpload, OCRUploadStatus, Question, QuestionResponse
 from app.journeys.schemas import (
     JourneyCreate,
@@ -686,13 +688,127 @@ async def _find_or_create_participation(
     return participation
 
 
+async def _process_via_qr(
+    db: AsyncSession,
+    file_path: str,
+    original_filename: str,
+    qr_payloads: list[dict | None],
+    report: dict,
+) -> dict:
+    """Process a scanned PDF using QR-code-embedded identifiers.
+
+    Each page's QR code contains journey_id, user_id, and page number,
+    so we can match directly by ID without OCR header parsing.
+    """
+    report["total_pages"] = len(qr_payloads)
+
+    # Extract text from pages for response content
+    pages_text = _extract_pages_text(file_path)
+
+    # Group pages by (journey_id, user_id)
+    user_pages: dict[tuple[uuid.UUID, uuid.UUID], list[tuple[int, str]]] = defaultdict(list)
+
+    journey_id = None
+    for idx, payload in enumerate(qr_payloads):
+        if payload is None:
+            continue
+        j_id = payload["journey_id"]
+        u_id = payload["user_id"]
+        page_num = payload["page"]
+        if journey_id is None:
+            journey_id = j_id
+        page_text = pages_text[idx] if idx < len(pages_text) else ""
+        user_pages[(j_id, u_id)].append((page_num, page_text))
+
+    if not journey_id:
+        report["failures"].append({
+            "message": "QR codes detectados mas sem dados válidos de jornada",
+        })
+        return report
+
+    # Load journey
+    journey = await get_journey(db, journey_id)
+    report["journey_id"] = str(journey_id)
+    if journey:
+        report["journey_title"] = journey.title
+    else:
+        report["failures"].append({
+            "message": f"Jornada com ID {journey_id} não encontrada no banco de dados",
+        })
+        return report
+
+    questions = await list_questions(db, journey_id)
+    report["total_respondents_found"] = len(user_pages)
+    logger.info(
+        "QR processing: journey=%s, %d respondents detected",
+        journey.title, len(user_pages),
+    )
+
+    for (j_id, u_id), pages in user_pages.items():
+        # Load user
+        result = await db.execute(select(User).where(User.id == u_id))
+        user = result.scalar_one_or_none()
+
+        user_entry = {
+            "user_name": user.full_name if user else str(u_id),
+            "user_email": user.email if user else "",
+            "participation_id": None,
+            "ocr_upload_id": None,
+            "status": "ok",
+        }
+
+        if not user:
+            user_entry["status"] = "not_found"
+            report["failures"].append({
+                "message": f"Usuário com ID {u_id} não encontrado",
+            })
+            report["users_imported"].append(user_entry)
+            continue
+
+        # Find or create participation
+        participation = await _find_or_create_participation(db, j_id, user.id)
+        user_entry["participation_id"] = str(participation.id)
+
+        # Sort pages and extract responses
+        pages.sort(key=lambda x: x[0])
+        all_pages_text = [text for _, text in pages]
+        extracted = _extract_question_responses(all_pages_text, questions)
+
+        # Create OCR upload
+        upload = OCRUpload(
+            participation_id=participation.id,
+            file_path=file_path,
+            original_filename=f"{original_filename} [{user.full_name}]",
+            status=OCRUploadStatus.PROCESSED,
+            extracted_responses=extracted,
+        )
+        db.add(upload)
+        await db.flush()
+
+        user_entry["ocr_upload_id"] = str(upload.id)
+        report["ocr_upload_ids"].append(str(upload.id))
+        report["users_imported"].append(user_entry)
+
+    await db.commit()
+
+    # Update import_report on all uploads
+    for uid_str in report["ocr_upload_ids"]:
+        upload = await get_ocr_upload(db, uuid.UUID(uid_str))
+        if upload:
+            upload.import_report = report
+    await db.commit()
+
+    return report
+
+
 async def process_ocr_batch(
     db: AsyncSession,
     file_path: str,
     original_filename: str,
 ) -> dict:
-    """Process a scanned PDF: parse headers to identify journey & respondents,
-    create participations and OCR uploads automatically.
+    """Process a scanned PDF: detect QR codes (primary) or parse OCR headers
+    (fallback) to identify journey & respondents, create participations and
+    OCR uploads automatically.
 
     Returns an import report dict.
     """
@@ -705,6 +821,20 @@ async def process_ocr_batch(
         "total_respondents_found": 0,
         "ocr_upload_ids": [],
     }
+
+    # ── Strategy 1: Try QR code detection (fast, reliable) ──
+    qr_payloads = read_qr_from_pdf_pages(file_path)
+    qr_hits = [p for p in qr_payloads if p is not None]
+    logger.info(
+        "process_ocr_batch: QR detection found %d/%d pages with codes",
+        len(qr_hits), len(qr_payloads),
+    )
+
+    if qr_hits:
+        return await _process_via_qr(db, file_path, original_filename, qr_payloads, report)
+
+    # ── Strategy 2: Fallback to OCR text + header parsing ──
+    logger.info("process_ocr_batch: no QR codes found, falling back to OCR header parsing")
 
     # 1. Extract text from PDF pages
     pages_text = _extract_pages_text(file_path)
@@ -720,7 +850,6 @@ async def process_ocr_batch(
             "message": "Não foi possível extrair texto do PDF",
             "details": "Verifique se o PDF contém texto ou tente um scanner com OCR embutido.",
         })
-        # Create a single upload record for manual processing
         upload = OCRUpload(
             file_path=file_path,
             original_filename=original_filename,

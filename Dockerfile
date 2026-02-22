@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-por \
     poppler-utils \
+    libzbar0 \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml .

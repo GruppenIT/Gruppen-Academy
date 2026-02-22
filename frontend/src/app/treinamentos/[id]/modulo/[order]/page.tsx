@@ -59,6 +59,35 @@ export default function ModuleContentPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // SCORM postMessage listener: capture lesson_status and score from SCORM iframe
+  useEffect(() => {
+    if (currentModule?.content_type !== 'scorm' || !moduleDetail) return
+
+    const handler = async (event: MessageEvent) => {
+      if (!event.data || event.data.type !== 'scorm_status') return
+      const { lesson_status, score_raw, score_max } = event.data
+      if (!lesson_status) return
+      try {
+        await api.updateScormStatus(trainingId, moduleDetail.id, {
+          lesson_status,
+          score_raw: score_raw ?? null,
+          score_max: score_max ?? null,
+        })
+        if (['completed', 'passed'].includes(lesson_status)) {
+          setContentMarked(true)
+          const prog = await api.getTrainingProgress(trainingId)
+          setProgress(prog)
+          setCurrentModule(prog.modules.find(m => m.order === moduleOrder) || null)
+        }
+      } catch {
+        // silently ignore SCORM status errors
+      }
+    }
+
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [currentModule, moduleDetail, trainingId, moduleOrder])
+
   const handleMarkViewed = async () => {
     if (!currentModule || contentMarked) return
     setMarkingView(true)
@@ -190,10 +219,9 @@ export default function ModuleContentPage() {
           </div>
           <div className="border rounded-xl overflow-hidden bg-gray-50" style={{ height: '75vh' }}>
             <iframe
-              src={api.getScormUrl(trainingId, currentModule.module_id, moduleDetail.content_data.entry_point as string)}
+              src={api.getScormLaunchUrl(trainingId, moduleDetail.id)}
               className="w-full h-full"
               title={currentModule.title}
-              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
             />
           </div>
         </div>

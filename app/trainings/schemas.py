@@ -299,3 +299,9 @@ class PendingItem(BaseModel):
     description: str | None = None
     status_label: str
     detail: str
+
+
+class ScormStatusUpdate(BaseModel):
+    lesson_status: str  # "completed", "passed", "failed", "incomplete", "not attempted"
+    score_raw: float | None = None
+    score_max: float | None = None

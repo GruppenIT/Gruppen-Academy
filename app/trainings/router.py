@@ -30,6 +30,7 @@ from app.trainings.schemas import (
     QuizQuestionCreate,
     QuizQuestionOut,
     QuizQuestionUpdate,
+    ScormStatusUpdate,
     TrainingCreate,
     TrainingDetailOut,
     TrainingOut,
@@ -50,7 +51,9 @@ from app.trainings.service import (
     get_module_progress_for_enrollment,
     get_module_quiz,
     get_my_enrollments,
+    get_or_create_module_progress,
     get_pending_enrollments,
+    get_quiz_attempts,
     get_quiz_question,
     get_training,
     get_training_enrollments,
@@ -443,6 +446,94 @@ def _extract_scorm_package(zip_path: str, upload_dir: str, module_id: str) -> di
         "extract_dir": extract_dir,
         "scorm_version": "auto",
     }
+
+
+@router.get("/{training_id}/modules/{module_id}/scorm-launch")
+async def scorm_launch(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve an HTML wrapper that provides a minimal SCORM 1.2 API and loads the content."""
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+    if module.content_type != ModuleContentType.SCORM or not module.content_data:
+        raise HTTPException(status_code=404, detail="Módulo não é SCORM")
+
+    entry_point = module.content_data.get("entry_point")
+    if not entry_point:
+        raise HTTPException(status_code=404, detail="SCORM entry point não encontrado")
+
+    scorm_base = f"/api/trainings/{training_id}/modules/{module_id}/scorm"
+    content_url = f"{scorm_base}/{entry_point}"
+
+    html = f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>SCORM Player</title>
+<style>
+  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+  html, body {{ width: 100%; height: 100%; overflow: hidden; }}
+  iframe {{ width: 100%; height: 100%; border: none; }}
+</style>
+</head><body>
+<script>
+// Minimal SCORM 1.2 API wrapper
+var _scormData = {{
+  "cmi.core.lesson_status": "not attempted",
+  "cmi.core.score.raw": "",
+  "cmi.core.score.max": "100",
+  "cmi.core.student_name": "{current_user.full_name or ''}",
+  "cmi.core.student_id": "{current_user.id}",
+}};
+var API = {{
+  LMSInitialize: function() {{ return "true"; }},
+  LMSFinish: function() {{
+    _notifyParent();
+    return "true";
+  }},
+  LMSGetValue: function(key) {{ return _scormData[key] || ""; }},
+  LMSSetValue: function(key, val) {{
+    _scormData[key] = val;
+    if (key === "cmi.core.lesson_status" || key === "cmi.core.score.raw") {{
+      _notifyParent();
+    }}
+    return "true";
+  }},
+  LMSCommit: function() {{
+    _notifyParent();
+    return "true";
+  }},
+  LMSGetLastError: function() {{ return "0"; }},
+  LMSGetErrorString: function() {{ return "No error"; }},
+  LMSGetDiagnostic: function() {{ return ""; }},
+}};
+// SCORM 2004 alias
+var API_1484_11 = {{
+  Initialize: API.LMSInitialize,
+  Terminate: API.LMSFinish,
+  GetValue: API.LMSGetValue,
+  SetValue: API.LMSSetValue,
+  Commit: API.LMSCommit,
+  GetLastError: API.LMSGetLastError,
+  GetErrorString: API.LMSGetErrorString,
+  GetDiagnostic: API.LMSGetDiagnostic,
+}};
+function _notifyParent() {{
+  try {{
+    window.parent.postMessage({{
+      type: "scorm_status",
+      lesson_status: _scormData["cmi.core.lesson_status"],
+      score_raw: _scormData["cmi.core.score.raw"] ? parseFloat(_scormData["cmi.core.score.raw"]) : null,
+      score_max: _scormData["cmi.core.score.max"] ? parseFloat(_scormData["cmi.core.score.max"]) : null,
+    }}, "*");
+  }} catch(e) {{}}
+}}
+</script>
+<iframe src="{content_url}"></iframe>
+</body></html>"""
+
+    return Response(content=html, media_type="text/html")
 
 
 @router.get("/{training_id}/modules/{module_id}/scorm/{file_path:path}")
@@ -992,3 +1083,72 @@ async def submit_quiz_attempt_endpoint(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return attempt
+
+
+@router.get(
+    "/my/trainings/{training_id}/modules/{module_id}/quiz/attempts",
+    response_model=list[QuizAttemptOut],
+)
+async def list_quiz_attempts_endpoint(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List all quiz attempts for a module by the current user."""
+    enrollment = await get_enrollment_for_user(db, training_id, current_user.id)
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Inscrição não encontrada")
+
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    progress = await get_or_create_module_progress(db, enrollment.id, module.id)
+    attempts = await get_quiz_attempts(db, progress.id)
+    return attempts
+
+
+@router.post(
+    "/my/trainings/{training_id}/modules/{module_id}/scorm-status",
+    response_model=ModuleProgressOut,
+)
+async def update_scorm_status(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    data: ScormStatusUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Receive SCORM runtime status (lesson_status, score) and update module progress."""
+    enrollment = await get_enrollment_for_user(db, training_id, current_user.id)
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Inscrição não encontrada")
+
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+    if module.content_type != ModuleContentType.SCORM:
+        raise HTTPException(status_code=400, detail="Módulo não é SCORM")
+
+    # Mark content as viewed if SCORM reports completion
+    completed_statuses = {"completed", "passed"}
+    if data.lesson_status.lower() in completed_statuses:
+        progress = await mark_content_viewed(db, enrollment, module)
+        # Save SCORM score if provided
+        if data.score_raw is not None:
+            score_max = data.score_max or 100.0
+            normalized = data.score_raw / score_max if score_max > 0 else 0.0
+            progress.quiz_score = normalized
+            await db.commit()
+            await db.refresh(progress)
+        return progress
+
+    # For non-complete statuses, still create/update progress
+    progress = await get_or_create_module_progress(db, enrollment.id, module.id)
+    if data.score_raw is not None:
+        score_max = data.score_max or 100.0
+        progress.quiz_score = data.score_raw / score_max if score_max > 0 else 0.0
+        await db.commit()
+        await db.refresh(progress)
+    return progress

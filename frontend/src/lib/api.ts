@@ -517,8 +517,13 @@ class ApiClient {
   getModuleFileUrl(trainingId: string, moduleId: string) {
     return `${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/file`
   }
-  getScormUrl(trainingId: string, moduleId: string, entryPoint: string) {
-    return `${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/scorm/${entryPoint}`
+  getScormLaunchUrl(trainingId: string, moduleId: string) {
+    return `${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/scorm-launch`
+  }
+  updateScormStatus(trainingId: string, moduleId: string, data: { lesson_status: string; score_raw: number | null; score_max: number | null }) {
+    return this.request<import('@/types').ModuleProgressOut>(`/api/trainings/my/trainings/${trainingId}/modules/${moduleId}/scorm-status`, {
+      method: 'POST', body: JSON.stringify(data),
+    })
   }
   createModuleQuiz(trainingId: string, moduleId: string, data: { title?: string; passing_score?: number; questions?: unknown[] }) {
     return this.request<import('@/types').ModuleQuiz>(`/api/trainings/${trainingId}/modules/${moduleId}/quiz`, { method: 'POST', body: JSON.stringify(data) })

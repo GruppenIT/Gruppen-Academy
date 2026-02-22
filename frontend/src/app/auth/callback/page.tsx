@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import { Loader2, AlertCircle, GraduationCap } from 'lucide-react'
 
 function LoadingSpinner() {
@@ -24,6 +25,7 @@ function LoadingSpinner() {
 function SSOCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { loginWithToken } = useAuth()
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -51,15 +53,15 @@ function SSOCallbackContent() {
     sessionStorage.removeItem('sso_state')
 
     api.ssoCallback(code, state)
-      .then(async () => {
-        // Token was stored by api.ssoCallback, now fetch user
-        await api.getMe()
+      .then(async (res) => {
+        // Update AuthProvider state so the dashboard guard sees the user
+        await loginWithToken(res.access_token)
         router.replace('/dashboard')
       })
       .catch((err) => {
         setError(err instanceof Error ? err.message : 'Falha na autenticação SSO.')
       })
-  }, [searchParams, router])
+  }, [searchParams, router, loginWithToken])
 
   if (error) {
     return (

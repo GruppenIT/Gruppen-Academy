@@ -38,10 +38,15 @@ class JourneyPDF(FPDF):
         self.add_font("DejaVu", "", f"{DEJAVU_DIR}/DejaVuSans.ttf", uni=True)
         self.add_font("DejaVu", "B", f"{DEJAVU_DIR}/DejaVuSans-Bold.ttf", uni=True)
 
-        # Current user context for QR generation (set before rendering pages)
+        # Current user context for QR generation
         self._journey_id: uuid.UUID | None = None
         self._user_id: uuid.UUID | None = None
         self._user_page: int = 0  # page counter per user (1-based)
+
+        # Pending context switch (applied in header(), so footer() of previous
+        # page still uses the OLD context)
+        self._pending_journey_id: uuid.UUID | None = None
+        self._pending_user_id: uuid.UUID | None = None
 
         # Pre-generated QR image bytes cache: (journey_id, user_id, page) -> png
         self._qr_cache: dict[tuple, bytes] = {}
@@ -49,12 +54,28 @@ class JourneyPDF(FPDF):
     def set_user_context(
         self, journey_id: uuid.UUID, user_id: uuid.UUID,
     ):
-        """Set the current user context. Call before add_page() for each user."""
-        self._journey_id = journey_id
-        self._user_id = user_id
-        self._user_page = 0  # reset; incremented in header()
+        """Queue a user context switch.
+
+        The actual switch happens inside header() — this ensures that
+        footer() of the previous page still draws with the OLD user's
+        context (fpdf2 calls footer→header inside add_page).
+        """
+        self._pending_journey_id = journey_id
+        self._pending_user_id = user_id
+
+    def _apply_pending_context(self):
+        """Apply a queued context switch (called at the start of header)."""
+        if self._pending_journey_id is not None:
+            self._journey_id = self._pending_journey_id
+            self._user_id = self._pending_user_id
+            self._user_page = 0  # reset; will be incremented right after
+            self._pending_journey_id = None
+            self._pending_user_id = None
 
     def header(self):
+        # Apply pending context switch BEFORE anything else
+        self._apply_pending_context()
+
         # Increment user page counter
         self._user_page += 1
 

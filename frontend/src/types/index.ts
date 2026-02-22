@@ -403,6 +403,81 @@ export interface SuggestedPath {
   matching_competencies: string[]
 }
 
+// Training types
+export type TrainingStatus = 'draft' | 'published' | 'archived'
+export type ModuleContentType = 'document' | 'scorm' | 'ai_generated' | 'rich_text'
+export type QuizQuestionType = 'multiple_choice' | 'true_false' | 'essay'
+export type EnrollmentStatus = 'pending' | 'in_progress' | 'completed'
+
+export interface Training {
+  id: string
+  title: string
+  description: string | null
+  domain: string
+  participant_level: string
+  status: TrainingStatus
+  estimated_duration_minutes: number
+  xp_reward: number
+  cover_image_path: string | null
+  created_by: string
+  created_at: string
+  updated_at: string
+  modules?: TrainingModule[]
+}
+
+export interface TrainingModule {
+  id: string
+  training_id: string
+  title: string
+  description: string | null
+  order: number
+  content_type: ModuleContentType | null
+  content_data: Record<string, unknown> | null
+  file_path: string | null
+  original_filename: string | null
+  mime_type: string | null
+  has_quiz: boolean
+  quiz_required_to_advance: boolean
+  xp_reward: number
+  created_at: string
+  quiz?: ModuleQuiz | null
+}
+
+export interface ModuleQuiz {
+  id: string
+  module_id: string
+  title: string
+  passing_score: number
+  created_at: string
+  questions: QuizQuestion[]
+}
+
+export interface QuizQuestion {
+  id: string
+  quiz_id: string
+  text: string
+  type: QuizQuestionType
+  options: { text: string; is_correct?: boolean }[] | null
+  correct_answer: string | null
+  explanation: string | null
+  weight: number
+  order: number
+  created_at: string
+}
+
+export interface TrainingEnrollment {
+  id: string
+  training_id: string
+  user_id: string
+  status: EnrollmentStatus
+  current_module_order: number
+  enrolled_at: string
+  completed_at: string | null
+  user_name?: string | null
+  user_email?: string | null
+  training_title?: string | null
+}
+
 // Gamification levels
 export const LEVELS = [
   { name: 'Iniciante', minPoints: 0, icon: '🌱' },

@@ -1,11 +1,14 @@
+import os
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_role
+from app.config import settings
 from app.database import get_db
-from app.trainings.models import TrainingStatus
+from app.trainings.models import ModuleContentType, TrainingStatus
 from app.trainings.schemas import (
     EnrollmentDetailOut,
     ModuleCreate,
@@ -269,6 +272,112 @@ async def delete_module_endpoint(
             detail="O treinamento precisa ter pelo menos 1 módulo.",
         )
     await delete_module(db, module)
+
+
+# ──────────────────────────────────────────────
+# Module File Upload (Admin)
+# ──────────────────────────────────────────────
+
+ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-powerpoint",
+    "application/msword",
+    "application/zip",
+    "application/x-zip-compressed",
+}
+
+MIME_TO_CONTENT_TYPE = {
+    "application/pdf": ModuleContentType.DOCUMENT,
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation": ModuleContentType.DOCUMENT,
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": ModuleContentType.DOCUMENT,
+    "application/vnd.ms-powerpoint": ModuleContentType.DOCUMENT,
+    "application/msword": ModuleContentType.DOCUMENT,
+    "application/zip": ModuleContentType.SCORM,
+    "application/x-zip-compressed": ModuleContentType.SCORM,
+}
+
+
+@router.post(
+    "/{training_id}/modules/{module_id}/upload",
+    response_model=ModuleOut,
+)
+async def upload_module_file(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+    ),
+):
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Treinamento não está em rascunho.")
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    # Validate file type
+    content_type = file.content_type or ""
+    if content_type not in ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipo de arquivo não suportado: {content_type}. "
+                   f"Aceitos: PDF, PPTX, DOCX, ZIP (SCORM).",
+        )
+
+    # Validate size
+    content = await file.read()
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Arquivo excede o limite de {settings.max_upload_size_mb}MB.",
+        )
+
+    # Save file
+    upload_dir = os.path.join(settings.upload_dir, "trainings", str(training_id))
+    os.makedirs(upload_dir, exist_ok=True)
+    file_ext = os.path.splitext(file.filename or "file")[1]
+    saved_filename = f"{module_id}{file_ext}"
+    file_path = os.path.join(upload_dir, saved_filename)
+
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    # Update module
+    module.file_path = file_path
+    module.original_filename = file.filename
+    module.mime_type = content_type
+    module.content_type = MIME_TO_CONTENT_TYPE.get(content_type, ModuleContentType.DOCUMENT)
+
+    await db.commit()
+    await db.refresh(module)
+    return module
+
+
+@router.get("/{training_id}/modules/{module_id}/file")
+async def serve_module_file(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+    if not module.file_path or not os.path.isfile(module.file_path):
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+
+    return FileResponse(
+        path=module.file_path,
+        filename=module.original_filename or "file",
+        media_type=module.mime_type or "application/octet-stream",
+    )
 
 
 # ──────────────────────────────────────────────

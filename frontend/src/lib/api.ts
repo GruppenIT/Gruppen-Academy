@@ -463,6 +463,79 @@ class ApiClient {
     return this.request<import('@/types').CopilotJourneyGenerateResponse>('/api/copilot/generate-journey', { method: 'POST', body: JSON.stringify(data) }, 150000)
   }
 
+  // Trainings
+  getTrainings(skip = 0, limit = 50, statusFilter?: string) {
+    const q = statusFilter ? `&status_filter=${statusFilter}` : ''
+    return this.request<import('@/types').Training[]>(`/api/trainings?skip=${skip}&limit=${limit}${q}`)
+  }
+  getTraining(id: string) {
+    return this.request<import('@/types').Training>(`/api/trainings/${id}`)
+  }
+  createTraining(data: { title: string; description?: string; domain?: string; participant_level?: string; estimated_duration_minutes?: number; xp_reward?: number; product_ids?: string[]; competency_ids?: string[] }) {
+    return this.request<import('@/types').Training>('/api/trainings', { method: 'POST', body: JSON.stringify(data) })
+  }
+  updateTraining(id: string, data: Record<string, unknown>) {
+    return this.request<import('@/types').Training>(`/api/trainings/${id}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+  publishTraining(id: string, teamIds: string[]) {
+    return this.request<import('@/types').Training>(`/api/trainings/${id}/publish`, {
+      method: 'PATCH', body: JSON.stringify({ team_ids: teamIds }),
+    })
+  }
+  archiveTraining(id: string) {
+    return this.request<import('@/types').Training>(`/api/trainings/${id}/archive`, { method: 'PATCH' })
+  }
+  getTrainingModules(trainingId: string) {
+    return this.request<import('@/types').TrainingModule[]>(`/api/trainings/${trainingId}/modules`)
+  }
+  getTrainingModule(trainingId: string, moduleId: string) {
+    return this.request<import('@/types').TrainingModule>(`/api/trainings/${trainingId}/modules/${moduleId}`)
+  }
+  createTrainingModule(trainingId: string, data: { title: string; description?: string; order?: number; xp_reward?: number }) {
+    return this.request<import('@/types').TrainingModule>(`/api/trainings/${trainingId}/modules`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  updateTrainingModule(trainingId: string, moduleId: string, data: Record<string, unknown>) {
+    return this.request<import('@/types').TrainingModule>(`/api/trainings/${trainingId}/modules/${moduleId}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+  deleteTrainingModule(trainingId: string, moduleId: string) {
+    return this.request<void>(`/api/trainings/${trainingId}/modules/${moduleId}`, { method: 'DELETE' })
+  }
+  async uploadModuleFile(trainingId: string, moduleId: string, file: File): Promise<import('@/types').TrainingModule> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/upload`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || `Erro ${res.status}`)
+    }
+    return res.json()
+  }
+  getModuleFileUrl(trainingId: string, moduleId: string) {
+    return `${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/file`
+  }
+  createModuleQuiz(trainingId: string, moduleId: string, data: { title?: string; passing_score?: number; questions?: unknown[] }) {
+    return this.request<import('@/types').ModuleQuiz>(`/api/trainings/${trainingId}/modules/${moduleId}/quiz`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  getModuleQuiz(trainingId: string, moduleId: string) {
+    return this.request<import('@/types').ModuleQuiz | null>(`/api/trainings/${trainingId}/modules/${moduleId}/quiz`)
+  }
+  addQuizQuestion(trainingId: string, moduleId: string, data: { text: string; type?: string; options?: unknown[]; correct_answer?: string; explanation?: string; weight?: number; order?: number }) {
+    return this.request<import('@/types').QuizQuestion>(`/api/trainings/${trainingId}/modules/${moduleId}/quiz/questions`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  updateQuizQuestion(trainingId: string, moduleId: string, questionId: string, data: Record<string, unknown>) {
+    return this.request<import('@/types').QuizQuestion>(`/api/trainings/${trainingId}/modules/${moduleId}/quiz/questions/${questionId}`, { method: 'PUT', body: JSON.stringify(data) })
+  }
+  deleteQuizQuestion(trainingId: string, moduleId: string, questionId: string) {
+    return this.request<void>(`/api/trainings/${trainingId}/modules/${moduleId}/quiz/questions/${questionId}`, { method: 'DELETE' })
+  }
+  getTrainingEnrollments(trainingId: string) {
+    return this.request<import('@/types').TrainingEnrollment[]>(`/api/trainings/${trainingId}/enrollments`)
+  }
+
   // Settings
   getSettings() {
     return this.request<{ key: string; value: string; description: string | null }[]>('/api/settings')

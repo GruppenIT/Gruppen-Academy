@@ -6,12 +6,13 @@ import { useAuth } from '@/lib/auth'
 import { clsx } from 'clsx'
 import {
   LayoutDashboard, Route, BookOpen, MessageSquareMore,
-  Trophy, User, Settings, LogOut, GraduationCap, Shield, ClipboardList, BarChart3,
+  Trophy, User, Settings, LogOut, GraduationCap, Shield, ClipboardList, BarChart3, LibraryBig,
 } from 'lucide-react'
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: null },
   { href: '/jornadas', label: 'Jornadas', icon: Route, roles: null },
+  { href: '/treinamentos', label: 'Treinamentos', icon: LibraryBig, roles: null },
   { href: '/resultados', label: 'Meus Resultados', icon: ClipboardList, roles: null },
   { href: '/trilhas', label: 'Trilhas', icon: BookOpen, roles: null },
   { href: '/tutor', label: 'Tutor IA', icon: MessageSquareMore, roles: null },

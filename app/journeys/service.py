@@ -569,8 +569,10 @@ def _extract_question_responses(
 
     extracted = []
     for i, q in enumerate(questions):
-        # Find the marker for this question number
-        q_number = q.order if q.order > 0 else i + 1
+        # The PDF prints questions as "Pergunta 1", "Pergunta 2", etc.
+        # using sequential numbering (i+1), NOT q.order from the database.
+        # We must match the same numbering here.
+        q_number = i + 1
         marker = None
         marker_idx = None
         for mi, m in enumerate(markers):

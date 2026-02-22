@@ -389,20 +389,27 @@ def _extract_pages_text(file_path: str) -> list[str]:
 
     # 2. If all pages are empty, the PDF is likely scanned — use OCR
     if not any(p.strip() for p in pages):
+        logger.info("PDF has no text layer, falling back to OCR (pytesseract): %s", file_path)
         try:
             from pdf2image import convert_from_path
             import pytesseract
 
             images = convert_from_path(file_path, dpi=300)
             pages = []
-            for img in images:
+            for i, img in enumerate(images):
                 text = pytesseract.image_to_string(img, lang="por")
                 pages.append(text)
+                logger.info(
+                    "OCR page %d: %d chars extracted. First 500: %s",
+                    i, len(text), repr(text[:500]),
+                )
         except Exception as e:
             # If OCR also fails, return empty pages so caller can handle
             if not pages:
                 pages = []
             logger.error("OCR fallback failed for %s: %s", file_path, e)
+    else:
+        logger.info("PDF has text layer (%d pages), no OCR needed.", len(pages))
 
     return pages
 
@@ -665,7 +672,12 @@ async def process_ocr_batch(
     pages_text = _extract_pages_text(file_path)
     report["total_pages"] = len(pages_text)
 
-    if not pages_text:
+    has_text = any(p.strip() for p in pages_text) if pages_text else False
+    logger.info(
+        "process_ocr_batch: %d pages, has_text=%s", len(pages_text), has_text,
+    )
+
+    if not pages_text or not has_text:
         report["failures"].append({
             "message": "Não foi possível extrair texto do PDF",
             "details": "Verifique se o PDF contém texto ou tente um scanner com OCR embutido.",
@@ -685,8 +697,15 @@ async def process_ocr_batch(
         return report
 
     # 2. Parse headers to find respondent sections
+    logger.info(
+        "process_ocr_batch: calling _parse_respondent_sections with %d pages",
+        len(pages_text),
+    )
+    for idx, pt in enumerate(pages_text):
+        logger.info("  page %d preview (%d chars): %s", idx, len(pt), repr(pt[:300]))
     respondent_sections = _parse_respondent_sections(pages_text)
     report["total_respondents_found"] = len(respondent_sections)
+    logger.info("process_ocr_batch: found %d respondents", len(respondent_sections))
 
     if not respondent_sections:
         report["failures"].append({

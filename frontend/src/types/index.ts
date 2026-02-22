@@ -238,6 +238,24 @@ export interface AnalyticalReport {
   created_at: string
 }
 
+// Learning Path Progress types
+export interface PathProgressActivity {
+  activity_id: string
+  title: string
+  description: string | null
+  type: string
+  order: number
+  points_reward: number
+  completed: boolean
+}
+
+export interface PathProgress {
+  total_activities: number
+  completed_activities: number
+  progress_percent: number
+  activities: PathProgressActivity[]
+}
+
 // Manager Dashboard types
 export interface ManagerTeamMemberSummary {
   user_id: string

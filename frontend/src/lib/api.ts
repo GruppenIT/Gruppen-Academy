@@ -239,8 +239,17 @@ class ApiClient {
   createActivity(pathId: string, data: { title: string; description?: string; type: string; content?: Record<string, unknown>; order?: number; points_reward?: number }) {
     return this.request<import('@/types').LearningActivity>(`/api/learning/paths/${pathId}/activities`, { method: 'POST', body: JSON.stringify(data) })
   }
+  getPathProgress(pathId: string) {
+    return this.request<import('@/types').PathProgress>(`/api/learning/paths/${pathId}/progress`)
+  }
+  completeActivity(activityId: string) {
+    return this.request<{ id: string; activity_id: string; completed_at: string }>(`/api/learning/activities/${activityId}/complete`, { method: 'POST' })
+  }
 
   // Tutor
+  listTutorSessions(skip = 0, limit = 20) {
+    return this.request<import('@/types').TutorSession[]>(`/api/learning/tutor/sessions?skip=${skip}&limit=${limit}`)
+  }
   createTutorSession(topic: string, activityId?: string) {
     return this.request<import('@/types').TutorSession>('/api/learning/tutor/sessions', {
       method: 'POST',

@@ -435,6 +435,17 @@ async def submit_async_answer(
         # All questions answered - mark complete
         participation.completed_at = datetime.now(tz.utc)
         participation.current_question_order = current_order
+
+        # Auto-award points for journey completion
+        from app.gamification.models import Score
+        score = Score(
+            user_id=current_user.id,
+            points=50,  # base points for completing a journey
+            source="journey_completion",
+            source_id=journey_id,
+            description=f"Completou jornada: {journey.title}",
+        )
+        db.add(score)
     else:
         # Find next unanswered question order
         for q in questions:

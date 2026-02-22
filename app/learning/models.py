@@ -60,6 +60,21 @@ class LearningActivity(Base):
     path: Mapped["LearningPath"] = relationship(back_populates="activities")
 
 
+class ActivityCompletion(Base):
+    __tablename__ = "activity_completions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    activity_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("learning_activities.id", ondelete="CASCADE"), nullable=False
+    )
+    completed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    activity: Mapped["LearningActivity"] = relationship()
+
+
 class TutorSession(Base):
     __tablename__ = "tutor_sessions"
 

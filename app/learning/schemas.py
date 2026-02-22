@@ -51,6 +51,34 @@ class LearningActivityOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# --- Activity Completion ---
+class ActivityCompletionOut(BaseModel):
+    id: uuid.UUID
+    user_id: uuid.UUID
+    activity_id: uuid.UUID
+    completed_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# --- Path Progress ---
+class ActivityProgressItem(BaseModel):
+    activity_id: uuid.UUID
+    title: str
+    description: str | None
+    type: str
+    order: int
+    points_reward: int
+    completed: bool
+
+
+class PathProgressOut(BaseModel):
+    total_activities: int
+    completed_activities: int
+    progress_percent: int
+    activities: list[ActivityProgressItem]
+
+
 # --- Tutor Session ---
 class TutorSessionCreate(BaseModel):
     topic: str

@@ -6,22 +6,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_role
 from app.database import get_db
 from app.learning.schemas import (
+    ActivityCompletionOut,
     LearningActivityCreate,
     LearningActivityOut,
     LearningPathCreate,
     LearningPathOut,
+    PathProgressOut,
     TutorMessageRequest,
     TutorSessionCreate,
     TutorSessionOut,
 )
 from app.learning.service import (
     add_activity,
+    complete_activity,
     create_learning_path,
     create_tutor_session,
     get_learning_path,
+    get_path_progress,
     get_tutor_session,
     list_activities,
     list_learning_paths,
+    list_tutor_sessions,
     send_tutor_message,
 )
 from app.users.models import User, UserRole
@@ -64,6 +69,16 @@ async def get_single_path(
     return path
 
 
+@router.get("/paths/{path_id}/progress", response_model=PathProgressOut)
+async def get_my_path_progress(
+    path_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get current user's progress on a learning path."""
+    return await get_path_progress(db, current_user.id, path_id)
+
+
 # --- Activities ---
 
 
@@ -93,6 +108,23 @@ async def list_path_activities(
     return await list_activities(db, path_id)
 
 
+@router.post(
+    "/activities/{activity_id}/complete",
+    response_model=ActivityCompletionOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def complete_an_activity(
+    activity_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Mark an activity as completed. Awards points automatically."""
+    try:
+        return await complete_activity(db, current_user.id, activity_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 # --- Tutor Sessions ---
 
 
@@ -103,6 +135,17 @@ async def start_tutor_session(
     current_user: User = Depends(get_current_user),
 ):
     return await create_tutor_session(db, current_user.id, data)
+
+
+@router.get("/tutor/sessions", response_model=list[TutorSessionOut])
+async def list_my_tutor_sessions(
+    skip: int = 0,
+    limit: int = 20,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List current user's tutor sessions."""
+    return await list_tutor_sessions(db, current_user.id, skip, limit)
 
 
 @router.get("/tutor/sessions/{session_id}", response_model=TutorSessionOut)

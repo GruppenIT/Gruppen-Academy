@@ -1,11 +1,11 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.catalog.models import Competency
-from app.learning.models import LearningActivity, LearningPath, TutorSession
+from app.learning.models import ActivityCompletion, LearningActivity, LearningPath, TutorSession
 from app.learning.schemas import LearningActivityCreate, LearningPathCreate, TutorSessionCreate
 from app.llm.client import tutor_chat
 from app.llm.prompts import TUTOR_SYSTEM_PROMPT
@@ -65,6 +65,111 @@ async def list_activities(db: AsyncSession, path_id: uuid.UUID) -> list[Learning
         select(LearningActivity)
         .where(LearningActivity.path_id == path_id)
         .order_by(LearningActivity.order)
+    )
+    return list(result.scalars().all())
+
+
+# --- Activity Completion ---
+async def complete_activity(
+    db: AsyncSession, user_id: uuid.UUID, activity_id: uuid.UUID
+) -> ActivityCompletion:
+    """Mark an activity as completed for a user. Idempotent."""
+    # Check if already completed
+    existing = await db.execute(
+        select(ActivityCompletion).where(
+            ActivityCompletion.user_id == user_id,
+            ActivityCompletion.activity_id == activity_id,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise ValueError("Atividade já concluída")
+
+    # Verify activity exists
+    activity_result = await db.execute(
+        select(LearningActivity).where(LearningActivity.id == activity_id)
+    )
+    activity = activity_result.scalar_one_or_none()
+    if not activity:
+        raise ValueError("Atividade não encontrada")
+
+    completion = ActivityCompletion(user_id=user_id, activity_id=activity_id)
+    db.add(completion)
+
+    # Auto-award points
+    from app.gamification.models import Score
+    score = Score(
+        user_id=user_id,
+        points=activity.points_reward,
+        source="activity_completion",
+        source_id=activity_id,
+        description=f"Completou atividade: {activity.title}",
+    )
+    db.add(score)
+
+    await db.commit()
+    await db.refresh(completion)
+    return completion
+
+
+async def get_path_progress(
+    db: AsyncSession, user_id: uuid.UUID, path_id: uuid.UUID
+) -> dict:
+    """Calculate user's progress on a learning path."""
+    # Get all activities in path
+    activities_result = await db.execute(
+        select(LearningActivity)
+        .where(LearningActivity.path_id == path_id)
+        .order_by(LearningActivity.order)
+    )
+    activities = list(activities_result.scalars().all())
+    total = len(activities)
+
+    if total == 0:
+        return {"total_activities": 0, "completed_activities": 0, "progress_percent": 0, "activities": []}
+
+    # Get completions for this user
+    activity_ids = [a.id for a in activities]
+    completions_result = await db.execute(
+        select(ActivityCompletion.activity_id).where(
+            ActivityCompletion.user_id == user_id,
+            ActivityCompletion.activity_id.in_(activity_ids),
+        )
+    )
+    completed_ids = {row[0] for row in completions_result.all()}
+
+    activities_data = []
+    for a in activities:
+        activities_data.append({
+            "activity_id": a.id,
+            "title": a.title,
+            "description": a.description,
+            "type": a.type.value,
+            "order": a.order,
+            "points_reward": a.points_reward,
+            "completed": a.id in completed_ids,
+        })
+
+    completed_count = len(completed_ids)
+    progress_percent = round((completed_count / total) * 100) if total > 0 else 0
+
+    return {
+        "total_activities": total,
+        "completed_activities": completed_count,
+        "progress_percent": progress_percent,
+        "activities": activities_data,
+    }
+
+
+async def list_tutor_sessions(
+    db: AsyncSession, user_id: uuid.UUID, skip: int = 0, limit: int = 20
+) -> list[TutorSession]:
+    """List tutor sessions for a user."""
+    result = await db.execute(
+        select(TutorSession)
+        .where(TutorSession.user_id == user_id)
+        .order_by(TutorSession.updated_at.desc())
+        .offset(skip)
+        .limit(limit)
     )
     return list(result.scalars().all())
 

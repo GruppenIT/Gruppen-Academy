@@ -9,6 +9,7 @@ from app.llm.prompts import (
     COMPETENCY_SUGGESTION_SYSTEM_PROMPT,
     EVALUATION_SYSTEM_PROMPT,
     GUIDELINE_SUGGESTION_SYSTEM_PROMPT,
+    OCR_CLEANUP_SYSTEM_PROMPT,
     QUESTION_GENERATION_SYSTEM_PROMPT,
     REPORT_MANAGER_SYSTEM_PROMPT,
     REPORT_PROFESSIONAL_SYSTEM_PROMPT,
@@ -262,6 +263,44 @@ Conversa:
     )
 
     return _parse_json_response(response)
+
+
+async def cleanup_ocr_text(raw_text: str) -> str:
+    """Clean up OCR-extracted text using the LLM to fix transcription errors.
+
+    Returns the cleaned text, or the original text if LLM is unavailable.
+    """
+    if not raw_text or not raw_text.strip():
+        return raw_text
+
+    try:
+        client = _get_client()
+    except ValueError:
+        logger.warning("OpenAI API key not configured, skipping OCR cleanup")
+        return raw_text
+
+    try:
+        response = await client.chat.completions.create(
+            model=settings.openai_model,
+            max_tokens=2048,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": OCR_CLEANUP_SYSTEM_PROMPT},
+                {"role": "user", "content": _sanitize_user_input(raw_text)},
+            ],
+        )
+        result = _parse_json_response(response)
+        cleaned = result.get("cleaned_text", raw_text)
+        if cleaned:
+            logger.info(
+                "OCR cleanup: %d -> %d chars",
+                len(raw_text), len(cleaned),
+            )
+            return cleaned
+        return raw_text
+    except Exception as e:
+        logger.warning("OCR cleanup failed, using raw text: %s", e)
+        return raw_text
 
 
 async def tutor_chat(

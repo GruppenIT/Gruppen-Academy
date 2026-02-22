@@ -561,14 +561,46 @@ def _extract_journey_title(page_text: str) -> str | None:
     return None
 
 
-def _extract_question_responses(
+def _is_question_text_line(line: str, q_text_words: set[str]) -> bool:
+    """Check if a line is likely part of the printed question text.
+
+    Uses word overlap ratio: if most words in the OCR'd line appear in the
+    original question text, the line is probably the printed question, not
+    a handwritten response.
+    """
+    words = re.findall(r'[a-záàâãéèêíïóôõúüç]+', line.lower())
+    if not words:
+        return False
+    matches = sum(1 for w in words if w in q_text_words)
+    ratio = matches / len(words)
+    # High overlap → printed question text
+    return ratio >= 0.7 and len(words) >= 3
+
+
+def _is_footer_artifact(line: str) -> bool:
+    """Check if a line is a footer artifact (page code, page number, etc.)."""
+    stripped = line.strip()
+    # Page codes: 6-char uppercase alphanumeric (e.g. PMWHJP)
+    if re.match(r'^[A-Z0-9]{5,7}$', stripped):
+        return True
+    # Page numbers: "Pagina X/Y", "E Pagina X/Y", "Página X/Y"
+    if re.match(r'^[E\s]*Pag[ií]na\s+\d+/\d+', stripped, re.IGNORECASE):
+        return True
+    # "Gruppen Academy" header repeated mid-text (from page breaks)
+    if re.match(r'^Gruppen\s+Academy', stripped, re.IGNORECASE):
+        return True
+    return False
+
+
+async def _extract_question_responses(
     pages_text: list[str], questions: list[Question]
 ) -> list[dict]:
     """Split OCR-extracted text into responses per question.
 
     Looks for 'Pergunta N' markers in the text to segment responses.
-    Text between consecutive question markers (excluding the question text itself)
-    is treated as the handwritten response.
+    Text between consecutive question markers (excluding the printed question
+    text and footer artifacts) is treated as the handwritten response.
+    After extraction, each response is cleaned via LLM to fix OCR artifacts.
     """
     full_text = "\n".join(pages_text)
 
@@ -600,31 +632,38 @@ def _extract_question_responses(
                 end = len(full_text)
 
             chunk = full_text[start:end]
-            # Remove the question text itself (first few lines are the printed question)
-            # The response is whatever follows after the question text
-            # Simple heuristic: remove lines that match the question text
+
+            # Build word set from original question for fuzzy matching
+            q_text_words = set(re.findall(r'[a-záàâãéèêíïóôõúüç]+', q.text.lower()))
+
             response_lines = []
-            q_text_lower = q.text.lower().strip()
-            found_q_text = False
+            finished_question = False
             for line in chunk.split('\n'):
                 stripped = line.strip()
                 if not stripped:
                     continue
-                # Skip metadata lines
+                # Skip metadata lines (type label + weight)
                 if re.match(r'^(Dissertativa|Estudo de Caso|Roleplay|Objetiva)', stripped, re.IGNORECASE):
                     continue
                 if re.match(r'^Peso:', stripped, re.IGNORECASE):
                     continue
-                # Check if this line is part of the question text
-                if not found_q_text and stripped.lower() in q_text_lower:
-                    found_q_text = True
+                # Skip footer artifacts (page codes, page numbers)
+                if _is_footer_artifact(stripped):
                     continue
-                if not found_q_text and q_text_lower.startswith(stripped.lower()):
-                    found_q_text = True
+                # While we haven't passed the question text, check if
+                # this line belongs to the printed question
+                if not finished_question and _is_question_text_line(stripped, q_text_words):
                     continue
+                # First line that doesn't match the question = start of response
+                finished_question = True
                 response_lines.append(stripped)
 
             response_text = "\n".join(response_lines).strip()
+
+        # Clean up OCR artifacts via LLM
+        if response_text:
+            from app.llm.client import cleanup_ocr_text
+            response_text = await cleanup_ocr_text(response_text)
 
         extracted.append({
             "question_order": q.order if q.order > 0 else i + 1,
@@ -807,7 +846,7 @@ async def _process_via_page_codes(
 
         pages.sort(key=lambda x: x[0])
         all_pages_text = [text for _, text in pages]
-        extracted = _extract_question_responses(all_pages_text, questions)
+        extracted = await _extract_question_responses(all_pages_text, questions)
 
         upload = OCRUpload(
             participation_id=participation.id,
@@ -983,7 +1022,7 @@ async def process_ocr_batch(
         questions = await list_questions(db, journey.id)
 
         # Extract responses for this respondent's pages
-        extracted = _extract_question_responses(section["pages_text"], questions)
+        extracted = await _extract_question_responses(section["pages_text"], questions)
 
         # Create OCR upload for this respondent
         upload = OCRUpload(

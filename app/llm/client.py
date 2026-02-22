@@ -93,6 +93,7 @@ async def generate_questions(
     domain: str,
     num_questions: int | None = None,
     guidelines: list[dict] | None = None,
+    admin_instructions: str | None = None,
 ) -> list[dict]:
     client = _get_client()
 
@@ -123,6 +124,13 @@ Orientações Master por Produto:
 """
     if num_questions:
         user_content += f"\nNúmero desejado de perguntas: {num_questions}"
+
+    if admin_instructions:
+        user_content += f"""
+Orientações do Admin (instruções específicas do administrador para esta jornada — podem conter \
+perguntas prontas a serem melhoradas, direcionamentos de tema, restrições ou qualquer outra instrução):
+{admin_instructions}
+"""
 
     response = await client.chat.completions.create(
         model=settings.openai_model,

@@ -62,6 +62,7 @@ class JourneyGenerateRequest(BaseModel):
     product_ids: list[uuid.UUID]
     description: str | None = None
     mode: str = "async"
+    admin_instructions: str | None = None
 
 
 class GeneratedQuestion(BaseModel):

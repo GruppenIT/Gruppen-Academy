@@ -315,6 +315,7 @@ async def _generate_journey_impl(
             session_duration_minutes=data.session_duration_minutes,
             participant_level=data.participant_level,
             domain=data.domain,
+            admin_instructions=data.admin_instructions,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

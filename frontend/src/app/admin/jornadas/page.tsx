@@ -76,6 +76,8 @@ export default function AdminJornadasPage() {
   const [wLevel, setWLevel] = useState('intermediario')
   const [wMode, setWMode] = useState<string>('async')
   const [wProducts, setWProducts] = useState<string[]>([])
+  const [wHasInstructions, setWHasInstructions] = useState(false)
+  const [wInstructions, setWInstructions] = useState('')
   const [generatedQuestions, setGeneratedQuestions] = useState<CopilotGeneratedQuestion[]>([])
   const [generatedJourneyId, setGeneratedJourneyId] = useState('')
 
@@ -175,6 +177,7 @@ export default function AdminJornadasPage() {
   // AI Wizard
   const openWizard = () => {
     setWTitle(''); setWDesc(''); setWDomain('vendas'); setWDuration(180); setWLevel('intermediario'); setWMode('async'); setWProducts([])
+    setWHasInstructions(false); setWInstructions('')
     setGeneratedQuestions([]); setGeneratedJourneyId(''); setWizardError('')
     setWizardStep('form'); setWizardOpen(true)
   }
@@ -201,6 +204,7 @@ export default function AdminJornadasPage() {
         product_ids: wProducts,
         description: wDesc || undefined,
         mode: wMode,
+        admin_instructions: (wHasInstructions && wInstructions.trim()) ? wInstructions.trim() : undefined,
       })
       setGeneratedJourneyId(result.journey_id)
       setGeneratedQuestions(result.questions)
@@ -612,6 +616,31 @@ export default function AdminJornadasPage() {
                       })}
                     </div>
                     {products.length === 0 && <p className="text-sm text-gray-400 text-center py-4">Nenhum produto cadastrado.</p>}
+                  </div>
+
+                  {/* Admin Instructions */}
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setWHasInstructions(!wHasInstructions)}
+                      className={`w-full flex items-center gap-3 p-3 rounded-xl border-2 text-left transition-all ${wHasInstructions ? 'border-violet-500 bg-violet-50' : 'border-gray-100 hover:border-gray-200 bg-white'}`}
+                    >
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${wHasInstructions ? 'border-violet-500 bg-violet-500' : 'border-gray-300'}`}>
+                        {wHasInstructions && <Check className="w-3 h-3 text-white" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className={`text-sm font-medium ${wHasInstructions ? 'text-violet-900' : 'text-gray-900'}`}>Especificar orientacoes</p>
+                        <p className="text-xs text-gray-400">Orientacoes gerais, temas especificos ou perguntas prontas para a IA usar como base</p>
+                      </div>
+                    </button>
+                    {wHasInstructions && (
+                      <textarea
+                        className="input-field w-full h-32 resize-none mt-3"
+                        value={wInstructions}
+                        onChange={(e) => setWInstructions(e.target.value)}
+                        placeholder={"Ex: Focar em cenarios de objecao de preco.\nOu cole perguntas prontas para a IA melhorar:\n1) Como voce apresentaria o BaaS para um CFO?\n2) Quais argumentos usar quando o cliente ja tem backup local?"}
+                      />
+                    )}
                   </div>
                 </div>
               )}

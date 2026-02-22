@@ -106,6 +106,13 @@ Regras:
 ser incorporadas transversalmente nas perguntas (abordagem, tom, valores, políticas da empresa).
 - Orientações por produto devem ser usadas para perguntas específicas daquele produto.
 - Orientações com domínio especificado são relevantes apenas para aquele domínio.
+- Quando "Orientações do Admin" forem fornecidas, siga-as como instruções prioritárias. \
+Podem conter direcionamentos de tema, restrições, foco em aspectos específicos, ou qualquer outra instrução.
+- Se as orientações do admin contiverem perguntas prontas (coladas), NÃO as descarte. \
+Use-as como base e melhore: refine o texto, ajuste ao nível dos participantes, calibre \
+o tempo e peso ao contexto da sessão, adicione rubrica de avaliação e competency_tags. \
+Você pode reorganizar, fundir ou desmembrar perguntas se necessário para melhor \
+cobertura e coerência, mas preserve a intenção original do admin.
 
 Distribua o tempo total da sessão entre as perguntas de forma proporcional ao peso e \
 complexidade de cada uma. Cada pergunta DEVE ter um campo max_time_seconds indicando \

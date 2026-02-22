@@ -6,7 +6,7 @@ import type { Journey, Question, Product, Team, CopilotGeneratedQuestion } from 
 import {
   Plus, Search, Pencil, X, Loader2, Route, ChevronDown, ChevronUp,
   FileQuestion, Sparkles, Check, AlertCircle, Clock, UsersRound, Monitor, FileText,
-  Printer, Download,
+  Printer, Download, Copy, Trash2,
 } from 'lucide-react'
 
 const STATUS_LABELS: Record<string, string> = { draft: 'Rascunho', published: 'Publicada', archived: 'Arquivada', DRAFT: 'Rascunho', PUBLISHED: 'Publicada', ARCHIVED: 'Arquivada' }
@@ -16,7 +16,7 @@ const MODE_COLORS: Record<string, string> = { sync: 'bg-amber-50 text-amber-700'
 const Q_TYPE_LABELS: Record<string, string> = { essay: 'Dissertativa', case_study: 'Estudo de Caso', roleplay: 'Roleplay', objective: 'Objetiva', ESSAY: 'Dissertativa', CASE_STUDY: 'Estudo de Caso', ROLEPLAY: 'Roleplay', OBJECTIVE: 'Objetiva' }
 const Q_TYPE_COLORS: Record<string, string> = { essay: 'bg-blue-50 text-blue-600', case_study: 'bg-amber-50 text-amber-600', roleplay: 'bg-purple-50 text-purple-600', objective: 'bg-emerald-50 text-emerald-600', ESSAY: 'bg-blue-50 text-blue-600', CASE_STUDY: 'bg-amber-50 text-amber-600', ROLEPLAY: 'bg-purple-50 text-purple-600', OBJECTIVE: 'bg-emerald-50 text-emerald-600' }
 
-type ModalMode = 'edit-journey' | 'add-question' | 'assign-teams' | null
+type ModalMode = 'edit-journey' | 'add-question' | 'edit-question' | 'assign-teams' | null
 type WizardStep = 'form' | 'generating' | 'review' | 'error'
 
 function formatTime(seconds: number | null) {
@@ -52,12 +52,14 @@ export default function AdminJornadasPage() {
 
   // Question form
   const [qJourneyId, setQJourneyId] = useState('')
+  const [qId, setQId] = useState('')
   const [qText, setQText] = useState('')
   const [qType, setQType] = useState('ESSAY')
   const [qWeight, setQWeight] = useState(1)
   const [qLines, setQLines] = useState(10)
   const [qOrder, setQOrder] = useState(0)
   const [qMaxTime, setQMaxTime] = useState<number | ''>('')
+  const [cloning, setCloning] = useState<string | null>(null)
 
   // Team assignment
   const [assignJourneyId, setAssignJourneyId] = useState('')
@@ -103,9 +105,32 @@ export default function AdminJornadasPage() {
     setError(''); setModalMode('edit-journey')
   }
   const openAddQuestion = (journeyId: string) => {
-    setQJourneyId(journeyId); setQText(''); setQType('essay'); setQWeight(1); setQLines(10); setQMaxTime('')
+    setQJourneyId(journeyId); setQId(''); setQText(''); setQType('essay'); setQWeight(1); setQLines(10); setQMaxTime('')
     setQOrder((questions[journeyId]?.length || 0) + 1)
     setError(''); setModalMode('add-question')
+  }
+  const openEditQuestion = (journeyId: string, q: Question) => {
+    setQJourneyId(journeyId); setQId(q.id); setQText(q.text); setQType(q.type); setQWeight(q.weight); setQLines(q.expected_lines); setQMaxTime(q.max_time_seconds || '')
+    setQOrder(q.order)
+    setError(''); setModalMode('edit-question')
+  }
+  const handleDeleteQuestion = async (journeyId: string, questionId: string) => {
+    if (!confirm('Tem certeza que deseja excluir esta pergunta?')) return
+    try {
+      await api.deleteQuestion(journeyId, questionId)
+      loadQuestions(journeyId)
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir pergunta')
+    }
+  }
+  const handleCloneJourney = async (journeyId: string) => {
+    setCloning(journeyId)
+    try {
+      await api.cloneJourney(journeyId)
+      await load()
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Erro ao clonar jornada')
+    } finally { setCloning(null) }
   }
   const openAssignTeams = async (journeyId: string) => {
     setAssignJourneyId(journeyId)
@@ -135,6 +160,10 @@ export default function AdminJornadasPage() {
       } else if (modalMode === 'add-question') {
         if (!qText) { setError('Texto da pergunta e obrigatorio.'); setSaving(false); return }
         await api.createQuestion(qJourneyId, { text: qText, type: qType, weight: qWeight, max_time_seconds: qMaxTime || null, expected_lines: qLines, order: qOrder })
+        loadQuestions(qJourneyId)
+      } else if (modalMode === 'edit-question') {
+        if (!qText) { setError('Texto da pergunta e obrigatorio.'); setSaving(false); return }
+        await api.updateQuestion(qJourneyId, qId, { text: qText, type: qType, weight: qWeight, max_time_seconds: qMaxTime || null, expected_lines: qLines, order: qOrder })
         loadQuestions(qJourneyId)
       } else if (modalMode === 'assign-teams') {
         await api.assignJourneyTeams(assignJourneyId, assignedTeamIds)
@@ -267,6 +296,9 @@ export default function AdminJornadasPage() {
                       {printingPdf === j.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Printer className="w-4 h-4" />}
                     </button>
                   )}
+                  <button onClick={() => handleCloneJourney(j.id)} disabled={cloning === j.id} className="p-2 rounded-lg text-gray-400 hover:text-violet-600 hover:bg-violet-50 disabled:opacity-50" title="Clonar jornada">
+                    {cloning === j.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
+                  </button>
                   <button onClick={() => openAssignTeams(j.id)} className="p-2 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50" title="Atribuir equipes"><UsersRound className="w-4 h-4" /></button>
                   <button onClick={() => openEditJourney(j)} className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50" title="Editar"><Pencil className="w-4 h-4" /></button>
                   <button onClick={() => toggleExpand(j.id)} className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50">
@@ -330,6 +362,14 @@ export default function AdminJornadasPage() {
                                 )}
                               </div>
                             </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button onClick={() => openEditQuestion(j.id, q)} className="p-1.5 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50" title="Editar pergunta">
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                              <button onClick={() => handleDeleteQuestion(j.id, q.id)} className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50" title="Excluir pergunta">
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -351,7 +391,7 @@ export default function AdminJornadasPage() {
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-slide-up max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-5 border-b border-gray-100 sticky top-0 bg-white rounded-t-2xl">
               <h3 className="font-bold text-gray-900">
-                {modalMode === 'edit-journey' ? 'Editar Jornada' : modalMode === 'add-question' ? 'Nova Pergunta' : 'Atribuir Equipes'}
+                {modalMode === 'edit-journey' ? 'Editar Jornada' : modalMode === 'add-question' ? 'Nova Pergunta' : modalMode === 'edit-question' ? 'Editar Pergunta' : 'Atribuir Equipes'}
               </h3>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
             </div>
@@ -404,7 +444,7 @@ export default function AdminJornadasPage() {
                     </div>
                   </div>
                 </>
-              ) : modalMode === 'add-question' ? (
+              ) : (modalMode === 'add-question' || modalMode === 'edit-question') ? (
                 <>
                   <div>
                     <label className="text-sm font-medium text-gray-700 block mb-1">Texto da Pergunta *</label>
@@ -471,7 +511,7 @@ export default function AdminJornadasPage() {
               <button onClick={closeModal} className="btn-secondary px-4 py-2">Cancelar</button>
               <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 px-4 py-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                {modalMode === 'add-question' ? 'Criar' : 'Salvar'}
+                {modalMode === 'add-question' ? 'Criar' : modalMode === 'edit-question' ? 'Atualizar' : 'Salvar'}
               </button>
             </div>
           </div>

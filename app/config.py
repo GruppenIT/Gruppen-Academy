@@ -17,6 +17,8 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["https://academy.gruppen.com.br", "http://localhost:3000"]
 
+    upload_dir: str = "/tmp/gruppen-academy-uploads"
+
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
 

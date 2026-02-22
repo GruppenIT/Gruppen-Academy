@@ -32,7 +32,7 @@ Atualizar este arquivo conforme os itens forem concluídos.
 - [x] **3.1** Modelo ActivityCompletion + endpoint para marcar atividade concluída + pontos automáticos
 - [x] **3.2** Cálculo de progresso na trilha (% de atividades concluídas)
 - [x] **3.3** Frontend de trilhas com progresso real e botão "Concluir"
-- [ ] **3.4** Sugestão de trilha por gap de competência (baseado em avaliações)
+- [x] **3.4** Sugestão de trilha por gap de competência (baseado em avaliações)
 
 ---
 
@@ -57,18 +57,18 @@ Atualizar este arquivo conforme os itens forem concluídos.
 
 ## LOTE 6 — JORNADAS SÍNCRONAS (OCR)
 
-- [ ] **7.1** Upload de PDF digitalizado (endpoint + storage)
-- [ ] **7.2** Processamento OCR (extrair texto de respostas manuscritas)
-- [ ] **7.3** Revisão de OCR pelo admin antes de avaliação
+- [x] **7.1** Upload de PDF digitalizado (endpoint + storage)
+- [x] **7.2** Processamento OCR (extrair texto de respostas manuscritas)
+- [x] **7.3** Revisão de OCR pelo admin antes de avaliação
 
 ---
 
 ## LOTE 7 — MELHORIAS MENORES
 
-- [ ] **8.1** Registro de tempo por resposta (async)
-- [ ] **8.2** Deletar/editar perguntas individuais (endpoints)
-- [ ] **8.3** CRUD completo para trilhas e atividades (editar/deletar)
-- [ ] **8.4** Clonar jornada existente
+- [x] **8.1** Registro de tempo por resposta (async)
+- [x] **8.2** Deletar/editar perguntas individuais (endpoints)
+- [x] **8.3** CRUD completo para trilhas e atividades (editar/deletar)
+- [x] **8.4** Clonar jornada existente
 
 ---
 

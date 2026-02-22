@@ -4,17 +4,24 @@ import { useEffect, useState } from 'react'
 import AppShell from '@/components/layout/AppShell'
 import { api } from '@/lib/api'
 import Link from 'next/link'
-import type { LearningPath } from '@/types'
+import type { LearningPath, SuggestedPath } from '@/types'
 import PointsBadge from '@/components/gamification/PointsBadge'
-import { BookOpen, ArrowRight, Search, Sparkles, Target, Loader2 } from 'lucide-react'
+import { BookOpen, ArrowRight, Search, Sparkles, Target, Loader2, Lightbulb } from 'lucide-react'
 
 export default function TrilhasPage() {
   const [paths, setPaths] = useState<LearningPath[]>([])
+  const [suggestedPaths, setSuggestedPaths] = useState<SuggestedPath[]>([])
   const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    api.getLearningPaths().then(setPaths).catch(() => {}).finally(() => setLoading(false))
+    Promise.allSettled([
+      api.getLearningPaths(),
+      api.getSuggestedPaths(),
+    ]).then(([pathsResult, suggestedResult]) => {
+      if (pathsResult.status === 'fulfilled') setPaths(pathsResult.value)
+      if (suggestedResult.status === 'fulfilled') setSuggestedPaths(suggestedResult.value)
+    }).finally(() => setLoading(false))
   }, [])
 
   const filtered = paths.filter(p =>
@@ -45,6 +52,31 @@ export default function TrilhasPage() {
           className="input-field pl-10"
         />
       </div>
+
+      {/* Suggested Paths */}
+      {suggestedPaths.length > 0 && !search && (
+        <div className="mb-8">
+          <h2 className="text-sm font-semibold text-gray-700 flex items-center gap-2 mb-3">
+            <Lightbulb className="w-4 h-4 text-amber-500" />
+            Sugeridas para voce
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {suggestedPaths.slice(0, 3).map((sp) => (
+              <Link key={sp.path_id} href={`/trilhas/${sp.path_id}`} className="card-hover p-4 group border-l-4 border-l-amber-400">
+                <h3 className="font-semibold text-gray-900 text-sm mb-1 group-hover:text-brand-700 transition-colors">{sp.title}</h3>
+                <p className="text-xs text-amber-600 mb-2">{sp.relevance}</p>
+                {sp.matching_competencies.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {sp.matching_competencies.map((c, i) => (
+                      <span key={i} className="badge-pill bg-amber-50 text-amber-600 text-xs">{c}</span>
+                    ))}
+                  </div>
+                )}
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Paths Grid */}
       {loading ? (

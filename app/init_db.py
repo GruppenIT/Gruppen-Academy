@@ -13,7 +13,7 @@ from app.users.models import User, UserRole
 from app.catalog.models import Competency, MasterGuideline, Product  # noqa: F401
 from app.evaluations.models import AnalyticalReport, Evaluation  # noqa: F401
 from app.gamification.models import Badge, Score, UserBadge  # noqa: F401
-from app.journeys.models import Journey, JourneyParticipation, Question, QuestionResponse  # noqa: F401
+from app.journeys.models import Journey, JourneyParticipation, OCRUpload, Question, QuestionResponse  # noqa: F401
 from app.learning.models import LearningActivity, LearningPath, TutorSession  # noqa: F401
 
 logger = logging.getLogger(__name__)
@@ -50,6 +50,10 @@ async def init_db():
             EXCEPTION WHEN others THEN NULL; END $$"""))
         await conn.execute(text(
             "ALTER TABLE journeys ALTER COLUMN mode SET DEFAULT 'ASYNC'"
+        ))
+        # Lote 7: time_spent_seconds for responses
+        await conn.execute(text(
+            "ALTER TABLE question_responses ADD COLUMN IF NOT EXISTS time_spent_seconds INTEGER"
         ))
 
     logger.info("Database tables created/verified.")

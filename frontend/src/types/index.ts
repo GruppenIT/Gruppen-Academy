@@ -347,6 +347,38 @@ export interface SuggestedTopic {
   source: 'product' | 'gap' | 'default'
 }
 
+// OCR Upload types
+export type OCRUploadStatus = 'uploaded' | 'processing' | 'processed' | 'reviewed' | 'error'
+
+export interface OCRExtractedResponse {
+  question_order: number
+  question_id: string | null
+  extracted_text: string
+  confidence: number | null
+}
+
+export interface OCRUpload {
+  id: string
+  participation_id: string
+  original_filename: string
+  status: OCRUploadStatus
+  extracted_responses: OCRExtractedResponse[] | null
+  error_message: string | null
+  created_at: string
+  updated_at: string
+}
+
+// Suggested Learning Path
+export interface SuggestedPath {
+  path_id: string
+  title: string
+  description: string | null
+  domain: string
+  target_role: string
+  relevance: string
+  matching_competencies: string[]
+}
+
 // Gamification levels
 export const LEVELS = [
   { name: 'Iniciante', minPoints: 0, icon: '🌱' },

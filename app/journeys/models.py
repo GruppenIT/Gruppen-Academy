@@ -144,8 +144,40 @@ class QuestionResponse(Base):
     )
     answer_text: Mapped[str] = mapped_column(Text, nullable=False)
     ocr_source: Mapped[bool] = mapped_column(default=False)
+    time_spent_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     participation: Mapped["JourneyParticipation"] = relationship(back_populates="responses")
     question: Mapped["Question"] = relationship(back_populates="responses")
     evaluation: Mapped["Evaluation | None"] = relationship(back_populates="response", uselist=False)
+
+
+class OCRUploadStatus(str, enum.Enum):
+    UPLOADED = "uploaded"
+    PROCESSING = "processing"
+    PROCESSED = "processed"
+    REVIEWED = "reviewed"
+    ERROR = "error"
+
+
+class OCRUpload(Base):
+    __tablename__ = "ocr_uploads"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    participation_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("journey_participations.id", ondelete="CASCADE"), nullable=False
+    )
+    file_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[OCRUploadStatus] = mapped_column(
+        Enum(OCRUploadStatus), nullable=False, default=OCRUploadStatus.UPLOADED
+    )
+    extracted_responses: Mapped[list | None] = mapped_column(JSONB)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    participation: Mapped["JourneyParticipation"] = relationship()

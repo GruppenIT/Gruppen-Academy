@@ -1,11 +1,13 @@
 import logging
+import os
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_role
+from app.config import settings
 from app.database import get_db
 
 logger = logging.getLogger(__name__)
@@ -15,25 +17,38 @@ from app.journeys.schemas import (
     JourneyCreate,
     JourneyOut,
     JourneyUpdate,
+    OCRReviewRequest,
+    OCRUploadOut,
     ParticipationCreate,
     ParticipationOut,
     ParticipationStatusOut,
     QuestionCreate,
     QuestionOut,
+    QuestionUpdate,
     ResponseCreate,
     ResponseOut,
 )
 from app.journeys.service import (
     add_question,
+    approve_ocr_upload,
+    clone_journey,
     complete_participation,
     create_journey,
+    create_ocr_upload,
     create_participation,
+    delete_question,
     get_journey,
+    get_ocr_upload,
     get_participation,
+    get_question,
     list_journeys,
+    list_ocr_uploads,
     list_questions,
+    process_ocr_upload,
+    review_ocr_upload,
     submit_response,
     update_journey,
+    update_question,
 )
 from app.teams.service import get_team
 from app.users.models import User, UserRole
@@ -218,6 +233,49 @@ async def list_journey_questions(
     _: User = Depends(get_current_user),
 ):
     return await list_questions(db, journey_id)
+
+
+@router.patch("/{journey_id}/questions/{question_id}", response_model=QuestionOut)
+async def update_journey_question(
+    journey_id: uuid.UUID,
+    question_id: uuid.UUID,
+    data: QuestionUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    question = await get_question(db, question_id)
+    if not question or question.journey_id != journey_id:
+        raise HTTPException(status_code=404, detail="Pergunta não encontrada nesta jornada")
+    return await update_question(db, question, data)
+
+
+@router.delete("/{journey_id}/questions/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_journey_question(
+    journey_id: uuid.UUID,
+    question_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    question = await get_question(db, question_id)
+    if not question or question.journey_id != journey_id:
+        raise HTTPException(status_code=404, detail="Pergunta não encontrada nesta jornada")
+    await delete_question(db, question)
+
+
+# --- Journey Clone ---
+
+
+@router.post("/{journey_id}/clone", response_model=JourneyOut, status_code=status.HTTP_201_CREATED)
+async def clone_existing_journey(
+    journey_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Clone a journey with all its questions."""
+    try:
+        return await clone_journey(db, journey_id, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # --- Participations ---
@@ -426,6 +484,7 @@ async def submit_async_answer(
         question_id=question.id,
         answer_text=data.answer_text,
         ocr_source=False,
+        time_spent_seconds=data.time_spent_seconds,
     )
     db.add(response)
 
@@ -466,3 +525,106 @@ async def submit_async_answer(
         completed=participation.completed_at is not None,
         started_at=participation.started_at,
     )
+
+
+# --- OCR Upload (Sync Journeys) ---
+
+
+@router.post(
+    "/participations/{participation_id}/ocr-upload",
+    response_model=OCRUploadOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_ocr_pdf(
+    participation_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Upload a scanned PDF for OCR processing."""
+    participation = await get_participation(db, participation_id)
+    if not participation:
+        raise HTTPException(status_code=404, detail="Participação não encontrada")
+
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Apenas arquivos PDF são aceitos")
+
+    # Ensure upload directory exists
+    upload_dir = os.path.join(settings.upload_dir, "ocr")
+    os.makedirs(upload_dir, exist_ok=True)
+
+    # Save file
+    file_id = str(uuid.uuid4())
+    file_path = os.path.join(upload_dir, f"{file_id}.pdf")
+    content = await file.read()
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    return await create_ocr_upload(db, participation_id, file_path, file.filename)
+
+
+@router.get("/ocr-uploads", response_model=list[OCRUploadOut])
+async def list_all_ocr_uploads(
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """List all OCR uploads for admin review."""
+    return await list_ocr_uploads(db, skip, limit)
+
+
+@router.get("/ocr-uploads/{upload_id}", response_model=OCRUploadOut)
+async def get_single_ocr_upload(
+    upload_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    upload = await get_ocr_upload(db, upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload não encontrado")
+    return upload
+
+
+@router.post("/ocr-uploads/{upload_id}/process", response_model=OCRUploadOut)
+async def process_single_ocr_upload(
+    upload_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Trigger OCR processing on an uploaded PDF."""
+    try:
+        return await process_ocr_upload(db, upload_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.patch("/ocr-uploads/{upload_id}/review", response_model=OCRUploadOut)
+async def review_single_ocr_upload(
+    upload_id: uuid.UUID,
+    data: OCRReviewRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Admin reviews and corrects OCR-extracted text before approval."""
+    try:
+        return await review_ocr_upload(
+            db, upload_id,
+            [r.model_dump(mode="json") for r in data.extracted_responses],
+            current_user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/ocr-uploads/{upload_id}/approve", response_model=list[ResponseOut])
+async def approve_single_ocr_upload(
+    upload_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Approve reviewed OCR text and create QuestionResponses."""
+    try:
+        return await approve_ocr_upload(db, upload_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))

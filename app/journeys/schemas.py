@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, field_validator
 
-from app.journeys.models import JourneyMode, JourneyStatus, QuestionType
+from app.journeys.models import JourneyMode, JourneyStatus, OCRUploadStatus, QuestionType
 
 
 # --- Journey ---
@@ -119,6 +119,7 @@ class ResponseCreate(BaseModel):
     question_id: uuid.UUID
     answer_text: str
     ocr_source: bool = False
+    time_spent_seconds: int | None = None
 
 
 class ResponseOut(BaseModel):
@@ -127,6 +128,7 @@ class ResponseOut(BaseModel):
     question_id: uuid.UUID
     answer_text: str
     ocr_source: bool
+    time_spent_seconds: int | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -148,6 +150,7 @@ class AsyncQuestionOut(BaseModel):
 
 class AsyncAnswerSubmit(BaseModel):
     answer_text: str
+    time_spent_seconds: int | None = None
 
 
 class ParticipationStatusOut(BaseModel):
@@ -170,3 +173,46 @@ class GenerateQuestionsRequest(BaseModel):
     participant_level: str = "intermediario"
     domain: str = "vendas"
     num_questions: int | None = None
+
+
+# --- Question Update ---
+class QuestionUpdate(BaseModel):
+    text: str | None = None
+    type: QuestionType | None = None
+    weight: float | None = None
+    rubric: dict | None = None
+    max_time_seconds: int | None = None
+    expected_lines: int | None = None
+    order: int | None = None
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
+
+# --- OCR Upload ---
+class OCRExtractedResponse(BaseModel):
+    question_order: int
+    question_id: uuid.UUID | None = None
+    extracted_text: str
+    confidence: float | None = None
+
+
+class OCRUploadOut(BaseModel):
+    id: uuid.UUID
+    participation_id: uuid.UUID
+    original_filename: str
+    status: OCRUploadStatus
+    extracted_responses: list[dict] | None
+    error_message: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class OCRReviewRequest(BaseModel):
+    extracted_responses: list[OCRExtractedResponse]

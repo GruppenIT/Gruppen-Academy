@@ -80,6 +80,35 @@ class PathProgressOut(BaseModel):
 
 
 # --- Tutor Session ---
+# --- Update schemas ---
+class LearningPathUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    domain: str | None = None
+    target_role: str | None = None
+    is_active: bool | None = None
+
+
+class LearningActivityUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    type: ActivityType | None = None
+    content: dict | None = None
+    order: int | None = None
+    points_reward: int | None = None
+
+
+# --- Gap Suggestion ---
+class SuggestedPathOut(BaseModel):
+    path_id: uuid.UUID
+    title: str
+    description: str | None
+    domain: str
+    target_role: str
+    relevance: str
+    matching_competencies: list[str]
+
+
 class TutorSessionCreate(BaseModel):
     topic: str
     activity_id: uuid.UUID | None = None

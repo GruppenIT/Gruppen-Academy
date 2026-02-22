@@ -186,6 +186,15 @@ class ApiClient {
   createQuestion(journeyId: string, data: { text: string; type?: string; weight?: number; rubric?: Record<string, unknown>; max_time_seconds?: number | null; expected_lines?: number; order?: number; competency_ids?: string[] }) {
     return this.request<import('@/types').Question>(`/api/journeys/${journeyId}/questions`, { method: 'POST', body: JSON.stringify(data) })
   }
+  updateQuestion(journeyId: string, questionId: string, data: { text?: string; type?: string; weight?: number; rubric?: Record<string, unknown> | null; max_time_seconds?: number | null; expected_lines?: number; order?: number }) {
+    return this.request<import('@/types').Question>(`/api/journeys/${journeyId}/questions/${questionId}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+  deleteQuestion(journeyId: string, questionId: string) {
+    return this.request<void>(`/api/journeys/${journeyId}/questions/${questionId}`, { method: 'DELETE' })
+  }
+  cloneJourney(journeyId: string) {
+    return this.request<import('@/types').Journey>(`/api/journeys/${journeyId}/clone`, { method: 'POST' })
+  }
   getJourneyTeams(journeyId: string) {
     return this.request<{ id: string; name: string }[]>(`/api/journeys/${journeyId}/teams`)
   }
@@ -226,6 +235,42 @@ class ApiClient {
     return this.request<import('@/types').ParticipationStatus>(`/api/journeys/${journeyId}/answer`, { method: 'POST', body: JSON.stringify({ answer_text: answerText }) })
   }
 
+  // OCR Uploads (Sync Journey)
+  async uploadOCRPdf(participationId: string, file: File) {
+    const token = this.getToken()
+    const formData = new FormData()
+    formData.append('file', file)
+    const headers: Record<string, string> = {}
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const res = await fetch(`${API_BASE}/api/journeys/participations/${participationId}/ocr-upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || `Erro ${res.status}`)
+    }
+    return res.json() as Promise<import('@/types').OCRUpload>
+  }
+  getOCRUploads(skip = 0, limit = 50) {
+    return this.request<import('@/types').OCRUpload[]>(`/api/journeys/ocr-uploads?skip=${skip}&limit=${limit}`)
+  }
+  getOCRUpload(uploadId: string) {
+    return this.request<import('@/types').OCRUpload>(`/api/journeys/ocr-uploads/${uploadId}`)
+  }
+  processOCRUpload(uploadId: string) {
+    return this.request<import('@/types').OCRUpload>(`/api/journeys/ocr-uploads/${uploadId}/process`, { method: 'POST' }, 120000)
+  }
+  reviewOCRUpload(uploadId: string, extractedResponses: import('@/types').OCRExtractedResponse[]) {
+    return this.request<import('@/types').OCRUpload>(`/api/journeys/ocr-uploads/${uploadId}/review`, {
+      method: 'PATCH', body: JSON.stringify({ extracted_responses: extractedResponses }),
+    })
+  }
+  approveOCRUpload(uploadId: string) {
+    return this.request<{ id: string; answer_text: string }[]>(`/api/journeys/ocr-uploads/${uploadId}/approve`, { method: 'POST' })
+  }
+
   // Learning
   getLearningPaths(domain?: string) {
     const q = domain ? `?domain=${domain}` : ''
@@ -236,8 +281,23 @@ class ApiClient {
   createLearningPath(data: { title: string; description?: string; domain?: string; target_role?: string; competency_ids?: string[] }) {
     return this.request<import('@/types').LearningPath>('/api/learning/paths', { method: 'POST', body: JSON.stringify(data) })
   }
+  updateLearningPath(pathId: string, data: { title?: string; description?: string; domain?: string; target_role?: string; is_active?: boolean }) {
+    return this.request<import('@/types').LearningPath>(`/api/learning/paths/${pathId}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+  deleteLearningPath(pathId: string) {
+    return this.request<void>(`/api/learning/paths/${pathId}`, { method: 'DELETE' })
+  }
+  getSuggestedPaths() {
+    return this.request<import('@/types').SuggestedPath[]>('/api/learning/paths/suggested-for-me')
+  }
   createActivity(pathId: string, data: { title: string; description?: string; type: string; content?: Record<string, unknown>; order?: number; points_reward?: number }) {
     return this.request<import('@/types').LearningActivity>(`/api/learning/paths/${pathId}/activities`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  updateActivity(pathId: string, activityId: string, data: { title?: string; description?: string; type?: string; content?: Record<string, unknown>; order?: number; points_reward?: number }) {
+    return this.request<import('@/types').LearningActivity>(`/api/learning/paths/${pathId}/activities/${activityId}`, { method: 'PATCH', body: JSON.stringify(data) })
+  }
+  deleteActivity(pathId: string, activityId: string) {
+    return this.request<void>(`/api/learning/paths/${pathId}/activities/${activityId}`, { method: 'DELETE' })
   }
   getPathProgress(pathId: string) {
     return this.request<import('@/types').PathProgress>(`/api/learning/paths/${pathId}/progress`)

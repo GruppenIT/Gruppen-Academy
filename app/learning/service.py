@@ -5,8 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.catalog.models import Competency
-from app.learning.models import ActivityCompletion, LearningActivity, LearningPath, TutorSession
-from app.learning.schemas import LearningActivityCreate, LearningPathCreate, TutorSessionCreate
+from app.learning.models import ActivityCompletion, LearningActivity, LearningPath, TutorSession, path_competency
+from app.learning.schemas import (
+    LearningActivityCreate,
+    LearningActivityUpdate,
+    LearningPathCreate,
+    LearningPathUpdate,
+    TutorSessionCreate,
+)
 from app.llm.client import tutor_chat
 from app.llm.prompts import TUTOR_SYSTEM_PROMPT
 
@@ -158,6 +164,145 @@ async def get_path_progress(
         "progress_percent": progress_percent,
         "activities": activities_data,
     }
+
+
+# --- Learning Path Update/Delete ---
+async def update_learning_path(
+    db: AsyncSession, path: LearningPath, data: LearningPathUpdate
+) -> LearningPath:
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(path, field, value)
+    await db.commit()
+    await db.refresh(path)
+    return path
+
+
+async def delete_learning_path(db: AsyncSession, path: LearningPath) -> None:
+    await db.delete(path)
+    await db.commit()
+
+
+# --- Activity Update/Delete ---
+async def get_activity(db: AsyncSession, activity_id: uuid.UUID) -> LearningActivity | None:
+    result = await db.execute(select(LearningActivity).where(LearningActivity.id == activity_id))
+    return result.scalar_one_or_none()
+
+
+async def update_activity(
+    db: AsyncSession, activity: LearningActivity, data: LearningActivityUpdate
+) -> LearningActivity:
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(activity, field, value)
+    await db.commit()
+    await db.refresh(activity)
+    return activity
+
+
+async def delete_activity(db: AsyncSession, activity: LearningActivity) -> None:
+    await db.delete(activity)
+    await db.commit()
+
+
+# --- Gap-based Path Suggestions ---
+async def suggest_paths_by_gaps(db: AsyncSession, user_id: uuid.UUID) -> list[dict]:
+    """Suggest learning paths based on user's weak competencies from evaluations."""
+    from app.evaluations.models import Evaluation
+    from app.journeys.models import JourneyParticipation, QuestionResponse
+
+    # Get user's evaluations with low scores
+    evals_result = await db.execute(
+        select(Evaluation)
+        .join(QuestionResponse, Evaluation.response_id == QuestionResponse.id)
+        .join(JourneyParticipation, QuestionResponse.participation_id == JourneyParticipation.id)
+        .where(JourneyParticipation.user_id == user_id)
+        .order_by(Evaluation.created_at.desc())
+        .limit(20)
+    )
+    evaluations = list(evals_result.scalars().all())
+
+    if not evaluations:
+        return []
+
+    # Collect weak competencies (from mapped_competencies of low-scoring evaluations)
+    weak_competencies: set[str] = set()
+    for ev in evaluations:
+        if ev.score_global < 0.6 and ev.mapped_competencies:
+            for comp in ev.mapped_competencies:
+                weak_competencies.add(comp.lower().strip())
+
+    if not weak_competencies:
+        # No clear gaps — suggest paths for lowest-scoring competencies
+        for ev in sorted(evaluations, key=lambda e: e.score_global)[:5]:
+            if ev.mapped_competencies:
+                for comp in ev.mapped_competencies:
+                    weak_competencies.add(comp.lower().strip())
+
+    if not weak_competencies:
+        return []
+
+    # Find learning paths linked to competencies matching the weak areas
+    paths_result = await db.execute(
+        select(LearningPath)
+        .where(LearningPath.is_active)
+        .options(selectinload(LearningPath.competencies))
+    )
+    all_paths = list(paths_result.scalars().all())
+
+    suggestions = []
+    for path in all_paths:
+        matching = []
+        for comp in path.competencies:
+            comp_name = comp.name.lower().strip()
+            for weak in weak_competencies:
+                if weak in comp_name or comp_name in weak:
+                    matching.append(comp.name)
+                    break
+
+        if matching:
+            suggestions.append({
+                "path_id": path.id,
+                "title": path.title,
+                "description": path.description,
+                "domain": path.domain,
+                "target_role": path.target_role,
+                "relevance": f"Cobre {len(matching)} competência(s) com gap identificado",
+                "matching_competencies": matching,
+            })
+
+    # Also suggest paths matching recommendations text
+    if not suggestions:
+        all_recs: list[str] = []
+        for ev in evaluations:
+            if ev.recommendations:
+                all_recs.extend(ev.recommendations[:2])
+
+        for path in all_paths:
+            title_lower = path.title.lower()
+            desc_lower = (path.description or "").lower()
+            for rec in all_recs:
+                rec_lower = rec.lower()
+                if any(word in title_lower or word in desc_lower
+                       for word in rec_lower.split() if len(word) > 4):
+                    suggestions.append({
+                        "path_id": path.id,
+                        "title": path.title,
+                        "description": path.description,
+                        "domain": path.domain,
+                        "target_role": path.target_role,
+                        "relevance": "Relacionada a recomendações de melhoria",
+                        "matching_competencies": [],
+                    })
+                    break
+
+    # Deduplicate
+    seen = set()
+    unique = []
+    for s in suggestions:
+        if s["path_id"] not in seen:
+            seen.add(s["path_id"])
+            unique.append(s)
+
+    return unique[:10]
 
 
 async def list_tutor_sessions(

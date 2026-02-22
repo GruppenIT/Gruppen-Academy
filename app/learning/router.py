@@ -9,9 +9,12 @@ from app.learning.schemas import (
     ActivityCompletionOut,
     LearningActivityCreate,
     LearningActivityOut,
+    LearningActivityUpdate,
     LearningPathCreate,
     LearningPathOut,
+    LearningPathUpdate,
     PathProgressOut,
+    SuggestedPathOut,
     TutorMessageRequest,
     TutorSessionCreate,
     TutorSessionOut,
@@ -21,7 +24,10 @@ from app.learning.service import (
     complete_activity,
     create_learning_path,
     create_tutor_session,
+    delete_activity,
+    delete_learning_path,
     generate_session_summary,
+    get_activity,
     get_learning_path,
     get_path_progress,
     get_tutor_session,
@@ -29,6 +35,9 @@ from app.learning.service import (
     list_learning_paths,
     list_tutor_sessions,
     send_tutor_message,
+    suggest_paths_by_gaps,
+    update_activity,
+    update_learning_path,
 )
 from app.users.models import User, UserRole
 
@@ -58,6 +67,16 @@ async def list_all_paths(
     return await list_learning_paths(db, domain, skip, limit)
 
 
+# NOTE: /paths/suggested-for-me MUST be before /paths/{path_id} to avoid UUID matching
+@router.get("/paths/suggested-for-me", response_model=list[SuggestedPathOut])
+async def get_suggested_paths(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Suggest learning paths based on user's competency gaps from evaluations."""
+    return await suggest_paths_by_gaps(db, current_user.id)
+
+
 @router.get("/paths/{path_id}", response_model=LearningPathOut)
 async def get_single_path(
     path_id: uuid.UUID,
@@ -68,6 +87,31 @@ async def get_single_path(
     if not path:
         raise HTTPException(status_code=404, detail="Trilha não encontrada")
     return path
+
+
+@router.patch("/paths/{path_id}", response_model=LearningPathOut)
+async def update_existing_path(
+    path_id: uuid.UUID,
+    data: LearningPathUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    path = await get_learning_path(db, path_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Trilha não encontrada")
+    return await update_learning_path(db, path, data)
+
+
+@router.delete("/paths/{path_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_existing_path(
+    path_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    path = await get_learning_path(db, path_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Trilha não encontrada")
+    await delete_learning_path(db, path)
 
 
 @router.get("/paths/{path_id}/progress", response_model=PathProgressOut)
@@ -107,6 +151,33 @@ async def list_path_activities(
     _: User = Depends(get_current_user),
 ):
     return await list_activities(db, path_id)
+
+
+@router.patch("/paths/{path_id}/activities/{activity_id}", response_model=LearningActivityOut)
+async def update_path_activity(
+    path_id: uuid.UUID,
+    activity_id: uuid.UUID,
+    data: LearningActivityUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    activity = await get_activity(db, activity_id)
+    if not activity or activity.path_id != path_id:
+        raise HTTPException(status_code=404, detail="Atividade não encontrada nesta trilha")
+    return await update_activity(db, activity, data)
+
+
+@router.delete("/paths/{path_id}/activities/{activity_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_path_activity(
+    path_id: uuid.UUID,
+    activity_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    activity = await get_activity(db, activity_id)
+    if not activity or activity.path_id != path_id:
+        raise HTTPException(status_code=404, detail="Atividade não encontrada nesta trilha")
+    await delete_activity(db, activity)
 
 
 @router.post(

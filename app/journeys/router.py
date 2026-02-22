@@ -109,6 +109,124 @@ async def list_my_available_journeys(
     return list(result.scalars().all())
 
 
+# --- OCR Upload (Sync Journeys) ---
+# NOTE: /ocr-uploads MUST be before /{journey_id} to avoid FastAPI matching "ocr-uploads" as UUID
+
+
+@router.post(
+    "/participations/{participation_id}/ocr-upload",
+    response_model=OCRUploadOut,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_ocr_pdf(
+    participation_id: uuid.UUID,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Upload a scanned PDF for OCR processing."""
+    participation = await get_participation(db, participation_id)
+    if not participation:
+        raise HTTPException(status_code=404, detail="Participação não encontrada")
+
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Apenas arquivos PDF são aceitos")
+
+    # Ensure upload directory exists
+    upload_dir = os.path.join(settings.upload_dir, "ocr")
+    os.makedirs(upload_dir, exist_ok=True)
+
+    # Read and validate file content
+    content = await file.read()
+
+    # Enforce file size limit
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Arquivo excede o limite de {settings.max_upload_size_mb}MB",
+        )
+
+    # Validate PDF magic bytes (%PDF-)
+    if not content[:5].startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="Arquivo não é um PDF válido")
+
+    # Save file with UUID name (prevents path traversal)
+    file_id = str(uuid.uuid4())
+    file_path = os.path.join(upload_dir, f"{file_id}.pdf")
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    return await create_ocr_upload(db, participation_id, file_path, file.filename)
+
+
+@router.get("/ocr-uploads", response_model=list[OCRUploadOut])
+async def list_all_ocr_uploads(
+    skip: int = 0,
+    limit: int = 50,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """List all OCR uploads for admin review."""
+    return await list_ocr_uploads(db, skip, limit)
+
+
+@router.get("/ocr-uploads/{upload_id}", response_model=OCRUploadOut)
+async def get_single_ocr_upload(
+    upload_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    upload = await get_ocr_upload(db, upload_id)
+    if not upload:
+        raise HTTPException(status_code=404, detail="Upload não encontrado")
+    return upload
+
+
+@router.post("/ocr-uploads/{upload_id}/process", response_model=OCRUploadOut)
+async def process_single_ocr_upload(
+    upload_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Trigger OCR processing on an uploaded PDF."""
+    try:
+        return await process_ocr_upload(db, upload_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.patch("/ocr-uploads/{upload_id}/review", response_model=OCRUploadOut)
+async def review_single_ocr_upload(
+    upload_id: uuid.UUID,
+    data: OCRReviewRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Admin reviews and corrects OCR-extracted text before approval."""
+    try:
+        return await review_ocr_upload(
+            db, upload_id,
+            [r.model_dump(mode="json") for r in data.extracted_responses],
+            current_user.id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.post("/ocr-uploads/{upload_id}/approve", response_model=list[ResponseOut])
+async def approve_single_ocr_upload(
+    upload_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Approve reviewed OCR text and create QuestionResponses."""
+    try:
+        return await approve_ocr_upload(db, upload_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/{journey_id}", response_model=JourneyOut)
 async def get_single_journey(
     journey_id: uuid.UUID,
@@ -527,120 +645,3 @@ async def submit_async_answer(
         completed=participation.completed_at is not None,
         started_at=participation.started_at,
     )
-
-
-# --- OCR Upload (Sync Journeys) ---
-
-
-@router.post(
-    "/participations/{participation_id}/ocr-upload",
-    response_model=OCRUploadOut,
-    status_code=status.HTTP_201_CREATED,
-)
-async def upload_ocr_pdf(
-    participation_id: uuid.UUID,
-    file: UploadFile = File(...),
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
-):
-    """Upload a scanned PDF for OCR processing."""
-    participation = await get_participation(db, participation_id)
-    if not participation:
-        raise HTTPException(status_code=404, detail="Participação não encontrada")
-
-    if not file.filename or not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Apenas arquivos PDF são aceitos")
-
-    # Ensure upload directory exists
-    upload_dir = os.path.join(settings.upload_dir, "ocr")
-    os.makedirs(upload_dir, exist_ok=True)
-
-    # Read and validate file content
-    content = await file.read()
-
-    # Enforce file size limit
-    max_bytes = settings.max_upload_size_mb * 1024 * 1024
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Arquivo excede o limite de {settings.max_upload_size_mb}MB",
-        )
-
-    # Validate PDF magic bytes (%PDF-)
-    if not content[:5].startswith(b"%PDF-"):
-        raise HTTPException(status_code=400, detail="Arquivo não é um PDF válido")
-
-    # Save file with UUID name (prevents path traversal)
-    file_id = str(uuid.uuid4())
-    file_path = os.path.join(upload_dir, f"{file_id}.pdf")
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    return await create_ocr_upload(db, participation_id, file_path, file.filename)
-
-
-@router.get("/ocr-uploads", response_model=list[OCRUploadOut])
-async def list_all_ocr_uploads(
-    skip: int = 0,
-    limit: int = 50,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
-):
-    """List all OCR uploads for admin review."""
-    return await list_ocr_uploads(db, skip, limit)
-
-
-@router.get("/ocr-uploads/{upload_id}", response_model=OCRUploadOut)
-async def get_single_ocr_upload(
-    upload_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
-):
-    upload = await get_ocr_upload(db, upload_id)
-    if not upload:
-        raise HTTPException(status_code=404, detail="Upload não encontrado")
-    return upload
-
-
-@router.post("/ocr-uploads/{upload_id}/process", response_model=OCRUploadOut)
-async def process_single_ocr_upload(
-    upload_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
-):
-    """Trigger OCR processing on an uploaded PDF."""
-    try:
-        return await process_ocr_upload(db, upload_id)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.patch("/ocr-uploads/{upload_id}/review", response_model=OCRUploadOut)
-async def review_single_ocr_upload(
-    upload_id: uuid.UUID,
-    data: OCRReviewRequest,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
-):
-    """Admin reviews and corrects OCR-extracted text before approval."""
-    try:
-        return await review_ocr_upload(
-            db, upload_id,
-            [r.model_dump(mode="json") for r in data.extracted_responses],
-            current_user.id,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-
-@router.post("/ocr-uploads/{upload_id}/approve", response_model=list[ResponseOut])
-async def approve_single_ocr_upload(
-    upload_id: uuid.UUID,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
-):
-    """Approve reviewed OCR text and create QuestionResponses."""
-    try:
-        return await approve_ocr_upload(db, upload_id)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))

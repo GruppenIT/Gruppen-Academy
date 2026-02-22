@@ -440,7 +440,11 @@ def _parse_respondent_sections(pages_text: list[str]) -> list[dict]:
     for page_idx, page_text in enumerate(pages_text):
         # Detect a respondent header by looking for "Nome:" and "E-mail:" patterns
         name_match = re.search(r'Nome:\s*(.+?)(?:\s{2,}|Data:|$)', page_text, re.IGNORECASE)
-        email_match = re.search(r'E-mail:\s*(\S+@\S+)', page_text, re.IGNORECASE)
+        # Flexible email: grab everything after "E-mail:" up to next field or newline
+        email_match = re.search(
+            r'E-mail:\s*(.+?)(?:\s{2,}|Domínio:|Dominio:|Data:|\n|$)',
+            page_text, re.IGNORECASE,
+        )
 
         if name_match and email_match:
             # Close previous respondent section
@@ -455,10 +459,13 @@ def _parse_respondent_sections(pages_text: list[str]) -> list[dict]:
             raw_name = name_match.group(1).strip()
             clean_name = re.sub(r'\s*\(.*?\)\s*$', '', raw_name).strip()
 
-            # Clean email: extract just the email address, strip any trailing text
+            # Clean email: fix common OCR artifacts
             raw_email = email_match.group(1).strip()
-            email_only = re.match(r'[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}', raw_email)
-            clean_email = email_only.group(0) if email_only else raw_email.rstrip('.')
+            clean_email = _fix_ocr_email(raw_email)
+            logger.info(
+                "Respondent found: name=%r, raw_email=%r, clean_email=%r",
+                clean_name, raw_email, clean_email,
+            )
 
             current = {
                 "user_name": clean_name,
@@ -476,6 +483,37 @@ def _parse_respondent_sections(pages_text: list[str]) -> list[dict]:
         respondents.append(current)
 
     return respondents
+
+
+def _fix_ocr_email(raw: str) -> str:
+    """Fix common OCR artifacts in email addresses.
+
+    OCR frequently misreads '@' as 'Q', 'q', '0', 'O', '©', etc.
+    and may introduce spaces within the address.
+    """
+    # First, try to find a valid email as-is
+    valid = re.search(r'[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}', raw)
+    if valid:
+        return valid.group(0)
+
+    # Remove spaces (OCR often adds spurious spaces)
+    no_spaces = raw.replace(' ', '')
+
+    # Try common OCR substitutions for '@'
+    for char in ['Q', 'q', '©', '®']:
+        # Replace the FIRST occurrence that sits between word-like chars
+        fixed = re.sub(
+            r'(?<=[a-zA-Z0-9_.])' + re.escape(char) + r'(?=[a-zA-Z0-9])',
+            '@',
+            no_spaces,
+            count=1,
+        )
+        valid = re.search(r'[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}', fixed)
+        if valid:
+            return valid.group(0)
+
+    # Last resort: return cleaned text without trailing dots
+    return no_spaces.rstrip('.')
 
 
 def _extract_journey_title(page_text: str) -> str | None:

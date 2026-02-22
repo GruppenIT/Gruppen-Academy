@@ -143,12 +143,16 @@ Regras:
 - Corrija erros óbvios de OCR: letras trocadas, caracteres estranhos, palavras grudadas \
 ou cortadas, acentos incorretos.
 - Corrija ortografia e pontuação básica (vírgulas, pontos, acentos).
+- Junte quebras de linha artificiais do OCR: o scanner quebra frases no meio quando a \
+linha manuscrita atinge a margem. Reconstrua frases e parágrafos contínuos, unindo \
+linhas que claramente fazem parte do mesmo parágrafo ou item de lista.
+- Preserve separações intencionais do autor: itens numerados (1, 2, 3), bullets e \
+parágrafos distintos devem continuar separados.
 - NÃO altere o conteúdo, argumentação, estrutura ou vocabulário do autor.
 - NÃO adicione informações, exemplos ou explicações que não estejam no texto original.
 - NÃO remova conteúdo, mesmo que pareça incompleto ou incorreto tecnicamente.
 - Se uma palavra for ilegível/ambígua e não puder ser inferida pelo contexto, \
 mantenha-a como está.
-- Mantenha a mesma estrutura de parágrafos e listas do original.
 
 Retorne um JSON no formato:
 {

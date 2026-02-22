@@ -262,22 +262,9 @@ async def process_ocr_upload(db: AsyncSession, upload_id: uuid.UUID) -> OCRUploa
         extracted = []
         text_content = ""
 
-        # Try to extract text from PDF
-        try:
-            import pdfplumber
-            with pdfplumber.open(upload.file_path) as pdf:
-                for page in pdf.pages:
-                    page_text = page.extract_text() or ""
-                    text_content += page_text + "\n"
-        except ImportError:
-            try:
-                from PyPDF2 import PdfReader
-                reader = PdfReader(upload.file_path)
-                for page in reader.pages:
-                    page_text = page.extract_text() or ""
-                    text_content += page_text + "\n"
-            except ImportError:
-                text_content = ""
+        # Extract text from PDF (supports both digital and scanned PDFs)
+        page_texts = _extract_pages_text(upload.file_path)
+        text_content = "\n".join(page_texts)
 
         if text_content.strip():
             # Simple split: divide text equally among questions
@@ -383,21 +370,40 @@ async def approve_ocr_upload(
 
 
 def _extract_pages_text(file_path: str) -> list[str]:
-    """Extract text from each page of a PDF, returning a list of strings (one per page)."""
-    pages = []
+    """Extract text from each page of a PDF, returning a list of strings (one per page).
+
+    First tries pdfplumber for digital PDFs (fast).
+    If pages come back empty (scanned/image PDF), falls back to
+    pytesseract + pdf2image for real OCR.
+    """
+    pages: list[str] = []
+
+    # 1. Try pdfplumber (works for PDFs with a text layer)
     try:
         import pdfplumber
         with pdfplumber.open(file_path) as pdf:
             for page in pdf.pages:
                 pages.append(page.extract_text() or "")
-    except ImportError:
+    except Exception:
+        pass
+
+    # 2. If all pages are empty, the PDF is likely scanned — use OCR
+    if not any(p.strip() for p in pages):
         try:
-            from PyPDF2 import PdfReader
-            reader = PdfReader(file_path)
-            for page in reader.pages:
-                pages.append(page.extract_text() or "")
-        except ImportError:
-            pass
+            from pdf2image import convert_from_path
+            import pytesseract
+
+            images = convert_from_path(file_path, dpi=300)
+            pages = []
+            for img in images:
+                text = pytesseract.image_to_string(img, lang="por")
+                pages.append(text)
+        except Exception as e:
+            # If OCR also fails, return empty pages so caller can handle
+            if not pages:
+                pages = []
+            logger.error("OCR fallback failed for %s: %s", file_path, e)
+
     return pages
 
 

@@ -5,12 +5,12 @@ import { useRouter } from 'next/navigation'
 import { useAuth } from '@/lib/auth'
 import AppShell from '@/components/layout/AppShell'
 import { api } from '@/lib/api'
-import type { ManagerDashboard, ManagerTeamSummary, ManagerTeamMemberSummary, Journey } from '@/types'
+import type { ManagerDashboard, Journey } from '@/types'
 import { clsx } from 'clsx'
 import {
   Users, BarChart3, ChevronDown, ChevronUp, ChevronRight,
   Loader2, Trophy, Target, Route, UserCheck, Send,
-  CheckCircle2, XCircle,
+  CheckCircle2, XCircle, LibraryBig, BookOpen,
 } from 'lucide-react'
 
 export default function GestorPage() {
@@ -58,7 +58,6 @@ export default function GestorPage() {
     if (!selectedJourney) return
     setAssignLoading(true)
     try {
-      // Get current teams for the journey, then add this one
       const currentTeams = await api.getJourneyTeams(selectedJourney)
       const currentIds = currentTeams.map(t => t.id)
       if (!currentIds.includes(teamId)) {
@@ -89,6 +88,10 @@ export default function GestorPage() {
     if (score >= 5) return 'bg-amber-50 border-amber-200'
     return 'bg-red-50 border-red-200'
   }
+
+  // Compute global training stats
+  const globalTrainingEnrollments = dashboard?.teams.reduce((s, t) => s + t.training_enrollments, 0) ?? 0
+  const globalTrainingCompleted = dashboard?.teams.reduce((s, t) => s + t.training_completed, 0) ?? 0
 
   if (authLoading || !user || !['manager', 'admin', 'super_admin'].includes(user.role)) {
     return null
@@ -126,7 +129,7 @@ export default function GestorPage() {
       ) : (
         <>
           {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-brand-50 flex items-center justify-center">
@@ -163,7 +166,22 @@ export default function GestorPage() {
                         ).toFixed(1)
                       : '—'}
                   </p>
-                  <p className="text-xs text-gray-500">Media geral</p>
+                  <p className="text-xs text-gray-500">Media jornadas</p>
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-purple-50 flex items-center justify-center">
+                  <LibraryBig className="w-5 h-5 text-purple-600" />
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-gray-900">
+                    {globalTrainingEnrollments > 0
+                      ? `${globalTrainingCompleted}/${globalTrainingEnrollments}`
+                      : '—'}
+                  </p>
+                  <p className="text-xs text-gray-500">Treinamentos</p>
                 </div>
               </div>
             </div>
@@ -173,6 +191,9 @@ export default function GestorPage() {
           <div className="space-y-4">
             {dashboard.teams.map(team => {
               const isExpanded = expandedTeam === team.team_id
+              const trainingPct = team.training_enrollments > 0
+                ? Math.round((team.training_completed / team.training_enrollments) * 100)
+                : null
               return (
                 <div key={team.team_id} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   {/* Team Header */}
@@ -197,7 +218,15 @@ export default function GestorPage() {
                         <h3 className="font-semibold text-gray-900">{team.team_name}</h3>
                         <div className="flex items-center gap-3 text-xs text-gray-500 mt-1">
                           <span>{team.member_count} membros</span>
-                          <span>{team.completed_participations}/{team.total_participations} jornadas concluidas</span>
+                          <span className="flex items-center gap-1">
+                            <Route className="w-3 h-3" />
+                            {team.completed_participations}/{team.total_participations} jornadas
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <BookOpen className="w-3 h-3" />
+                            {team.training_completed}/{team.training_enrollments} treinamentos
+                            {trainingPct !== null && <span className="text-purple-600">({trainingPct}%)</span>}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -255,61 +284,87 @@ export default function GestorPage() {
                       {team.members.length === 0 ? (
                         <div className="p-4 text-center text-gray-400 text-sm">Nenhum membro nesta equipe.</div>
                       ) : (
-                        <table className="w-full text-sm">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="text-left px-4 py-2 font-medium text-gray-600">Profissional</th>
-                              <th className="text-center px-4 py-2 font-medium text-gray-600">Jornadas</th>
-                              <th className="text-center px-4 py-2 font-medium text-gray-600">Concluidas</th>
-                              <th className="text-center px-4 py-2 font-medium text-gray-600">Media</th>
-                              <th className="px-4 py-2"></th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-100">
-                            {team.members.map(member => (
-                              <tr key={member.user_id} className="hover:bg-gray-50">
-                                <td className="px-4 py-3">
-                                  <div>
-                                    <p className="font-medium text-gray-900">{member.user_name}</p>
-                                    <p className="text-xs text-gray-500">{member.user_email}</p>
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-center text-gray-600">{member.participations}</td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className={clsx(
-                                    'text-xs font-medium px-2 py-0.5 rounded-full',
-                                    member.completed === member.participations && member.participations > 0
-                                      ? 'bg-emerald-100 text-emerald-700'
-                                      : member.completed > 0
-                                        ? 'bg-blue-100 text-blue-700'
-                                        : 'bg-gray-100 text-gray-500'
-                                  )}>
-                                    {member.completed}/{member.participations}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  {member.avg_score !== null ? (
-                                    <span className={clsx('font-bold', scoreColor(member.avg_score))}>
-                                      {member.avg_score.toFixed(1)}
-                                    </span>
-                                  ) : (
-                                    <span className="text-gray-400">—</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">
-                                  {member.participations > 0 && (
-                                    <button
-                                      onClick={() => router.push(`/admin/avaliacoes`)}
-                                      className="text-xs text-brand-600 hover:text-brand-800 flex items-center gap-1"
-                                    >
-                                      Ver detalhes <ChevronRight className="w-3 h-3" />
-                                    </button>
-                                  )}
-                                </td>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-sm">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <th className="text-left px-4 py-2 font-medium text-gray-600">Profissional</th>
+                                <th className="text-center px-4 py-2 font-medium text-gray-600">Jornadas</th>
+                                <th className="text-center px-4 py-2 font-medium text-gray-600">Concluidas</th>
+                                <th className="text-center px-4 py-2 font-medium text-gray-600">Media</th>
+                                <th className="text-center px-4 py-2 font-medium text-gray-600">Treinamentos</th>
+                                <th className="px-4 py-2"></th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="divide-y divide-gray-100">
+                              {team.members.map(member => (
+                                <tr key={member.user_id} className="hover:bg-gray-50">
+                                  <td className="px-4 py-3">
+                                    <div>
+                                      <p className="font-medium text-gray-900">{member.user_name}</p>
+                                      <p className="text-xs text-gray-500">{member.user_email}</p>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-center text-gray-600">{member.participations}</td>
+                                  <td className="px-4 py-3 text-center">
+                                    <span className={clsx(
+                                      'text-xs font-medium px-2 py-0.5 rounded-full',
+                                      member.completed === member.participations && member.participations > 0
+                                        ? 'bg-emerald-100 text-emerald-700'
+                                        : member.completed > 0
+                                          ? 'bg-blue-100 text-blue-700'
+                                          : 'bg-gray-100 text-gray-500'
+                                    )}>
+                                      {member.completed}/{member.participations}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    {member.avg_score !== null ? (
+                                      <span className={clsx('font-bold', scoreColor(member.avg_score))}>
+                                        {member.avg_score.toFixed(1)}
+                                      </span>
+                                    ) : (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    {member.training_enrollments > 0 ? (
+                                      <div className="flex flex-col items-center gap-0.5">
+                                        <span className={clsx(
+                                          'text-xs font-medium px-2 py-0.5 rounded-full',
+                                          member.training_completed === member.training_enrollments
+                                            ? 'bg-emerald-100 text-emerald-700'
+                                            : member.training_in_progress > 0
+                                              ? 'bg-blue-100 text-blue-700'
+                                              : 'bg-amber-100 text-amber-700'
+                                        )}>
+                                          {member.training_completed}/{member.training_enrollments}
+                                        </span>
+                                        {member.training_in_progress > 0 && (
+                                          <span className="text-[10px] text-gray-400">
+                                            {member.training_in_progress} em andamento
+                                          </span>
+                                        )}
+                                      </div>
+                                    ) : (
+                                      <span className="text-gray-400">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    {(member.participations > 0 || member.training_enrollments > 0) && (
+                                      <button
+                                        onClick={() => router.push(`/admin/avaliacoes`)}
+                                        className="text-xs text-brand-600 hover:text-brand-800 flex items-center gap-1"
+                                      >
+                                        Ver detalhes <ChevronRight className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
                       )}
                     </div>
                   )}

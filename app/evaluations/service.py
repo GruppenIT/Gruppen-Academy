@@ -400,8 +400,8 @@ async def generate_analytical_report(
 
 
 async def get_manager_dashboard(db: AsyncSession, manager_id: uuid.UUID) -> dict:
-    """Build dashboard data for a manager: teams, members, performance summary."""
-    from sqlalchemy import func as sqla_func
+    """Build dashboard data for a manager: teams, members, performance summary + training metrics."""
+    from app.trainings.models import EnrollmentStatus, TrainingEnrollment
 
     # Get teams the manager belongs to (managers are team members too)
     my_team_ids_q = select(team_member.c.team_id).where(team_member.c.user_id == manager_id)
@@ -436,6 +436,9 @@ async def get_manager_dashboard(db: AsyncSession, manager_id: uuid.UUID) -> dict
                 "total_participations": 0,
                 "completed_participations": 0,
                 "avg_score": None,
+                "training_enrollments": 0,
+                "training_completed": 0,
+                "training_in_progress": 0,
             })
             continue
 
@@ -449,6 +452,23 @@ async def get_manager_dashboard(db: AsyncSession, manager_id: uuid.UUID) -> dict
 
         total_participations = len(participations)
         completed_participations = sum(1 for p in participations if p.completed_at)
+
+        # Fetch training enrollments for team members
+        enrollments_result = await db.execute(
+            select(TrainingEnrollment)
+            .where(TrainingEnrollment.user_id.in_(member_ids))
+        )
+        enrollments = list(enrollments_result.scalars().all())
+
+        # Build per-member enrollment lookup
+        member_enrollment_map: dict[str, list] = {}
+        for e in enrollments:
+            uid = str(e.user_id)
+            member_enrollment_map.setdefault(uid, []).append(e)
+
+        team_training_total = len(enrollments)
+        team_training_completed = sum(1 for e in enrollments if e.status == EnrollmentStatus.COMPLETED)
+        team_training_in_progress = sum(1 for e in enrollments if e.status == EnrollmentStatus.IN_PROGRESS)
 
         # Calculate avg score across all team evaluations
         all_scores = []
@@ -495,10 +515,12 @@ async def get_manager_dashboard(db: AsyncSession, manager_id: uuid.UUID) -> dict
                     "scores": [],
                 }
 
-        # Finalize member data
+        # Finalize member data with training metrics
         members_list = []
         for ms in member_summaries.values():
             avg = round(sum(ms["scores"]) / len(ms["scores"]), 2) if ms["scores"] else None
+            uid = str(ms["user_id"])
+            user_enrollments = member_enrollment_map.get(uid, [])
             members_list.append({
                 "user_id": ms["user_id"],
                 "user_name": ms["user_name"],
@@ -506,6 +528,9 @@ async def get_manager_dashboard(db: AsyncSession, manager_id: uuid.UUID) -> dict
                 "participations": ms["participations"],
                 "completed": ms["completed"],
                 "avg_score": avg,
+                "training_enrollments": len(user_enrollments),
+                "training_completed": sum(1 for e in user_enrollments if e.status == EnrollmentStatus.COMPLETED),
+                "training_in_progress": sum(1 for e in user_enrollments if e.status == EnrollmentStatus.IN_PROGRESS),
             })
 
         team_avg = round(sum(all_scores) / len(all_scores), 2) if all_scores else None
@@ -518,6 +543,9 @@ async def get_manager_dashboard(db: AsyncSession, manager_id: uuid.UUID) -> dict
             "total_participations": total_participations,
             "completed_participations": completed_participations,
             "avg_score": team_avg,
+            "training_enrollments": team_training_total,
+            "training_completed": team_training_completed,
+            "training_in_progress": team_training_in_progress,
         })
 
     # Global stats

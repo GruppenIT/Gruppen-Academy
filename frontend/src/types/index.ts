@@ -264,6 +264,9 @@ export interface ManagerTeamMemberSummary {
   participations: number
   completed: number
   avg_score: number | null
+  training_enrollments: number
+  training_completed: number
+  training_in_progress: number
 }
 
 export interface ManagerTeamSummary {
@@ -274,6 +277,9 @@ export interface ManagerTeamSummary {
   total_participations: number
   completed_participations: number
   avg_score: number | null
+  training_enrollments: number
+  training_completed: number
+  training_in_progress: number
 }
 
 export interface ManagerDashboard {

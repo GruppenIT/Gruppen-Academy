@@ -517,6 +517,9 @@ class ApiClient {
   getModuleFileUrl(trainingId: string, moduleId: string) {
     return `${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/file`
   }
+  getScormUrl(trainingId: string, moduleId: string, entryPoint: string) {
+    return `${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/scorm/${entryPoint}`
+  }
   createModuleQuiz(trainingId: string, moduleId: string, data: { title?: string; passing_score?: number; questions?: unknown[] }) {
     return this.request<import('@/types').ModuleQuiz>(`/api/trainings/${trainingId}/modules/${moduleId}/quiz`, { method: 'POST', body: JSON.stringify(data) })
   }

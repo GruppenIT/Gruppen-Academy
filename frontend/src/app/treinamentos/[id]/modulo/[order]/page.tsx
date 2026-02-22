@@ -4,10 +4,10 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import { api } from '@/lib/api'
-import type { TrainingProgressOut, TrainingProgressModule, QuizQuestion, ModuleQuiz, QuizAttemptOut } from '@/types'
+import type { TrainingProgressOut, TrainingProgressModule, TrainingModule as TrainingModuleType, QuizQuestion, ModuleQuiz, QuizAttemptOut } from '@/types'
 import {
   ArrowLeft, FileText, CheckCircle2, XCircle, ChevronRight,
-  Loader2, Download, Eye,
+  Loader2, Download, Eye, Box,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -19,6 +19,7 @@ export default function ModuleContentPage() {
 
   const [progress, setProgress] = useState<TrainingProgressOut | null>(null)
   const [currentModule, setCurrentModule] = useState<TrainingProgressModule | null>(null)
+  const [moduleDetail, setModuleDetail] = useState<TrainingModuleType | null>(null)
   const [quiz, setQuiz] = useState<ModuleQuiz | null>(null)
   const [loading, setLoading] = useState(true)
   const [markingView, setMarkingView] = useState(false)
@@ -39,12 +40,12 @@ export default function ModuleContentPage() {
       if (mod) {
         setContentMarked(mod.content_viewed)
       }
-      // Load quiz if module has one
-      if (mod?.has_quiz) {
-        // We need the module ID to fetch quiz. Find it from the training detail.
-        const trainingDetail = await api.getTraining(trainingId)
-        const trainModule = trainingDetail.modules?.find(m => m.order === moduleOrder)
-        if (trainModule) {
+      // Load training detail for content_data (SCORM) and quiz
+      const trainingDetail = await api.getTraining(trainingId)
+      const trainModule = trainingDetail.modules?.find(m => m.order === moduleOrder)
+      if (trainModule) {
+        setModuleDetail(trainModule)
+        if (mod?.has_quiz) {
           const q = await api.getModuleQuiz(trainingId, trainModule.id)
           setQuiz(q)
         }
@@ -180,7 +181,51 @@ export default function ModuleContentPage() {
       </div>
 
       {/* Content area */}
-      {fileUrl && (
+      {currentModule.content_type === 'scorm' && moduleDetail?.content_data?.entry_point ? (
+        <div className="mb-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold text-gray-700 flex items-center gap-2">
+              <Box className="w-4 h-4 text-purple-500" /> Conteúdo Interativo (SCORM)
+            </h2>
+          </div>
+          <div className="border rounded-xl overflow-hidden bg-gray-50" style={{ height: '75vh' }}>
+            <iframe
+              src={api.getScormUrl(trainingId, currentModule.module_id, moduleDetail.content_data.entry_point as string)}
+              className="w-full h-full"
+              title={currentModule.title}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            />
+          </div>
+        </div>
+      ) : currentModule.content_type === 'ai_generated' && moduleDetail?.content_data ? (
+        <div className="mb-6">
+          <h2 className="font-semibold text-gray-700 mb-3">Conteúdo</h2>
+          <div className="card p-6 prose prose-sm max-w-none">
+            {(moduleDetail.content_data.sections as { heading: string; content: string }[] | undefined)?.map((sec, i) => (
+              <div key={i} className="mb-4">
+                <h3 className="text-base font-semibold text-gray-800 mb-2">{sec.heading}</h3>
+                <div className="text-gray-600 whitespace-pre-wrap text-sm">{sec.content}</div>
+              </div>
+            ))}
+            {moduleDetail.content_data.summary && (
+              <div className="mt-4 p-4 bg-blue-50 rounded-lg">
+                <p className="text-sm font-medium text-blue-800 mb-1">Resumo</p>
+                <p className="text-sm text-blue-700">{moduleDetail.content_data.summary as string}</p>
+              </div>
+            )}
+            {(moduleDetail.content_data.key_concepts as string[] | undefined)?.length ? (
+              <div className="mt-4">
+                <p className="text-sm font-medium text-gray-700 mb-2">Conceitos-chave</p>
+                <div className="flex flex-wrap gap-2">
+                  {(moduleDetail.content_data.key_concepts as string[]).map((c, i) => (
+                    <span key={i} className="badge-pill bg-gray-100 text-gray-600 text-xs">{c}</span>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : fileUrl ? (
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-gray-700">Conteúdo</h2>
@@ -217,9 +262,7 @@ export default function ModuleContentPage() {
             </div>
           )}
         </div>
-      )}
-
-      {!fileUrl && (
+      ) : (
         <div className="card p-8 text-center mb-6">
           <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500">Este módulo não possui conteúdo anexado.</p>

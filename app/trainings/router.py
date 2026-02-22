@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.responses import Response
 
 from app.auth.dependencies import get_current_user, require_role
 from app.config import settings
@@ -371,9 +372,113 @@ async def upload_module_file(
     module.mime_type = content_type
     module.content_type = MIME_TO_CONTENT_TYPE.get(content_type, ModuleContentType.DOCUMENT)
 
+    # SCORM: extract zip and detect entry point
+    if module.content_type == ModuleContentType.SCORM:
+        scorm_data = _extract_scorm_package(file_path, upload_dir, str(module_id))
+        module.content_data = scorm_data
+
     await db.commit()
     await db.refresh(module)
     return module
+
+
+def _extract_scorm_package(zip_path: str, upload_dir: str, module_id: str) -> dict:
+    """Extract a SCORM .zip and detect the entry point from imsmanifest.xml."""
+    import shutil
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    extract_dir = os.path.join(upload_dir, f"scorm_{module_id}")
+    # Clean previous extraction
+    if os.path.exists(extract_dir):
+        shutil.rmtree(extract_dir)
+    os.makedirs(extract_dir, exist_ok=True)
+
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(extract_dir)
+    except zipfile.BadZipFile:
+        logger.warning("SCORM upload is not a valid zip: %s", zip_path)
+        return {"error": "Arquivo ZIP inválido", "entry_point": None, "extract_dir": extract_dir}
+
+    # Try to find entry point from imsmanifest.xml
+    entry_point = None
+    manifest_path = os.path.join(extract_dir, "imsmanifest.xml")
+    if os.path.isfile(manifest_path):
+        try:
+            tree = ET.parse(manifest_path)
+            root = tree.getroot()
+            # SCORM namespace handling
+            ns = ""
+            if root.tag.startswith("{"):
+                ns = root.tag.split("}")[0] + "}"
+            # Find first resource with href
+            for resource in root.iter(f"{ns}resource"):
+                href = resource.get("href")
+                if href:
+                    entry_point = href
+                    break
+        except ET.ParseError:
+            logger.warning("Failed to parse imsmanifest.xml for module %s", module_id)
+
+    # Fallback: look for index.html
+    if not entry_point:
+        for candidate in ["index.html", "index.htm", "launch.html"]:
+            if os.path.isfile(os.path.join(extract_dir, candidate)):
+                entry_point = candidate
+                break
+
+    # Deep fallback: find first .html file
+    if not entry_point:
+        for root_dir, _dirs, files in os.walk(extract_dir):
+            for f in files:
+                if f.lower().endswith((".html", ".htm")):
+                    entry_point = os.path.relpath(os.path.join(root_dir, f), extract_dir)
+                    break
+            if entry_point:
+                break
+
+    return {
+        "entry_point": entry_point,
+        "extract_dir": extract_dir,
+        "scorm_version": "auto",
+    }
+
+
+@router.get("/{training_id}/modules/{module_id}/scorm/{file_path:path}")
+async def serve_scorm_file(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    file_path: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve extracted SCORM static files."""
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+    if module.content_type != ModuleContentType.SCORM or not module.content_data:
+        raise HTTPException(status_code=404, detail="Módulo não é SCORM")
+
+    extract_dir = module.content_data.get("extract_dir", "")
+    if not extract_dir or not os.path.isdir(extract_dir):
+        raise HTTPException(status_code=404, detail="Conteúdo SCORM não encontrado")
+
+    # Prevent path traversal
+    full_path = os.path.normpath(os.path.join(extract_dir, file_path))
+    if not full_path.startswith(os.path.normpath(extract_dir)):
+        raise HTTPException(status_code=403, detail="Acesso negado")
+
+    if not os.path.isfile(full_path):
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+
+    import mimetypes
+    mime_type, _ = mimetypes.guess_type(full_path)
+
+    return FileResponse(
+        path=full_path,
+        media_type=mime_type or "application/octet-stream",
+    )
 
 
 @router.get("/{training_id}/modules/{module_id}/file")

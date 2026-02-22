@@ -53,9 +53,9 @@ function SSOCallbackContent() {
     sessionStorage.removeItem('sso_state')
 
     api.ssoCallback(code, state)
-      .then(async (res) => {
-        // Update AuthProvider state so the dashboard guard sees the user
-        await loginWithToken(res.access_token)
+      .then(async () => {
+        // Cookie is set by the backend response; just refresh user state
+        await loginWithToken()
         router.replace('/dashboard')
       })
       .catch((err) => {

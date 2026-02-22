@@ -1,35 +1,55 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 class ApiClient {
-  private token: string | null = null
+  /**
+   * Whether the user has a valid session.
+   * This is a client-side hint only — the real auth state is in the HttpOnly cookie.
+   */
+  private _authenticated: boolean = false
 
-  setToken(token: string | null) {
-    this.token = token
-    if (token) {
-      if (typeof window !== 'undefined') localStorage.setItem('token', token)
-    } else {
-      if (typeof window !== 'undefined') localStorage.removeItem('token')
-    }
+  get authenticated(): boolean {
+    return this._authenticated
   }
 
+  setAuthenticated(value: boolean) {
+    this._authenticated = value
+  }
+
+  // --- Backward compatibility shims (no-ops, token lives in HttpOnly cookie) ---
+  /** @deprecated Token is now managed via HttpOnly cookie */
+  setToken(token: string | null) {
+    this._authenticated = !!token
+    // Migration: clean up any leftover localStorage token
+    if (typeof window !== 'undefined') localStorage.removeItem('token')
+  }
+
+  /** @deprecated Token is now managed via HttpOnly cookie */
   getToken(): string | null {
-    if (!this.token && typeof window !== 'undefined') {
-      this.token = localStorage.getItem('token')
+    // During migration: check if there's an old localStorage token
+    if (typeof window !== 'undefined') {
+      const legacy = localStorage.getItem('token')
+      if (legacy) {
+        // Clean up old token — cookie is now the source of truth
+        localStorage.removeItem('token')
+      }
     }
-    return this.token
+    return null
   }
 
   private async request<T>(path: string, options: RequestInit = {}, timeoutMs?: number): Promise<T> {
-    const token = this.getToken()
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...((options.headers as Record<string, string>) || {}),
     }
-    if (token) headers['Authorization'] = `Bearer ${token}`
 
     const controller = new AbortController()
     const timeout = timeoutMs ? setTimeout(() => controller.abort(), timeoutMs) : undefined
-    const fetchOptions = { ...options, headers, signal: controller.signal }
+    const fetchOptions: RequestInit = {
+      ...options,
+      headers,
+      signal: controller.signal,
+      credentials: 'include',  // Send HttpOnly cookie automatically
+    }
 
     let res: Response
     try {
@@ -44,7 +64,7 @@ class ApiClient {
     }
 
     if (res.status === 401) {
-      this.setToken(null)
+      this._authenticated = false
       if (typeof window !== 'undefined') window.location.href = '/login'
       throw new Error('Não autorizado')
     }
@@ -70,15 +90,25 @@ class ApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
+      credentials: 'include',  // Receive and store HttpOnly cookie
     })
     if (!res.ok) throw new Error('Credenciais inválidas')
-    const json = await res.json()
-    this.setToken(json.access_token)
-    return json
+    this._authenticated = true
+    return res.json()
   }
 
-  logout() {
-    this.setToken(null)
+  async logout() {
+    try {
+      await fetch(`${API_BASE}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      })
+    } catch {
+      // Best-effort: even if the call fails, clear client state
+    }
+    this._authenticated = false
+    // Clean up any legacy localStorage token
+    if (typeof window !== 'undefined') localStorage.removeItem('token')
   }
 
   // SSO
@@ -91,14 +121,14 @@ class ApiClient {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ code, state }),
+      credentials: 'include',  // Receive and store HttpOnly cookie
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.detail || 'Falha na autenticação SSO')
     }
-    const json = await res.json()
-    this.setToken(json.access_token)
-    return json
+    this._authenticated = true
+    return res.json()
   }
 
   ssoCheck() {
@@ -204,10 +234,9 @@ class ApiClient {
 
   // PDF Generation (sync journeys)
   async downloadJourneyPdf(journeyId: string) {
-    const token = this.getToken()
-    const headers: Record<string, string> = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
-    const res = await fetch(`${API_BASE}/api/journeys/${journeyId}/print-pdf`, { headers })
+    const res = await fetch(`${API_BASE}/api/journeys/${journeyId}/print-pdf`, {
+      credentials: 'include',
+    })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       throw new Error(body.detail || `Erro ${res.status}`)
@@ -237,15 +266,12 @@ class ApiClient {
 
   // OCR Uploads (Sync Journey)
   async uploadOCRPdf(participationId: string, file: File) {
-    const token = this.getToken()
     const formData = new FormData()
     formData.append('file', file)
-    const headers: Record<string, string> = {}
-    if (token) headers['Authorization'] = `Bearer ${token}`
     const res = await fetch(`${API_BASE}/api/journeys/participations/${participationId}/ocr-upload`, {
       method: 'POST',
-      headers,
       body: formData,
+      credentials: 'include',
     })
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))

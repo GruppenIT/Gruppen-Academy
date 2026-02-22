@@ -8,7 +8,7 @@ interface AuthContextType {
   user: User | null
   loading: boolean
   login: (email: string, password: string) => Promise<void>
-  loginWithToken: (token: string) => Promise<void>
+  loginWithToken: (token?: string) => Promise<void>
   logout: () => void
 }
 
@@ -25,15 +25,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const token = api.getToken()
-    if (token) {
-      api.getMe()
-        .then(setUser)
-        .catch(() => api.logout())
-        .finally(() => setLoading(false))
-    } else {
-      setLoading(false)
-    }
+    // With HttpOnly cookies, we always try to fetch the user.
+    // The cookie is sent automatically — no client-side token to check.
+    api.getMe()
+      .then((me) => {
+        api.setAuthenticated(true)
+        setUser(me)
+      })
+      .catch(() => {
+        // No valid session — stay on current page (login guard handles redirect)
+      })
+      .finally(() => setLoading(false))
   }, [])
 
   const login = async (email: string, password: string) => {
@@ -42,16 +44,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(me)
   }
 
-  const loginWithToken = useCallback(async (token: string) => {
-    api.setToken(token)
+  const loginWithToken = useCallback(async (_token?: string) => {
+    // With HttpOnly cookies the token is already stored by the browser.
+    // We just need to fetch the user profile to update React state.
+    api.setAuthenticated(true)
     const me = await api.getMe()
     setUser(me)
   }, [])
 
   const logout = () => {
-    api.logout()
-    setUser(null)
-    window.location.href = '/login'
+    api.logout().finally(() => {
+      setUser(null)
+      window.location.href = '/login'
+    })
   }
 
   return (

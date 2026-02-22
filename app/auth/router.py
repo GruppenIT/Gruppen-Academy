@@ -2,11 +2,12 @@ import logging
 import time
 from collections import defaultdict
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.schemas import LoginRequest, SSOAuthorizeResponse, SSOCallbackRequest, TokenResponse
 from app.auth.service import create_access_token
+from app.config import settings as app_settings
 from app.auth.sso import (
     build_authorize_url,
     exchange_code_for_tokens,
@@ -48,8 +49,31 @@ def _record_attempt(key: str) -> None:
     _login_attempts[key].append(time.monotonic())
 
 
+def _set_auth_cookie(response: Response, token: str) -> None:
+    """Set an HttpOnly secure cookie containing the JWT."""
+    response.set_cookie(
+        key=app_settings.cookie_name,
+        value=token,
+        httponly=True,
+        secure=app_settings.cookie_secure,
+        samesite=app_settings.cookie_samesite,
+        max_age=app_settings.jwt_access_token_expire_minutes * 60,
+        path="/",
+        domain=app_settings.cookie_domain,
+    )
+
+
+def _clear_auth_cookie(response: Response) -> None:
+    """Clear the auth cookie."""
+    response.delete_cookie(
+        key=app_settings.cookie_name,
+        path="/",
+        domain=app_settings.cookie_domain,
+    )
+
+
 @router.post("/login", response_model=TokenResponse)
-async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends(get_db)):
+async def login(data: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     client_ip = request.client.host if request.client else "unknown"
     rate_key = f"{client_ip}:{data.email}"
     _check_rate_limit(rate_key)
@@ -78,6 +102,7 @@ async def login(data: LoginRequest, request: Request, db: AsyncSession = Depends
 
     logger.info("Login bem-sucedido: user_id=%s, ip=%s", user.id, client_ip)
     token = create_access_token(subject=str(user.id))
+    _set_auth_cookie(response, token)
     return TokenResponse(access_token=token)
 
 
@@ -120,7 +145,7 @@ async def sso_authorize(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/sso/callback", response_model=TokenResponse)
-async def sso_callback(data: SSOCallbackRequest, db: AsyncSession = Depends(get_db)):
+async def sso_callback(data: SSOCallbackRequest, response: Response, db: AsyncSession = Depends(get_db)):
     """Exchange the Azure AD authorization code for tokens and authenticate the user.
 
     Flow:
@@ -208,4 +233,11 @@ async def sso_callback(data: SSOCallbackRequest, db: AsyncSession = Depends(get_
 
     # 4. Issue local JWT
     token = create_access_token(subject=str(user.id))
+    _set_auth_cookie(response, token)
     return TokenResponse(access_token=token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(response: Response):
+    """Clear the auth cookie (server-side logout)."""
+    _clear_auth_cookie(response)

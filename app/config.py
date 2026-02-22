@@ -27,6 +27,12 @@ class Settings(BaseSettings):
     upload_dir: str = "/tmp/gruppen-academy-uploads"
     max_upload_size_mb: int = 50
 
+    # Cookie settings for JWT HttpOnly cookie
+    cookie_name: str = "access_token"
+    cookie_secure: bool = True  # False for local dev without HTTPS
+    cookie_samesite: str = "lax"
+    cookie_domain: str | None = None  # None = current domain only
+
     # Admin seed password — MUST be overridden via env var in production
     admin_seed_password: str = ""
 

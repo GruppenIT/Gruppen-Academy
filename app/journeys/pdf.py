@@ -31,7 +31,6 @@ class JourneyPDF(FPDF):
         self.journey_title = journey_title
         self.add_font("DejaVu", "", f"{DEJAVU_DIR}/DejaVuSans.ttf", uni=True)
         self.add_font("DejaVu", "B", f"{DEJAVU_DIR}/DejaVuSans-Bold.ttf", uni=True)
-        self.add_font("DejaVu", "I", f"{DEJAVU_DIR}/DejaVuSans-Oblique.ttf", uni=True)
 
     def header(self):
         self.set_font("DejaVu", "B", 10)

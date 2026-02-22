@@ -204,7 +204,7 @@ async def print_journey_pdf(
         raise HTTPException(status_code=500, detail="Erro interno ao gerar PDF.")
 
     return Response(
-        content=pdf_bytes,
+        content=bytes(pdf_bytes),
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="jornada-{journey_id}.pdf"'},
     )

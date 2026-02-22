@@ -337,7 +337,10 @@ async def update_existing_journey(
     journey = await get_journey(db, journey_id)
     if not journey:
         raise HTTPException(status_code=404, detail="Jornada não encontrada")
-    return await update_journey(db, journey, data)
+    try:
+        return await update_journey(db, journey, data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
 
 # --- Team Assignment ---
@@ -419,6 +422,17 @@ async def print_journey_pdf(
 # --- Questions ---
 
 
+def _ensure_draft(journey) -> None:
+    """Raise 409 if journey is not in DRAFT status."""
+    from app.journeys.models import JourneyStatus
+    if journey.status != JourneyStatus.DRAFT:
+        raise HTTPException(
+            status_code=409,
+            detail="Perguntas de jornadas publicadas ou arquivadas não podem ser alteradas. "
+            "Clone a jornada para criar uma nova versão editável.",
+        )
+
+
 @router.post("/{journey_id}/questions", response_model=QuestionOut, status_code=status.HTTP_201_CREATED)
 async def add_question_to_journey(
     journey_id: uuid.UUID,
@@ -429,6 +443,7 @@ async def add_question_to_journey(
     journey = await get_journey(db, journey_id)
     if not journey:
         raise HTTPException(status_code=404, detail="Jornada não encontrada")
+    _ensure_draft(journey)
     return await add_question(db, journey_id, data)
 
 
@@ -449,6 +464,10 @@ async def update_journey_question(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
+    journey = await get_journey(db, journey_id)
+    if not journey:
+        raise HTTPException(status_code=404, detail="Jornada não encontrada")
+    _ensure_draft(journey)
     question = await get_question(db, question_id)
     if not question or question.journey_id != journey_id:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada nesta jornada")
@@ -462,6 +481,10 @@ async def delete_journey_question(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
+    journey = await get_journey(db, journey_id)
+    if not journey:
+        raise HTTPException(status_code=404, detail="Jornada não encontrada")
+    _ensure_draft(journey)
     question = await get_question(db, question_id)
     if not question or question.journey_id != journey_id:
         raise HTTPException(status_code=404, detail="Pergunta não encontrada nesta jornada")

@@ -75,6 +75,15 @@ async def list_journeys(
 
 
 async def update_journey(db: AsyncSession, journey: Journey, data: JourneyUpdate) -> Journey:
+    if journey.status != JourneyStatus.DRAFT:
+        updates = data.model_dump(exclude_unset=True)
+        # Published/archived journeys only allow status transitions
+        content_fields = {k for k in updates if k != "status"}
+        if content_fields:
+            raise ValueError(
+                "Jornadas publicadas ou arquivadas não podem ter seus parâmetros alterados. "
+                "Clone a jornada para criar uma nova versão editável."
+            )
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(journey, field, value)
     await db.commit()

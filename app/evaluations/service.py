@@ -231,7 +231,7 @@ async def list_participations_for_evaluation(
 
         # Check for existing report
         report_result = await db.execute(
-            select(AnalyticalReport.id).where(AnalyticalReport.participation_id == p.id)
+            select(AnalyticalReport.id).where(AnalyticalReport.participation_id == p.id).limit(1)
         )
         has_report = report_result.scalar_one_or_none() is not None
 
@@ -290,6 +290,7 @@ async def get_my_participations(
                 AnalyticalReport.participation_id == p.id,
                 AnalyticalReport.report_type == ReportType.PROFESSIONAL,
             )
+            .limit(1)
         )
         report = report_result.scalar_one_or_none()
 

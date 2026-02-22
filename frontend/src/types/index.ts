@@ -478,6 +478,78 @@ export interface TrainingEnrollment {
   training_title?: string | null
 }
 
+export interface MyTrainingSummary {
+  enrollment_id: string
+  training_id: string
+  training_title: string
+  training_description: string | null
+  domain: string
+  estimated_duration_minutes: number
+  xp_reward: number
+  status: EnrollmentStatus
+  total_modules: number
+  completed_modules: number
+  enrolled_at: string
+  completed_at: string | null
+}
+
+export interface TrainingProgressModule {
+  module_id: string
+  title: string
+  description: string | null
+  order: number
+  content_type: ModuleContentType | null
+  original_filename: string | null
+  has_quiz: boolean
+  quiz_required_to_advance: boolean
+  xp_reward: number
+  content_viewed: boolean
+  quiz_passed: boolean
+  quiz_score: number | null
+  completed: boolean
+  locked: boolean
+}
+
+export interface TrainingProgressOut {
+  enrollment_id: string
+  training_id: string
+  training_title: string
+  status: EnrollmentStatus
+  total_modules: number
+  completed_modules: number
+  xp_reward: number
+  modules: TrainingProgressModule[]
+}
+
+export interface ModuleProgressOut {
+  id: string
+  enrollment_id: string
+  module_id: string
+  content_viewed: boolean
+  quiz_score: number | null
+  started_at: string | null
+  completed_at: string | null
+}
+
+export interface QuizAttemptOut {
+  id: string
+  module_progress_id: string
+  score: number
+  answers: Record<string, { user_answer: string; correct_answer: string | null; is_correct: boolean; explanation: string | null }>
+  passed: boolean
+  started_at: string
+  completed_at: string | null
+}
+
+export interface PendingItem {
+  type: 'training' | 'journey'
+  id: string
+  title: string
+  description: string | null
+  status_label: string
+  detail: string
+}
+
 // Gamification levels
 export const LEVELS = [
   { name: 'Iniciante', minPoints: 0, icon: '🌱' },

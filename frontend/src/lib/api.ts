@@ -536,6 +536,25 @@ class ApiClient {
     return this.request<import('@/types').TrainingEnrollment[]>(`/api/trainings/${trainingId}/enrollments`)
   }
 
+  // Trainings — Professional
+  getMyTrainings() {
+    return this.request<import('@/types').MyTrainingSummary[]>('/api/trainings/my/trainings')
+  }
+  getMyPendingTrainings() {
+    return this.request<import('@/types').PendingItem[]>('/api/trainings/my/pending')
+  }
+  getTrainingProgress(trainingId: string) {
+    return this.request<import('@/types').TrainingProgressOut>(`/api/trainings/my/trainings/${trainingId}/progress`)
+  }
+  markModuleViewed(trainingId: string, moduleId: string) {
+    return this.request<import('@/types').ModuleProgressOut>(`/api/trainings/my/trainings/${trainingId}/modules/${moduleId}/view`, { method: 'POST' })
+  }
+  submitQuizAttempt(trainingId: string, moduleId: string, answers: Record<string, string>) {
+    return this.request<import('@/types').QuizAttemptOut>(`/api/trainings/my/trainings/${trainingId}/modules/${moduleId}/quiz/attempt`, {
+      method: 'POST', body: JSON.stringify({ answers }),
+    })
+  }
+
   // Settings
   getSettings() {
     return this.request<{ key: string; value: string; description: string | null }[]>('/api/settings')

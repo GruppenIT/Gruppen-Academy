@@ -8,6 +8,7 @@ from app.gamification.models import Badge, Score, UserBadge
 from app.gamification.schemas import BadgeCreate, ScoreCreate, UserPointsSummary
 from app.journeys.models import JourneyParticipation
 from app.learning.models import ActivityCompletion, TutorSession
+from app.trainings.models import EnrollmentStatus, TrainingEnrollment
 from app.users.models import User
 
 
@@ -236,6 +237,16 @@ async def _check_criteria(
         result = await db.execute(
             select(func.count(TutorSession.id)).where(
                 TutorSession.user_id == user_id
+            )
+        )
+        return result.scalar_one() >= threshold
+
+    if criteria.startswith("trainings>="):
+        threshold = int(criteria.split(">=")[1])
+        result = await db.execute(
+            select(func.count(TrainingEnrollment.id)).where(
+                TrainingEnrollment.user_id == user_id,
+                TrainingEnrollment.status == EnrollmentStatus.COMPLETED,
             )
         )
         return result.scalar_one() >= threshold

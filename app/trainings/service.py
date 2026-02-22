@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,13 +8,18 @@ from sqlalchemy.orm import selectinload
 from app.catalog.models import Competency, Product
 from app.teams.models import Team
 from app.trainings.models import (
+    EnrollmentStatus,
+    ModuleProgress,
     ModuleQuiz,
+    QuizAttempt,
     QuizQuestion,
     Training,
     TrainingEnrollment,
     TrainingModule,
     TrainingStatus,
 )
+from app.gamification.schemas import ScoreCreate
+from app.gamification.service import add_score, check_and_award_badges
 from app.trainings.schemas import (
     ModuleCreate,
     ModuleUpdate,
@@ -388,5 +394,265 @@ async def get_training_enrollments(
         select(TrainingEnrollment)
         .where(TrainingEnrollment.training_id == training_id)
         .options(selectinload(TrainingEnrollment.user))
+    )
+    return list(result.scalars().all())
+
+
+# --- Professional: My Trainings ---
+
+
+async def get_my_enrollments(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[TrainingEnrollment]:
+    result = await db.execute(
+        select(TrainingEnrollment)
+        .where(TrainingEnrollment.user_id == user_id)
+        .options(
+            selectinload(TrainingEnrollment.training).selectinload(Training.modules),
+            selectinload(TrainingEnrollment.module_progress),
+        )
+        .order_by(TrainingEnrollment.enrolled_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_pending_enrollments(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[TrainingEnrollment]:
+    result = await db.execute(
+        select(TrainingEnrollment)
+        .where(
+            TrainingEnrollment.user_id == user_id,
+            TrainingEnrollment.status.in_([
+                EnrollmentStatus.PENDING,
+                EnrollmentStatus.IN_PROGRESS,
+            ]),
+        )
+        .options(
+            selectinload(TrainingEnrollment.training).selectinload(Training.modules),
+            selectinload(TrainingEnrollment.module_progress),
+        )
+        .order_by(TrainingEnrollment.enrolled_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def get_enrollment_for_user(
+    db: AsyncSession, training_id: uuid.UUID, user_id: uuid.UUID
+) -> TrainingEnrollment | None:
+    result = await db.execute(
+        select(TrainingEnrollment)
+        .where(
+            TrainingEnrollment.training_id == training_id,
+            TrainingEnrollment.user_id == user_id,
+        )
+        .options(
+            selectinload(TrainingEnrollment.module_progress),
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_or_create_module_progress(
+    db: AsyncSession, enrollment_id: uuid.UUID, module_id: uuid.UUID
+) -> ModuleProgress:
+    result = await db.execute(
+        select(ModuleProgress).where(
+            ModuleProgress.enrollment_id == enrollment_id,
+            ModuleProgress.module_id == module_id,
+        )
+    )
+    progress = result.scalar_one_or_none()
+    if not progress:
+        progress = ModuleProgress(
+            enrollment_id=enrollment_id,
+            module_id=module_id,
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(progress)
+        await db.flush()
+    return progress
+
+
+async def mark_content_viewed(
+    db: AsyncSession, enrollment: TrainingEnrollment, module: TrainingModule
+) -> ModuleProgress:
+    # Update enrollment status to IN_PROGRESS if PENDING
+    if enrollment.status == EnrollmentStatus.PENDING:
+        enrollment.status = EnrollmentStatus.IN_PROGRESS
+
+    progress = await get_or_create_module_progress(db, enrollment.id, module.id)
+    progress.content_viewed = True
+    if not progress.started_at:
+        progress.started_at = datetime.now(timezone.utc)
+
+    # If no quiz required, mark module as completed
+    if not module.has_quiz or not module.quiz_required_to_advance:
+        if not progress.completed_at:
+            progress.completed_at = datetime.now(timezone.utc)
+            # Award module XP
+            if module.xp_reward > 0:
+                await add_score(
+                    db,
+                    ScoreCreate(
+                        user_id=enrollment.user_id,
+                        points=module.xp_reward,
+                        source="training_module",
+                        source_id=module.id,
+                        description=f"Módulo concluído: {module.title}",
+                    ),
+                )
+            await _check_training_completion(db, enrollment)
+
+    await db.commit()
+    await db.refresh(progress)
+    return progress
+
+
+async def submit_quiz_attempt(
+    db: AsyncSession,
+    enrollment: TrainingEnrollment,
+    module: TrainingModule,
+    answers: dict,
+) -> QuizAttempt:
+    # Update enrollment status to IN_PROGRESS if PENDING
+    if enrollment.status == EnrollmentStatus.PENDING:
+        enrollment.status = EnrollmentStatus.IN_PROGRESS
+
+    progress = await get_or_create_module_progress(db, enrollment.id, module.id)
+
+    # Get quiz with questions
+    quiz = await get_module_quiz(db, module.id)
+    if not quiz or not quiz.questions:
+        raise ValueError("Este módulo não possui quiz.")
+
+    # Grade the quiz
+    total_weight = 0.0
+    earned_weight = 0.0
+    graded_answers: dict = {}
+
+    for question in quiz.questions:
+        q_id = str(question.id)
+        user_answer = answers.get(q_id, "")
+        is_correct = False
+
+        if question.type.value in ("multiple_choice", "true_false"):
+            is_correct = (
+                str(user_answer).strip().lower()
+                == str(question.correct_answer or "").strip().lower()
+            )
+
+        graded_answers[q_id] = {
+            "user_answer": user_answer,
+            "correct_answer": question.correct_answer,
+            "is_correct": is_correct,
+            "explanation": question.explanation,
+        }
+
+        total_weight += question.weight
+        if is_correct:
+            earned_weight += question.weight
+
+    score = earned_weight / total_weight if total_weight > 0 else 0.0
+    passed = score >= quiz.passing_score
+
+    attempt = QuizAttempt(
+        module_progress_id=progress.id,
+        score=score,
+        answers=graded_answers,
+        passed=passed,
+        completed_at=datetime.now(timezone.utc),
+    )
+    db.add(attempt)
+
+    # Update progress
+    progress.quiz_score = score
+    if passed and not progress.completed_at:
+        progress.completed_at = datetime.now(timezone.utc)
+        # Award module XP
+        if module.xp_reward > 0:
+            await add_score(
+                db,
+                ScoreCreate(
+                    user_id=enrollment.user_id,
+                    points=module.xp_reward,
+                    source="training_module",
+                    source_id=module.id,
+                    description=f"Módulo concluído: {module.title}",
+                ),
+            )
+
+    await db.flush()
+    await _check_training_completion(db, enrollment)
+
+    await db.commit()
+    await db.refresh(attempt)
+    return attempt
+
+
+async def _check_training_completion(
+    db: AsyncSession, enrollment: TrainingEnrollment
+) -> None:
+    """Check if all modules are completed and mark training as done."""
+    modules = await list_modules(db, enrollment.training_id)
+    if not modules:
+        return
+
+    # Reload progress
+    result = await db.execute(
+        select(ModuleProgress).where(
+            ModuleProgress.enrollment_id == enrollment.id,
+            ModuleProgress.completed_at.isnot(None),
+        )
+    )
+    completed_progress = list(result.scalars().all())
+    completed_module_ids = {p.module_id for p in completed_progress}
+
+    all_completed = all(m.id in completed_module_ids for m in modules)
+    if all_completed and enrollment.status != EnrollmentStatus.COMPLETED:
+        enrollment.status = EnrollmentStatus.COMPLETED
+        enrollment.completed_at = datetime.now(timezone.utc)
+
+        # Award training-level XP
+        training_result = await db.execute(
+            select(Training).where(Training.id == enrollment.training_id)
+        )
+        training = training_result.scalar_one_or_none()
+        if training and training.xp_reward > 0:
+            await add_score(
+                db,
+                ScoreCreate(
+                    user_id=enrollment.user_id,
+                    points=training.xp_reward,
+                    source="training",
+                    source_id=training.id,
+                    description=f"Treinamento concluído: {training.title}",
+                ),
+            )
+        # Check badge criteria
+        await check_and_award_badges(db, enrollment.user_id)
+
+    # Update current_module_order
+    enrollment.current_module_order = len(completed_module_ids) + 1
+
+
+async def get_module_progress_for_enrollment(
+    db: AsyncSession, enrollment_id: uuid.UUID
+) -> list[ModuleProgress]:
+    result = await db.execute(
+        select(ModuleProgress)
+        .where(ModuleProgress.enrollment_id == enrollment_id)
+        .options(selectinload(ModuleProgress.quiz_attempts))
+    )
+    return list(result.scalars().all())
+
+
+async def get_quiz_attempts(
+    db: AsyncSession, module_progress_id: uuid.UUID
+) -> list[QuizAttempt]:
+    result = await db.execute(
+        select(QuizAttempt)
+        .where(QuizAttempt.module_progress_id == module_progress_id)
+        .order_by(QuizAttempt.started_at.desc())
     )
     return list(result.scalars().all())

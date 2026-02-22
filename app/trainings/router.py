@@ -14,8 +14,13 @@ from app.trainings.schemas import (
     ModuleCreate,
     ModuleDetailOut,
     ModuleOut,
+    ModuleProgressOut,
     ModuleUpdate,
+    MyTrainingSummary,
+    PendingItem,
     PublishRequest,
+    QuizAttemptOut,
+    QuizAttemptSubmit,
     QuizCreate,
     QuizOut,
     QuizQuestionCreate,
@@ -24,6 +29,8 @@ from app.trainings.schemas import (
     TrainingCreate,
     TrainingDetailOut,
     TrainingOut,
+    TrainingProgressModule,
+    TrainingProgressOut,
     TrainingUpdate,
 )
 from app.trainings.service import (
@@ -34,14 +41,20 @@ from app.trainings.service import (
     create_training,
     delete_module,
     delete_quiz_question,
+    get_enrollment_for_user,
     get_module,
+    get_module_progress_for_enrollment,
     get_module_quiz,
+    get_my_enrollments,
+    get_pending_enrollments,
     get_quiz_question,
     get_training,
     get_training_enrollments,
     list_modules,
     list_trainings,
+    mark_content_viewed,
     publish_training,
+    submit_quiz_attempt,
     update_module,
     update_quiz_question,
     update_training,
@@ -540,3 +553,191 @@ async def list_enrollments_endpoint(
             )
         )
     return result
+
+
+# ──────────────────────────────────────────────
+# Professional: My Trainings
+# ──────────────────────────────────────────────
+
+
+@router.get("/my/trainings", response_model=list[MyTrainingSummary])
+async def my_trainings_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    enrollments = await get_my_enrollments(db, current_user.id)
+    result = []
+    for e in enrollments:
+        training = e.training
+        modules = training.modules if training else []
+        completed_ids = {
+            p.module_id for p in (e.module_progress or []) if p.completed_at
+        }
+        result.append(
+            MyTrainingSummary(
+                enrollment_id=e.id,
+                training_id=e.training_id,
+                training_title=training.title if training else "",
+                training_description=training.description if training else None,
+                domain=training.domain if training else "",
+                estimated_duration_minutes=training.estimated_duration_minutes if training else 0,
+                xp_reward=training.xp_reward if training else 0,
+                status=e.status,
+                total_modules=len(modules),
+                completed_modules=len(completed_ids),
+                enrolled_at=e.enrolled_at,
+                completed_at=e.completed_at,
+            )
+        )
+    return result
+
+
+@router.get("/my/pending", response_model=list[PendingItem])
+async def my_pending_trainings_endpoint(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    enrollments = await get_pending_enrollments(db, current_user.id)
+    result = []
+    for e in enrollments:
+        training = e.training
+        modules = training.modules if training else []
+        completed_ids = {
+            p.module_id for p in (e.module_progress or []) if p.completed_at
+        }
+        total = len(modules)
+        done = len(completed_ids)
+        status_label = "Novo" if e.status.value == "pending" else "Em andamento"
+        detail = f"{done}/{total} módulos" if total > 0 else "Sem módulos"
+        result.append(
+            PendingItem(
+                type="training",
+                id=str(e.training_id),
+                title=training.title if training else "",
+                description=training.description if training else None,
+                status_label=status_label,
+                detail=detail,
+            )
+        )
+    return result
+
+
+@router.get("/my/trainings/{training_id}/progress", response_model=TrainingProgressOut)
+async def training_progress_endpoint(
+    training_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    enrollment = await get_enrollment_for_user(db, training_id, current_user.id)
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Inscrição não encontrada")
+
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+
+    modules = await list_modules(db, training_id)
+    progress_list = await get_module_progress_for_enrollment(db, enrollment.id)
+    progress_map = {p.module_id: p for p in progress_list}
+
+    completed_ids = {
+        p.module_id for p in progress_list if p.completed_at
+    }
+
+    module_items = []
+    for i, mod in enumerate(modules):
+        prog = progress_map.get(mod.id)
+        content_viewed = prog.content_viewed if prog else False
+        quiz_score = prog.quiz_score if prog else None
+        quiz_passed = False
+        if prog and prog.quiz_attempts:
+            quiz_passed = any(a.passed for a in prog.quiz_attempts)
+        completed = mod.id in completed_ids
+
+        # Lock logic: first module always unlocked; others require previous module completed
+        locked = False
+        if i > 0:
+            prev_mod = modules[i - 1]
+            if prev_mod.id not in completed_ids:
+                locked = True
+
+        module_items.append(
+            TrainingProgressModule(
+                module_id=mod.id,
+                title=mod.title,
+                description=mod.description,
+                order=mod.order,
+                content_type=mod.content_type,
+                original_filename=mod.original_filename,
+                has_quiz=mod.has_quiz,
+                quiz_required_to_advance=mod.quiz_required_to_advance,
+                xp_reward=mod.xp_reward,
+                content_viewed=content_viewed,
+                quiz_passed=quiz_passed,
+                quiz_score=quiz_score,
+                completed=completed,
+                locked=locked,
+            )
+        )
+
+    return TrainingProgressOut(
+        enrollment_id=enrollment.id,
+        training_id=training.id,
+        training_title=training.title,
+        status=enrollment.status,
+        total_modules=len(modules),
+        completed_modules=len(completed_ids),
+        xp_reward=training.xp_reward,
+        modules=module_items,
+    )
+
+
+@router.post(
+    "/my/trainings/{training_id}/modules/{module_id}/view",
+    response_model=ModuleProgressOut,
+)
+async def view_module_content_endpoint(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    enrollment = await get_enrollment_for_user(db, training_id, current_user.id)
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Inscrição não encontrada")
+
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    progress = await mark_content_viewed(db, enrollment, module)
+    return progress
+
+
+@router.post(
+    "/my/trainings/{training_id}/modules/{module_id}/quiz/attempt",
+    response_model=QuizAttemptOut,
+)
+async def submit_quiz_attempt_endpoint(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    data: QuizAttemptSubmit,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    enrollment = await get_enrollment_for_user(db, training_id, current_user.id)
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Inscrição não encontrada")
+
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    if not module.has_quiz:
+        raise HTTPException(status_code=400, detail="Este módulo não possui quiz.")
+
+    try:
+        attempt = await submit_quiz_attempt(db, enrollment, module, data.answers)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return attempt

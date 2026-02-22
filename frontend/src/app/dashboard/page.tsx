@@ -10,10 +10,10 @@ import StreakCounter from '@/components/gamification/StreakCounter'
 import LeaderboardRow from '@/components/gamification/LeaderboardRow'
 import {
   Route, BookOpen, MessageSquareMore, Trophy, TrendingUp,
-  Target, Sparkles, ArrowRight, Flame, Clock,
+  Target, Sparkles, ArrowRight, Flame, Clock, LibraryBig, AlertCircle,
 } from 'lucide-react'
 import Link from 'next/link'
-import type { UserPointsSummary, Journey, LearningPath } from '@/types'
+import type { UserPointsSummary, Journey, LearningPath, PendingItem } from '@/types'
 
 function StatCard({ icon: Icon, label, value, color, href }: {
   icon: React.ElementType; label: string; value: string; color: string; href: string
@@ -54,12 +54,14 @@ export default function DashboardPage() {
   const [leaderboard, setLeaderboard] = useState<UserPointsSummary[]>([])
   const [journeys, setJourneys] = useState<Journey[]>([])
   const [paths, setPaths] = useState<LearningPath[]>([])
+  const [pendingTrainings, setPendingTrainings] = useState<PendingItem[]>([])
 
   useEffect(() => {
     api.getMyPoints().then(setPoints).catch(() => {})
     api.getLeaderboard(5).then(setLeaderboard).catch(() => {})
     api.getJourneys(0, 3).then(setJourneys).catch(() => {})
     api.getLearningPaths().then((p) => setPaths(p.slice(0, 3))).catch(() => {})
+    api.getMyPendingTrainings().then(setPendingTrainings).catch(() => {})
   }, [])
 
   const greeting = (() => {
@@ -109,6 +111,35 @@ export default function DashboardPage() {
           color="bg-gold-400/10 text-gold-600" href="/ranking"
         />
       </div>
+
+      {/* Pending Trainings */}
+      {pendingTrainings.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-amber-500" />
+            Pendências
+          </h2>
+          <div className="space-y-2">
+            {pendingTrainings.map((item) => (
+              <Link
+                key={item.id}
+                href={`/treinamentos/${item.id}`}
+                className="flex items-center gap-4 p-4 rounded-xl border border-amber-100 bg-amber-50/30 hover:bg-amber-50 transition-colors"
+              >
+                <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                  <LibraryBig className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">{item.title}</p>
+                  <p className="text-xs text-gray-500">{item.detail}</p>
+                </div>
+                <span className="badge-pill bg-amber-100 text-amber-700 text-xs">{item.status_label}</span>
+                <ArrowRight className="w-4 h-4 text-gray-400" />
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Quick Actions */}
       <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">

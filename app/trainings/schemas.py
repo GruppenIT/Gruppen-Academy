@@ -246,3 +246,56 @@ class QuizAttemptOut(BaseModel):
 # --- Publish Request ---
 class PublishRequest(BaseModel):
     team_ids: list[uuid.UUID]
+
+
+# --- Professional views ---
+class MyTrainingSummary(BaseModel):
+    enrollment_id: uuid.UUID
+    training_id: uuid.UUID
+    training_title: str
+    training_description: str | None
+    domain: str
+    estimated_duration_minutes: int
+    xp_reward: int
+    status: EnrollmentStatus
+    total_modules: int
+    completed_modules: int
+    enrolled_at: datetime
+    completed_at: datetime | None
+
+
+class TrainingProgressModule(BaseModel):
+    module_id: uuid.UUID
+    title: str
+    description: str | None
+    order: int
+    content_type: ModuleContentType | None
+    original_filename: str | None
+    has_quiz: bool
+    quiz_required_to_advance: bool
+    xp_reward: int
+    content_viewed: bool
+    quiz_passed: bool
+    quiz_score: float | None
+    completed: bool
+    locked: bool
+
+
+class TrainingProgressOut(BaseModel):
+    enrollment_id: uuid.UUID
+    training_id: uuid.UUID
+    training_title: str
+    status: EnrollmentStatus
+    total_modules: int
+    completed_modules: int
+    xp_reward: int
+    modules: list[TrainingProgressModule]
+
+
+class PendingItem(BaseModel):
+    type: str  # "training" or "journey"
+    id: str
+    title: str
+    description: str | None = None
+    status_label: str
+    detail: str

@@ -57,6 +57,13 @@ async def init_db():
         await conn.execute(text(
             "ALTER TABLE question_responses ADD COLUMN IF NOT EXISTS time_spent_seconds INTEGER"
         ))
+        # Lote 8: OCR batch import — participation_id nullable + import_report
+        await conn.execute(text(
+            "ALTER TABLE ocr_uploads ALTER COLUMN participation_id DROP NOT NULL"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE ocr_uploads ADD COLUMN IF NOT EXISTS import_report JSONB"
+        ))
 
     logger.info("Database tables created/verified.")
 

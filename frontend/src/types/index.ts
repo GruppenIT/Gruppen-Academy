@@ -359,13 +359,37 @@ export interface OCRExtractedResponse {
 
 export interface OCRUpload {
   id: string
-  participation_id: string
+  participation_id: string | null
   original_filename: string
   status: OCRUploadStatus
   extracted_responses: OCRExtractedResponse[] | null
+  import_report: OCRImportReport | null
   error_message: string | null
   created_at: string
   updated_at: string
+}
+
+export interface OCRImportedUser {
+  user_name: string
+  user_email: string
+  participation_id: string | null
+  ocr_upload_id: string | null
+  status: 'ok' | 'not_found' | 'no_journey' | 'created'
+}
+
+export interface OCRImportFailure {
+  message: string
+  details: string | null
+}
+
+export interface OCRImportReport {
+  journey_title: string | null
+  journey_id: string | null
+  users_imported: OCRImportedUser[]
+  failures: OCRImportFailure[]
+  total_pages: number
+  total_respondents_found: number
+  ocr_upload_ids: string[]
 }
 
 // Suggested Learning Path

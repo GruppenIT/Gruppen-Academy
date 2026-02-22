@@ -44,6 +44,7 @@ from app.journeys.service import (
     list_journeys,
     list_ocr_uploads,
     list_questions,
+    process_ocr_batch,
     process_ocr_upload,
     review_ocr_upload,
     submit_response,
@@ -113,6 +114,57 @@ async def list_my_available_journeys(
 # NOTE: /ocr-uploads MUST be before /{journey_id} to avoid FastAPI matching "ocr-uploads" as UUID
 
 
+@router.post("/ocr-upload")
+async def upload_ocr_batch(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Upload a scanned PDF for automatic OCR import.
+
+    The system reads the printed header of each page to identify:
+    - Which journey the PDF belongs to (by title)
+    - Which respondent(s) are in the PDF (by Nome/E-mail)
+
+    Supports both single-respondent and multi-respondent PDFs.
+    Returns an import report with identified journey, users, and any failures.
+    """
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Apenas arquivos PDF são aceitos")
+
+    # Ensure upload directory exists
+    upload_dir = os.path.join(settings.upload_dir, "ocr")
+    os.makedirs(upload_dir, exist_ok=True)
+
+    # Read and validate file content
+    content = await file.read()
+
+    # Enforce file size limit
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Arquivo excede o limite de {settings.max_upload_size_mb}MB",
+        )
+
+    # Validate PDF magic bytes (%PDF-)
+    if not content[:5].startswith(b"%PDF-"):
+        raise HTTPException(status_code=400, detail="Arquivo não é um PDF válido")
+
+    # Save file with UUID name (prevents path traversal)
+    file_id = str(uuid.uuid4())
+    file_path = os.path.join(upload_dir, f"{file_id}.pdf")
+    with open(file_path, "wb") as f:
+        f.write(content)
+
+    try:
+        report = await process_ocr_batch(db, file_path, file.filename)
+        return report
+    except Exception as e:
+        logger.error("Erro ao processar OCR batch: %s", e)
+        raise HTTPException(status_code=500, detail=f"Erro ao processar PDF: {e}")
+
+
 @router.post(
     "/participations/{participation_id}/ocr-upload",
     response_model=OCRUploadOut,
@@ -124,7 +176,7 @@ async def upload_ocr_pdf(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
-    """Upload a scanned PDF for OCR processing."""
+    """Upload a scanned PDF for OCR processing (legacy — requires participation_id)."""
     participation = await get_participation(db, participation_id)
     if not participation:
         raise HTTPException(status_code=404, detail="Participação não encontrada")

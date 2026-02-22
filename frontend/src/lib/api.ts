@@ -271,6 +271,21 @@ class ApiClient {
   }
 
   // OCR Uploads (Sync Journey)
+  async uploadOCRBatch(file: File): Promise<import('@/types').OCRImportReport> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${API_BASE}/api/journeys/ocr-upload`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || `Erro ${res.status}`)
+    }
+    return res.json() as Promise<import('@/types').OCRImportReport>
+  }
+  /** @deprecated Use uploadOCRBatch instead */
   async uploadOCRPdf(participationId: string, file: File) {
     const formData = new FormData()
     formData.append('file', file)

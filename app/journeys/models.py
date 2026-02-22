@@ -164,8 +164,8 @@ class OCRUpload(Base):
     __tablename__ = "ocr_uploads"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    participation_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("journey_participations.id", ondelete="CASCADE"), nullable=False
+    participation_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("journey_participations.id", ondelete="CASCADE"), nullable=True
     )
     file_path: Mapped[str] = mapped_column(String(500), nullable=False)
     original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -173,6 +173,7 @@ class OCRUpload(Base):
         Enum(OCRUploadStatus), nullable=False, default=OCRUploadStatus.UPLOADED
     )
     extracted_responses: Mapped[list | None] = mapped_column(JSONB)
+    import_report: Mapped[dict | None] = mapped_column(JSONB)
     error_message: Mapped[str | None] = mapped_column(Text)
     reviewed_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -180,5 +181,5 @@ class OCRUpload(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    participation: Mapped["JourneyParticipation"] = relationship()
+    participation: Mapped["JourneyParticipation | None"] = relationship()
     reviewer: Mapped["User | None"] = relationship(foreign_keys=[reviewed_by])

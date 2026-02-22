@@ -203,10 +203,11 @@ class OCRExtractedResponse(BaseModel):
 
 class OCRUploadOut(BaseModel):
     id: uuid.UUID
-    participation_id: uuid.UUID
+    participation_id: uuid.UUID | None
     original_filename: str
     status: OCRUploadStatus
     extracted_responses: list[dict] | None
+    import_report: dict | None = None
     error_message: str | None
     created_at: datetime
     updated_at: datetime
@@ -216,3 +217,26 @@ class OCRUploadOut(BaseModel):
 
 class OCRReviewRequest(BaseModel):
     extracted_responses: list[OCRExtractedResponse]
+
+
+class OCRImportedUser(BaseModel):
+    user_name: str
+    user_email: str
+    participation_id: str | None = None
+    ocr_upload_id: str | None = None
+    status: str = "ok"  # "ok", "created", "not_found"
+
+
+class OCRImportFailure(BaseModel):
+    message: str
+    details: str | None = None
+
+
+class OCRImportReport(BaseModel):
+    journey_title: str | None = None
+    journey_id: str | None = None
+    users_imported: list[OCRImportedUser] = []
+    failures: list[OCRImportFailure] = []
+    total_pages: int = 0
+    total_respondents_found: int = 0
+    ocr_upload_ids: list[str] = []

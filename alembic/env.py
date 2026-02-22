@@ -9,6 +9,7 @@ from app.config import settings
 from app.database import Base
 
 # Import all models so Alembic can detect them
+from app.audit.models import AuditLog  # noqa: F401
 from app.catalog.models import Competency, MasterGuideline, Product  # noqa: F401
 from app.evaluations.models import AnalyticalReport, Evaluation  # noqa: F401
 from app.gamification.models import Badge, Score, UserBadge  # noqa: F401

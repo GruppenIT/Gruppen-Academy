@@ -5,6 +5,7 @@ from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from app.audit.middleware import AuditLogMiddleware
 from app.auth.router import router as auth_router
 from app.catalog.router import router as catalog_router
 from app.config import settings
@@ -70,6 +71,9 @@ app = FastAPI(
 
 # Security headers must be added first (outermost middleware)
 app.add_middleware(SecurityHeadersMiddleware)
+
+# Audit log for mutating API requests (runs after auth, before response)
+app.add_middleware(AuditLogMiddleware)
 
 cors_origins = list(settings.cors_origins)
 # Only include localhost in non-production environments

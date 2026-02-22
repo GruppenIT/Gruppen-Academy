@@ -42,22 +42,36 @@ mudanças arquiteturais ou de infraestrutura.
   `app/auth/generate_keys.py`, `.gitignore`
 
 ### 4. Audit logging estruturado
-- **Status:** PENDENTE
+- **Status:** CONCLUÍDO (2026-02-22)
 - **OWASP:** A09 — Security Logging and Monitoring Failures
 - **Risco:** Sem trilha de auditoria para mudanças de config, roles e acessos
   sensíveis.
-- **Solução:** Tabela `audit_log` + middleware que registra ações de admin.
+- **Solução:** Tabela `audit_logs` com índices em timestamp, user_id e action.
+  Middleware `AuditLogMiddleware` registra automaticamente toda requisição
+  mutante (POST/PUT/PATCH/DELETE) a `/api/*`, capturando usuário, IP, user-agent,
+  método, path e status code. Função `write_audit_log()` disponível para logs
+  manuais em pontos específicos (ex.: mudança de role, exclusão de dados).
+- **Arquivos criados:** `app/audit/__init__.py`, `app/audit/models.py`,
+  `app/audit/service.py`, `app/audit/middleware.py`,
+  `alembic/versions/007_add_audit_logs.py`
+- **Arquivos alterados:** `app/main.py`, `app/auth/dependencies.py`,
+  `alembic/env.py`
 
 ## Prioridade Baixa
 
 ### 5. pip audit + npm audit no CI/CD
-- **Status:** PENDENTE
+- **Status:** CONCLUÍDO (2026-02-22)
 - **OWASP:** A06 — Vulnerable and Outdated Components
-- **Solução:** Adicionar step no pipeline (GitHub Actions) que roda `pip audit`
-  e `npm audit` e falha em vulnerabilidades críticas.
+- **Solução:** Workflow GitHub Actions (`security.yml`) com job `dependency-audit`
+  que roda `pip-audit --strict` e `npm audit --audit-level=high`. Executa em
+  push/PR para main e semanalmente (cron segunda 06:00 UTC). Falha o pipeline
+  se houver vulnerabilidades altas ou críticas.
+- **Arquivos criados:** `.github/workflows/security.yml`
 
 ### 6. SBOM (Software Bill of Materials)
-- **Status:** PENDENTE
+- **Status:** CONCLUÍDO (2026-02-22)
 - **OWASP:** A06
-- **Solução:** Gerar SBOM com `cyclonedx-bom` no build e armazenar como
-  artefato do CI.
+- **Solução:** Job `sbom` no mesmo workflow `security.yml` gera SBOMs em
+  formato CycloneDX JSON para Python (`cyclonedx-py`) e frontend
+  (`@cyclonedx/cyclonedx-npm`). Artefatos retidos por 90 dias no GitHub Actions.
+- **Arquivos criados:** `.github/workflows/security.yml`

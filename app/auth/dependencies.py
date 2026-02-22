@@ -67,6 +67,8 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuário não encontrado ou inativo",
         )
+    # Expose user on request.state for audit logging middleware
+    request.state.user = user
     return user
 
 

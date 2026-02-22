@@ -19,6 +19,7 @@ from app.journeys.schemas import (
     JourneyUpdate,
     OCRReviewRequest,
     OCRUploadOut,
+    PageCodeOut,
     ParticipationCreate,
     ParticipationOut,
     ParticipationStatusOut,
@@ -277,6 +278,41 @@ async def approve_single_ocr_upload(
         return await approve_ocr_upload(db, upload_id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/page-codes/{code}", response_model=PageCodeOut)
+async def resolve_page_code(
+    code: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Look up a printed page code to identify journey, user, and page number.
+
+    Use this when automatic scan detection fails — type the code from the
+    printed page (e.g. 'A7K3MX') to resolve it manually.
+    """
+    from sqlalchemy import select
+    from app.journeys.models import PageCode
+
+    code_upper = code.strip().upper()
+    result = await db.execute(select(PageCode).where(PageCode.code == code_upper))
+    page_code = result.scalar_one_or_none()
+    if not page_code:
+        raise HTTPException(status_code=404, detail=f"Código '{code_upper}' não encontrado")
+
+    journey = await get_journey(db, page_code.journey_id)
+    result = await db.execute(select(User).where(User.id == page_code.user_id))
+    user = result.scalar_one_or_none()
+
+    return PageCodeOut(
+        code=page_code.code,
+        journey_id=page_code.journey_id,
+        journey_title=journey.title if journey else None,
+        user_id=page_code.user_id,
+        user_name=user.full_name if user else None,
+        user_email=user.email if user else None,
+        page_number=page_code.page_number,
+    )
 
 
 @router.get("/{journey_id}", response_model=JourneyOut)

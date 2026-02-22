@@ -9,12 +9,11 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.journeys.models import Journey, Question
+from app.journeys.models import Journey, PageCode, Question
 from app.journeys.qr_utils import (
     draw_corner_markers,
-    encode_qr_payload,
+    generate_code,
     generate_qr_image,
-    make_short_code,
 )
 from app.teams.models import Team, journey_team, team_member
 from app.users.models import User
@@ -38,92 +37,71 @@ class JourneyPDF(FPDF):
         self.add_font("DejaVu", "", f"{DEJAVU_DIR}/DejaVuSans.ttf", uni=True)
         self.add_font("DejaVu", "B", f"{DEJAVU_DIR}/DejaVuSans-Bold.ttf", uni=True)
 
-        # Current user context for QR generation
-        self._journey_id: uuid.UUID | None = None
-        self._user_id: uuid.UUID | None = None
-        self._user_page: int = 0  # page counter per user (1-based)
+        # Current page code (set per-page before add_page)
+        self._page_code: str | None = None
 
-        # Pending context switch (applied in header(), so footer() of previous
-        # page still uses the OLD context)
-        self._pending_journey_id: uuid.UUID | None = None
-        self._pending_user_id: uuid.UUID | None = None
+        # Pending context switch (applied in header, so footer of previous
+        # page still uses the OLD code)
+        self._pending_code: str | None = None
 
-        # Pre-generated QR image bytes cache: (journey_id, user_id, page) -> png
-        self._qr_cache: dict[tuple, bytes] = {}
+        # QR image cache: code -> png bytes
+        self._qr_cache: dict[str, bytes] = {}
 
-    def set_user_context(
-        self, journey_id: uuid.UUID, user_id: uuid.UUID,
-    ):
-        """Queue a user context switch.
+    def set_page_code(self, code: str):
+        """Queue a page code for the next page.
 
-        The actual switch happens inside header() — this ensures that
-        footer() of the previous page still draws with the OLD user's
-        context (fpdf2 calls footer→header inside add_page).
+        Applied in header() so that footer() of the previous page still
+        draws with its own code.
         """
-        self._pending_journey_id = journey_id
-        self._pending_user_id = user_id
+        self._pending_code = code
 
-    def _apply_pending_context(self):
-        """Apply a queued context switch (called at the start of header)."""
-        if self._pending_journey_id is not None:
-            self._journey_id = self._pending_journey_id
-            self._user_id = self._pending_user_id
-            self._user_page = 0  # reset; will be incremented right after
-            self._pending_journey_id = None
-            self._pending_user_id = None
+    def _apply_pending_code(self):
+        """Apply queued code (called at the start of header)."""
+        if self._pending_code is not None:
+            self._page_code = self._pending_code
+            self._pending_code = None
 
     def header(self):
-        # Apply pending context switch BEFORE anything else
-        self._apply_pending_context()
-
-        # Increment user page counter
-        self._user_page += 1
+        self._apply_pending_code()
 
         # Fiducial corner markers for deskewing
         draw_corner_markers(self, margin=5.0)
 
         self.set_font("DejaVu", "B", 10)
         self.set_text_color(100, 100, 100)
-        # Leave space for top-left marker
         self.set_xy(self.l_margin, 12)
         self.cell(0, 6, "Gruppen Academy", align="L")
 
-        # Short code in top-right area (human-readable fallback)
-        if self._journey_id and self._user_id:
-            short = make_short_code(self._journey_id, self._user_id, self._user_page)
-            self.set_font("DejaVu", "", 7)
-            self.set_text_color(120, 120, 120)
-            self.set_xy(self.w - self.r_margin - 50, 12)
-            self.cell(50, 6, short, align="R")
+        # Page code in top-right corner (large, OCR-friendly)
+        if self._page_code:
+            self.set_font("DejaVu", "B", 12)
+            self.set_text_color(60, 60, 60)
+            self.set_xy(self.w - self.r_margin - 40, 12)
+            self.cell(40, 6, self._page_code, align="R")
 
         self.set_xy(self.l_margin, 20)
 
     def footer(self):
-        if self._journey_id and self._user_id:
-            short = make_short_code(self._journey_id, self._user_id, self._user_page)
+        code = self._page_code
 
-            # QR code in bottom-right corner
-            qr_size = 18  # mm
+        if code:
+            # QR code — larger size for reliable scanning
+            qr_size = 25  # mm (was 18)
             qr_x = self.w - self.r_margin - qr_size - 3
-            qr_y = self.h - 20 - qr_size
+            qr_y = self.h - 18 - qr_size
 
-            cache_key = (self._journey_id, self._user_id, self._user_page)
-            if cache_key not in self._qr_cache:
-                payload = encode_qr_payload(
-                    self._journey_id, self._user_id, self._user_page,
-                )
-                self._qr_cache[cache_key] = generate_qr_image(payload)
+            if code not in self._qr_cache:
+                self._qr_cache[code] = generate_qr_image(code)
 
-            qr_png = self._qr_cache[cache_key]
-            self.image(io.BytesIO(qr_png), x=qr_x, y=qr_y, w=qr_size, h=qr_size)
+            self.image(io.BytesIO(self._qr_cache[code]), x=qr_x, y=qr_y, w=qr_size, h=qr_size)
 
-            # Short code label below QR
-            self.set_font("DejaVu", "", 6)
-            self.set_text_color(100, 100, 100)
-            self.set_xy(qr_x - 2, qr_y + qr_size + 0.5)
-            self.cell(qr_size + 4, 4, short, align="C")
+            # Code label below QR — large, bold, mono-friendly
+            self.set_font("DejaVu", "B", 10)
+            self.set_text_color(40, 40, 40)
+            self.set_xy(qr_x - 2, qr_y + qr_size + 1)
+            self.cell(qr_size + 4, 5, code, align="C")
 
-        # Page number (centered, avoiding QR area)
+        # Page number (centered)
         self.set_y(-15)
         self.set_font("DejaVu", "", 8)
         self.set_text_color(150, 150, 150)
@@ -144,6 +122,27 @@ async def get_journey_users(db: AsyncSession, journey_id: uuid.UUID) -> list[Use
         .order_by(User.full_name)
     )
     return list(result.scalars().all())
+
+
+async def _create_page_code(
+    db: AsyncSession, journey_id: uuid.UUID, user_id: uuid.UUID, page_number: int,
+) -> str:
+    """Create a PageCode record and return the generated code."""
+    for _ in range(10):  # retry on rare collision
+        code = generate_code()
+        existing = await db.execute(select(PageCode).where(PageCode.code == code))
+        if existing.scalar_one_or_none() is None:
+            break
+
+    page_code = PageCode(
+        code=code,
+        journey_id=journey_id,
+        user_id=user_id,
+        page_number=page_number,
+    )
+    db.add(page_code)
+    await db.flush()
+    return code
 
 
 async def generate_journey_pdf(
@@ -176,12 +175,14 @@ async def generate_journey_pdf(
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y")
 
     for user in users:
-        _render_user_pages(pdf, journey, questions, user, now)
+        await _render_user_pages(db, pdf, journey, questions, user, now)
 
+    await db.commit()
     return pdf.output()
 
 
-def _render_user_pages(
+async def _render_user_pages(
+    db: AsyncSession,
     pdf: JourneyPDF,
     journey: Journey,
     questions: list[Question],
@@ -189,8 +190,13 @@ def _render_user_pages(
     date_str: str,
 ):
     """Render all journey pages for a single user."""
-    pdf.set_user_context(journey.id, user.id)
+    # Create code for the first page and set it before add_page
+    code = await _create_page_code(db, journey.id, user.id, 1)
+    pdf.set_page_code(code)
     pdf.add_page()
+
+    # Store the page counter so we can create codes for subsequent pages
+    user_page = 1
 
     # --- Cover / Header ---
     pdf.set_font("DejaVu", "B", 18)
@@ -252,13 +258,24 @@ def _render_user_pages(
 
     # --- Questions ---
     for i, q in enumerate(questions):
-        _render_question(pdf, q, i + 1)
+        user_page = await _render_question(db, pdf, q, i + 1, journey.id, user.id, user_page)
 
 
-def _render_question(pdf: JourneyPDF, q: Question, number: int):
-    """Render a single question with answer space."""
+async def _render_question(
+    db: AsyncSession,
+    pdf: JourneyPDF,
+    q: Question,
+    number: int,
+    journey_id: uuid.UUID,
+    user_id: uuid.UUID,
+    user_page: int,
+) -> int:
+    """Render a single question with answer space. Returns updated page count."""
     # Check if we need a new page (at least 50mm needed for question + some lines)
     if pdf.get_y() > pdf.h - 60:
+        user_page += 1
+        code = await _create_page_code(db, journey_id, user_id, user_page)
+        pdf.set_page_code(code)
         pdf.add_page()
 
     # Question number + type
@@ -281,9 +298,13 @@ def _render_question(pdf: JourneyPDF, q: Question, number: int):
 
     for _ in range(num_lines):
         if pdf.get_y() > pdf.h - 25:
+            user_page += 1
+            code = await _create_page_code(db, journey_id, user_id, user_page)
+            pdf.set_page_code(code)
             pdf.add_page()
         y = pdf.get_y()
         pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
         pdf.ln(line_height)
 
     pdf.ln(4)
+    return user_page

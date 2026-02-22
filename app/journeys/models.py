@@ -183,3 +183,27 @@ class OCRUpload(Base):
 
     participation: Mapped["JourneyParticipation | None"] = relationship()
     reviewer: Mapped["User | None"] = relationship(foreign_keys=[reviewed_by])
+
+
+class PageCode(Base):
+    """Short alphanumeric code printed on each PDF page for scan identification.
+
+    Maps a human-readable code (e.g. 'A7K3MX') to the journey, user and page
+    it belongs to, enabling reliable lookup even from a bad photo/scan.
+    """
+
+    __tablename__ = "page_codes"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(12), unique=True, index=True, nullable=False)
+    journey_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("journeys.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    page_number: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    journey: Mapped["Journey"] = relationship()
+    user: Mapped["User"] = relationship()

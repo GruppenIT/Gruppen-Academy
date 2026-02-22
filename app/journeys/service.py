@@ -9,8 +9,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.catalog.models import Competency, Product
-from app.journeys.qr_utils import read_qr_from_pdf_pages
-from app.journeys.models import Journey, JourneyParticipation, OCRUpload, OCRUploadStatus, Question, QuestionResponse
+from app.journeys.models import (
+    Journey,
+    JourneyParticipation,
+    OCRUpload,
+    OCRUploadStatus,
+    PageCode,
+    Question,
+    QuestionResponse,
+)
+from app.journeys.qr_utils import read_codes_from_pdf_pages
 from app.journeys.schemas import (
     JourneyCreate,
     JourneyUpdate,
@@ -688,41 +696,60 @@ async def _find_or_create_participation(
     return participation
 
 
-async def _process_via_qr(
+async def _lookup_page_code(db: AsyncSession, code: str) -> PageCode | None:
+    """Look up a PageCode by its short code string."""
+    result = await db.execute(select(PageCode).where(PageCode.code == code))
+    return result.scalar_one_or_none()
+
+
+async def _process_via_page_codes(
     db: AsyncSession,
     file_path: str,
     original_filename: str,
-    qr_payloads: list[dict | None],
+    page_codes: list[str | None],
     report: dict,
 ) -> dict:
-    """Process a scanned PDF using QR-code-embedded identifiers.
+    """Process a scanned PDF using page codes (from QR or OCR).
 
-    Each page's QR code contains journey_id, user_id, and page number,
-    so we can match directly by ID without OCR header parsing.
+    Looks up each code in the page_codes table to get journey/user/page,
+    then groups pages by user and extracts responses.
     """
-    report["total_pages"] = len(qr_payloads)
+    report["total_pages"] = len(page_codes)
 
     # Extract text from pages for response content
     pages_text = _extract_pages_text(file_path)
 
-    # Group pages by (journey_id, user_id)
+    # Resolve codes → PageCode records and group by (journey_id, user_id)
     user_pages: dict[tuple[uuid.UUID, uuid.UUID], list[tuple[int, str]]] = defaultdict(list)
-
     journey_id = None
-    for idx, payload in enumerate(qr_payloads):
-        if payload is None:
+    resolved_count = 0
+
+    for idx, code in enumerate(page_codes):
+        if code is None:
             continue
-        j_id = payload["journey_id"]
-        u_id = payload["user_id"]
-        page_num = payload["page"]
+        pc = await _lookup_page_code(db, code)
+        if pc is None:
+            logger.warning("Page code '%s' (page %d) not found in database", code, idx)
+            report["failures"].append({
+                "message": f"Código '{code}' (pág. {idx + 1}) não encontrado no banco",
+            })
+            continue
+
+        resolved_count += 1
         if journey_id is None:
-            journey_id = j_id
+            journey_id = pc.journey_id
         page_text = pages_text[idx] if idx < len(pages_text) else ""
-        user_pages[(j_id, u_id)].append((page_num, page_text))
+        user_pages[(pc.journey_id, pc.user_id)].append((pc.page_number, page_text))
+
+    logger.info(
+        "Page code resolution: %d/%d codes resolved",
+        resolved_count, len([c for c in page_codes if c]),
+    )
 
     if not journey_id:
         report["failures"].append({
-            "message": "QR codes detectados mas sem dados válidos de jornada",
+            "message": "Códigos detectados mas nenhum encontrado no banco de dados",
+            "details": "O PDF pode ter sido gerado por outra instância ou os códigos foram expirados.",
         })
         return report
 
@@ -740,12 +767,11 @@ async def _process_via_qr(
     questions = await list_questions(db, journey_id)
     report["total_respondents_found"] = len(user_pages)
     logger.info(
-        "QR processing: journey=%s, %d respondents detected",
+        "Page code processing: journey=%s, %d respondents detected",
         journey.title, len(user_pages),
     )
 
     for (j_id, u_id), pages in user_pages.items():
-        # Load user
         result = await db.execute(select(User).where(User.id == u_id))
         user = result.scalar_one_or_none()
 
@@ -765,16 +791,13 @@ async def _process_via_qr(
             report["users_imported"].append(user_entry)
             continue
 
-        # Find or create participation
         participation = await _find_or_create_participation(db, j_id, user.id)
         user_entry["participation_id"] = str(participation.id)
 
-        # Sort pages and extract responses
         pages.sort(key=lambda x: x[0])
         all_pages_text = [text for _, text in pages]
         extracted = _extract_question_responses(all_pages_text, questions)
 
-        # Create OCR upload
         upload = OCRUpload(
             participation_id=participation.id,
             file_path=file_path,
@@ -791,7 +814,6 @@ async def _process_via_qr(
 
     await db.commit()
 
-    # Update import_report on all uploads
     for uid_str in report["ocr_upload_ids"]:
         upload = await get_ocr_upload(db, uuid.UUID(uid_str))
         if upload:
@@ -822,16 +844,18 @@ async def process_ocr_batch(
         "ocr_upload_ids": [],
     }
 
-    # ── Strategy 1: Try QR code detection (fast, reliable) ──
-    qr_payloads = read_qr_from_pdf_pages(file_path)
-    qr_hits = [p for p in qr_payloads if p is not None]
+    # ── Strategy 1: Try page code detection (QR + OCR of printed code) ──
+    page_codes = read_codes_from_pdf_pages(file_path)
+    code_hits = [c for c in page_codes if c is not None]
     logger.info(
-        "process_ocr_batch: QR detection found %d/%d pages with codes",
-        len(qr_hits), len(qr_payloads),
+        "process_ocr_batch: page code detection found %d/%d pages with codes",
+        len(code_hits), len(page_codes),
     )
 
-    if qr_hits:
-        return await _process_via_qr(db, file_path, original_filename, qr_payloads, report)
+    if code_hits:
+        return await _process_via_page_codes(
+            db, file_path, original_filename, page_codes, report,
+        )
 
     # ── Strategy 2: Fallback to OCR text + header parsing ──
     logger.info("process_ocr_batch: no QR codes found, falling back to OCR header parsing")

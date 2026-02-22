@@ -240,3 +240,15 @@ class OCRImportReport(BaseModel):
     total_pages: int = 0
     total_respondents_found: int = 0
     ocr_upload_ids: list[str] = []
+
+
+class PageCodeOut(BaseModel):
+    code: str
+    journey_id: uuid.UUID
+    journey_title: str | None = None
+    user_id: uuid.UUID
+    user_name: str | None = None
+    user_email: str | None = None
+    page_number: int
+
+    model_config = {"from_attributes": True}

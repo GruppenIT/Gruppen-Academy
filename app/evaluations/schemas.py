@@ -48,6 +48,10 @@ class EvaluateResponseRequest(BaseModel):
     response_id: uuid.UUID
 
 
+class BulkEvaluateRequest(BaseModel):
+    participation_id: uuid.UUID
+
+
 class GenerateReportRequest(BaseModel):
     participation_id: uuid.UUID
     report_type: ReportType = ReportType.PROFESSIONAL
@@ -61,3 +65,40 @@ class ReportOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class ParticipationEvaluationSummary(BaseModel):
+    participation_id: uuid.UUID
+    journey_id: uuid.UUID
+    journey_title: str
+    user_id: uuid.UUID
+    user_name: str
+    user_email: str
+    started_at: str | None
+    completed_at: str | None
+    total_responses: int
+    evaluated_count: int
+    has_report: bool
+
+
+class ParticipationResponseDetail(BaseModel):
+    response_id: uuid.UUID
+    question_id: uuid.UUID
+    question_text: str
+    question_type: str
+    question_order: int
+    answer_text: str
+    evaluation: EvaluationOut | None
+
+
+class UserParticipationSummary(BaseModel):
+    participation_id: uuid.UUID
+    journey_id: uuid.UUID
+    journey_title: str
+    journey_domain: str
+    started_at: str | None
+    completed_at: str | None
+    total_responses: int
+    evaluated_count: int
+    avg_score: float | None
+    report_id: str | None

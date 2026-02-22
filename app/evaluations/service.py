@@ -1,12 +1,58 @@
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.catalog.models import MasterGuideline
 from app.evaluations.models import AnalyticalReport, Evaluation, EvaluationStatus, ReportType
 from app.evaluations.schemas import EvaluationResult, EvaluationReview
-from app.journeys.models import JourneyParticipation, Question, QuestionResponse
+from app.journeys.models import Journey, JourneyParticipation, Question, QuestionResponse, journey_product
 from app.llm.client import evaluate_response, generate_report
+
+# Valid status transitions
+_VALID_TRANSITIONS: dict[EvaluationStatus, set[EvaluationStatus]] = {
+    EvaluationStatus.PENDING: {EvaluationStatus.EVALUATED},
+    EvaluationStatus.EVALUATED: {EvaluationStatus.REVIEWED},
+    EvaluationStatus.REVIEWED: {EvaluationStatus.SENT, EvaluationStatus.EVALUATED},
+    EvaluationStatus.SENT: set(),
+}
+
+
+async def _fetch_guidelines_for_question(db: AsyncSession, question_id: uuid.UUID) -> list[dict]:
+    """Fetch corporate + product-specific guidelines relevant to a question's journey."""
+    # Get journey_id from question
+    q_result = await db.execute(select(Question.journey_id).where(Question.id == question_id))
+    journey_id = q_result.scalar_one_or_none()
+    if not journey_id:
+        return []
+
+    # Get product IDs linked to the journey
+    jp_result = await db.execute(
+        select(journey_product.c.product_id).where(journey_product.c.journey_id == journey_id)
+    )
+    product_ids = [row[0] for row in jp_result.all()]
+
+    # Fetch corporate guidelines + product-specific guidelines
+    conditions = [MasterGuideline.is_corporate.is_(True)]
+    if product_ids:
+        conditions.append(MasterGuideline.product_id.in_(product_ids))
+
+    gl_result = await db.execute(
+        select(MasterGuideline).where(or_(*conditions))
+    )
+    guidelines = gl_result.scalars().all()
+
+    return [
+        {
+            "title": g.title,
+            "content": g.content,
+            "category": g.category,
+            "is_corporate": g.is_corporate,
+            "domain": g.domain,
+        }
+        for g in guidelines
+    ]
 
 
 async def evaluate_question_response(db: AsyncSession, response_id: uuid.UUID) -> Evaluation:
@@ -22,10 +68,14 @@ async def evaluate_question_response(db: AsyncSession, response_id: uuid.UUID) -
     )
     question = question_result.scalar_one()
 
+    # Fetch relevant guidelines for this question's journey and products
+    guidelines = await _fetch_guidelines_for_question(db, question.id)
+
     llm_result: EvaluationResult = await evaluate_response(
         question_text=question.text,
         answer_text=response.answer_text,
         rubric=question.rubric,
+        guidelines=guidelines if guidelines else None,
     )
 
     evaluation = Evaluation(
@@ -58,12 +108,200 @@ async def get_evaluation_by_response(db: AsyncSession, response_id: uuid.UUID) -
 async def review_evaluation(
     db: AsyncSession, evaluation: Evaluation, data: EvaluationReview, reviewer_id: uuid.UUID
 ) -> Evaluation:
+    # Validate status transition if status is being changed
+    if data.status is not None and data.status != evaluation.status:
+        allowed = _VALID_TRANSITIONS.get(evaluation.status, set())
+        if data.status not in allowed:
+            raise ValueError(
+                f"Transição inválida: {evaluation.status.value} → {data.status.value}. "
+                f"Transições permitidas: {', '.join(s.value for s in allowed) or 'nenhuma'}"
+            )
+
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(evaluation, field, value)
     evaluation.reviewed_by = reviewer_id
     await db.commit()
     await db.refresh(evaluation)
     return evaluation
+
+
+async def evaluate_participation_bulk(
+    db: AsyncSession, participation_id: uuid.UUID
+) -> list[Evaluation]:
+    """Evaluate all unevaluated responses in a participation."""
+    participation_result = await db.execute(
+        select(JourneyParticipation).where(JourneyParticipation.id == participation_id)
+    )
+    participation = participation_result.scalar_one_or_none()
+    if not participation:
+        raise ValueError("Participação não encontrada")
+
+    responses_result = await db.execute(
+        select(QuestionResponse).where(QuestionResponse.participation_id == participation_id)
+    )
+    responses = list(responses_result.scalars().all())
+
+    if not responses:
+        raise ValueError("Nenhuma resposta encontrada para esta participação")
+
+    evaluations = []
+    for resp in responses:
+        # Skip already evaluated responses
+        existing = await get_evaluation_by_response(db, resp.id)
+        if existing:
+            evaluations.append(existing)
+            continue
+
+        evaluation = await evaluate_question_response(db, resp.id)
+        evaluations.append(evaluation)
+
+    return evaluations
+
+
+async def get_participation_evaluations(
+    db: AsyncSession, participation_id: uuid.UUID
+) -> list[dict]:
+    """Get all responses + evaluations for a participation, enriched with question data."""
+    responses_result = await db.execute(
+        select(QuestionResponse)
+        .where(QuestionResponse.participation_id == participation_id)
+        .order_by(QuestionResponse.created_at)
+    )
+    responses = list(responses_result.scalars().all())
+
+    items = []
+    for resp in responses:
+        question_result = await db.execute(
+            select(Question).where(Question.id == resp.question_id)
+        )
+        question = question_result.scalar_one()
+
+        eval_result = await db.execute(
+            select(Evaluation).where(Evaluation.response_id == resp.id)
+        )
+        evaluation = eval_result.scalar_one_or_none()
+
+        items.append({
+            "response_id": resp.id,
+            "question_id": question.id,
+            "question_text": question.text,
+            "question_type": question.type.value,
+            "question_order": question.order,
+            "answer_text": resp.answer_text,
+            "evaluation": evaluation,
+        })
+
+    return sorted(items, key=lambda x: x["question_order"])
+
+
+async def list_participations_for_evaluation(
+    db: AsyncSession, skip: int = 0, limit: int = 50
+) -> list[dict]:
+    """List all participations with evaluation summary for admin review."""
+    result = await db.execute(
+        select(JourneyParticipation)
+        .options(selectinload(JourneyParticipation.journey), selectinload(JourneyParticipation.user))
+        .order_by(JourneyParticipation.started_at.desc())
+        .offset(skip)
+        .limit(limit)
+    )
+    participations = list(result.scalars().all())
+
+    items = []
+    for p in participations:
+        # Count responses
+        resp_result = await db.execute(
+            select(QuestionResponse.id).where(QuestionResponse.participation_id == p.id)
+        )
+        response_ids = [row[0] for row in resp_result.all()]
+        total_responses = len(response_ids)
+
+        # Count evaluations
+        evaluated_count = 0
+        if response_ids:
+            eval_result = await db.execute(
+                select(Evaluation).where(Evaluation.response_id.in_(response_ids))
+            )
+            evaluated_count = len(eval_result.scalars().all())
+
+        # Check for existing report
+        report_result = await db.execute(
+            select(AnalyticalReport.id).where(AnalyticalReport.participation_id == p.id)
+        )
+        has_report = report_result.scalar_one_or_none() is not None
+
+        items.append({
+            "participation_id": p.id,
+            "journey_id": p.journey_id,
+            "journey_title": p.journey.title if p.journey else "—",
+            "user_id": p.user_id,
+            "user_name": p.user.full_name if p.user else "—",
+            "user_email": p.user.email if p.user else "—",
+            "started_at": p.started_at.isoformat() if p.started_at else None,
+            "completed_at": p.completed_at.isoformat() if p.completed_at else None,
+            "total_responses": total_responses,
+            "evaluated_count": evaluated_count,
+            "has_report": has_report,
+        })
+
+    return items
+
+
+async def get_my_participations(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[dict]:
+    """Get all participations for a user with evaluation summary."""
+    result = await db.execute(
+        select(JourneyParticipation)
+        .options(selectinload(JourneyParticipation.journey))
+        .where(JourneyParticipation.user_id == user_id)
+        .order_by(JourneyParticipation.started_at.desc())
+    )
+    participations = list(result.scalars().all())
+
+    items = []
+    for p in participations:
+        resp_result = await db.execute(
+            select(QuestionResponse.id).where(QuestionResponse.participation_id == p.id)
+        )
+        response_ids = [row[0] for row in resp_result.all()]
+
+        # Calculate average score if evaluated
+        avg_score = None
+        evaluated_count = 0
+        if response_ids:
+            eval_result = await db.execute(
+                select(Evaluation).where(Evaluation.response_id.in_(response_ids))
+            )
+            evals = list(eval_result.scalars().all())
+            evaluated_count = len(evals)
+            if evals:
+                avg_score = sum(e.score_global for e in evals) / len(evals)
+
+        # Check for reports
+        report_result = await db.execute(
+            select(AnalyticalReport)
+            .where(
+                AnalyticalReport.participation_id == p.id,
+                AnalyticalReport.report_type == ReportType.PROFESSIONAL,
+            )
+        )
+        report = report_result.scalar_one_or_none()
+
+        items.append({
+            "participation_id": p.id,
+            "journey_id": p.journey_id,
+            "journey_title": p.journey.title if p.journey else "—",
+            "journey_domain": p.journey.domain if p.journey else "—",
+            "started_at": p.started_at.isoformat() if p.started_at else None,
+            "completed_at": p.completed_at.isoformat() if p.completed_at else None,
+            "total_responses": len(response_ids),
+            "evaluated_count": evaluated_count,
+            "avg_score": round(avg_score, 2) if avg_score is not None else None,
+            "report_id": str(report.id) if report else None,
+        })
+
+    return items
 
 
 async def generate_analytical_report(

@@ -272,6 +272,49 @@ class ApiClient {
   }
   getUserPoints(userId: string) { return this.request<import('@/types').UserPointsSummary>(`/api/gamification/scores/${userId}`) }
 
+  // Evaluations
+  evaluateResponse(responseId: string) {
+    return this.request<import('@/types').Evaluation>('/api/evaluations/evaluate', {
+      method: 'POST', body: JSON.stringify({ response_id: responseId }),
+    })
+  }
+  evaluateBulk(participationId: string) {
+    return this.request<import('@/types').Evaluation[]>('/api/evaluations/evaluate-bulk', {
+      method: 'POST', body: JSON.stringify({ participation_id: participationId }),
+    }, 300000)
+  }
+  getParticipationsForEvaluation(skip = 0, limit = 50) {
+    return this.request<import('@/types').ParticipationEvaluationSummary[]>(
+      `/api/evaluations/participations?skip=${skip}&limit=${limit}`
+    )
+  }
+  getParticipationDetails(participationId: string) {
+    return this.request<import('@/types').ParticipationResponseDetail[]>(
+      `/api/evaluations/participations/${participationId}/details`
+    )
+  }
+  getMyParticipations() {
+    return this.request<import('@/types').UserParticipationSummary[]>('/api/evaluations/my/participations')
+  }
+  getMyParticipationDetails(participationId: string) {
+    return this.request<import('@/types').ParticipationResponseDetail[]>(
+      `/api/evaluations/my/participations/${participationId}/details`
+    )
+  }
+  reviewEvaluation(evaluationId: string, data: { status?: string; review_notes?: string; score_global?: number; general_comment?: string }) {
+    return this.request<import('@/types').Evaluation>(`/api/evaluations/${evaluationId}/review`, {
+      method: 'PATCH', body: JSON.stringify(data),
+    })
+  }
+  generateReport(participationId: string, reportType: 'manager' | 'professional' = 'professional') {
+    return this.request<import('@/types').AnalyticalReport>('/api/evaluations/reports', {
+      method: 'POST', body: JSON.stringify({ participation_id: participationId, report_type: reportType }),
+    }, 150000)
+  }
+  getReport(reportId: string) {
+    return this.request<import('@/types').AnalyticalReport>(`/api/evaluations/reports/${reportId}`)
+  }
+
   // Copilot
   copilotSuggestCompetencies() {
     return this.request<import('@/types').CopilotCompetencySuggestResponse>('/api/copilot/suggest-competencies', { method: 'POST' }, 150000)

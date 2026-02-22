@@ -174,12 +174,16 @@ export interface UserBadge {
 
 export interface Evaluation {
   id: string
+  response_id: string
   score_global: number
-  criteria: EvaluationCriteria[]
+  criteria: { criterios?: EvaluationCriteria[] } & Record<string, unknown>
   general_comment: string
   recommendations: string[]
   mapped_competencies: string[]
-  status: 'PENDING' | 'EVALUATED' | 'REVIEWED' | 'SENT'
+  status: 'pending' | 'evaluated' | 'reviewed' | 'sent'
+  reviewed_by: string | null
+  review_notes: string | null
+  created_at: string
 }
 
 export interface EvaluationCriteria {
@@ -187,6 +191,51 @@ export interface EvaluationCriteria {
   peso: number
   nota: number
   comentario: string
+}
+
+export interface ParticipationEvaluationSummary {
+  participation_id: string
+  journey_id: string
+  journey_title: string
+  user_id: string
+  user_name: string
+  user_email: string
+  started_at: string | null
+  completed_at: string | null
+  total_responses: number
+  evaluated_count: number
+  has_report: boolean
+}
+
+export interface ParticipationResponseDetail {
+  response_id: string
+  question_id: string
+  question_text: string
+  question_type: string
+  question_order: number
+  answer_text: string
+  evaluation: Evaluation | null
+}
+
+export interface UserParticipationSummary {
+  participation_id: string
+  journey_id: string
+  journey_title: string
+  journey_domain: string
+  started_at: string | null
+  completed_at: string | null
+  total_responses: number
+  evaluated_count: number
+  avg_score: number | null
+  report_id: string | null
+}
+
+export interface AnalyticalReport {
+  id: string
+  participation_id: string
+  report_type: 'manager' | 'professional'
+  content: Record<string, unknown>
+  created_at: string
 }
 
 // Copilot types

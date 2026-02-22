@@ -65,7 +65,13 @@ class ApiClient {
 
     if (res.status === 401) {
       this._authenticated = false
-      if (typeof window !== 'undefined') window.location.href = '/login'
+      // Only redirect if not already on a public page (avoids infinite reload loop)
+      if (typeof window !== 'undefined') {
+        const p = window.location.pathname
+        if (p !== '/login' && !p.startsWith('/auth/')) {
+          window.location.href = '/login'
+        }
+      }
       throw new Error('Não autorizado')
     }
 

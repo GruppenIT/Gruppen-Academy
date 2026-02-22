@@ -438,9 +438,18 @@ def _parse_respondent_sections(pages_text: list[str]) -> list[dict]:
             # Try to extract the journey title from lines before "Nome:"
             journey_title = _extract_journey_title(page_text)
 
+            # Clean name: remove parenthetical suffixes like "(Gruppen it)"
+            raw_name = name_match.group(1).strip()
+            clean_name = re.sub(r'\s*\(.*?\)\s*$', '', raw_name).strip()
+
+            # Clean email: extract just the email address, strip any trailing text
+            raw_email = email_match.group(1).strip()
+            email_only = re.match(r'[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}', raw_email)
+            clean_email = email_only.group(0) if email_only else raw_email.rstrip('.')
+
             current = {
-                "user_name": name_match.group(1).strip(),
-                "user_email": email_match.group(1).strip().rstrip('.'),
+                "user_name": clean_name,
+                "user_email": clean_email,
                 "journey_title": journey_title,
                 "page_start": page_idx,
                 "page_end": page_idx,

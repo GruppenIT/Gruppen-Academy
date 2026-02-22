@@ -37,3 +37,4 @@ class Team(Base):
 
     members = relationship("User", secondary=team_member, back_populates="teams")
     journeys = relationship("Journey", secondary=journey_team, back_populates="teams")
+    trainings = relationship("Training", secondary="training_teams", back_populates="teams")

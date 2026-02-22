@@ -18,6 +18,7 @@ from app.journeys.router import router as journeys_router
 from app.learning.router import router as learning_router
 from app.settings.router import router as settings_router
 from app.teams.router import router as teams_router
+from app.trainings.router import router as trainings_router
 from app.users.router import router as users_router
 
 logging.basicConfig(level=logging.INFO)
@@ -99,6 +100,7 @@ app.include_router(learning_router, prefix="/api/learning", tags=["learning"])
 app.include_router(gamification_router, prefix="/api/gamification", tags=["gamification"])
 app.include_router(copilot_router, prefix="/api/copilot", tags=["copilot"])
 app.include_router(teams_router, prefix="/api/teams", tags=["teams"])
+app.include_router(trainings_router, prefix="/api/trainings", tags=["trainings"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
 
 

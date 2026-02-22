@@ -350,3 +350,71 @@ Sugestão de convenções (podem ser adaptadas conforme implementação):
 ---
 
 Este documento deve servir como contrato de comportamento para qualquer orquestração envolvendo Claude/LLM neste projeto. Ajuste e versione conforme novas regras de negócio e aprendizados forem surgindo.
+
+---
+
+## Módulo de Treinamentos (feature em desenvolvimento)
+
+### Visão geral
+
+Além das Jornadas de Avaliação, a plataforma suporta **Treinamentos** — capacitação assíncrona com conteúdo estruturado em módulos, quizzes opcionais e integração com gamificação.
+
+### Entidades
+
+- **Training**: título, descrição, domínio, status (draft/published/archived), estimated_duration_minutes, xp_reward. M:N com Team, Product, Competency.
+- **TrainingModule**: pertence a Training, ordenado. content_type (document/scorm/ai_generated/rich_text), content_data (JSONB), file_path, has_quiz, quiz_required_to_advance, xp_reward.
+- **ModuleQuiz**: pertence a TrainingModule (0:1). title, passing_score.
+- **QuizQuestion**: pertence a ModuleQuiz, ordenado. text, type (multiple_choice/true_false/essay), options (JSONB), correct_answer, explanation, weight. M:N com Competency.
+- **TrainingEnrollment**: user+training, status (pending/in_progress/completed), current_module_order, enrolled_at, completed_at.
+- **ModuleProgress**: pertence a TrainingEnrollment. module_id, started_at, completed_at, content_viewed, quiz_score.
+- **QuizAttempt**: pertence a ModuleProgress. score, answers (JSONB), passed, started_at, completed_at.
+
+### Ciclo de vida
+
+1. Admin cria treinamento em rascunho (módulo 1 criado automaticamente).
+2. Admin adiciona módulos, faz upload de conteúdo (PDF, PPTX, SCORM .zip) ou gera com IA.
+3. Admin opcionalmente cria quiz por módulo (manual ou com IA).
+4. Admin publica e vincula a equipes → cria TrainingEnrollment (status=pending) para cada membro.
+5. Profissional vê pendência no dashboard, consome módulos em sequência.
+6. Se quiz obrigatório, precisa nota >= passing_score para avançar. Re-tentativas ilimitadas.
+7. Ao concluir todos os módulos → enrollment.status=completed → XP atribuído via tabela scores.
+
+### Regras de negócio
+
+- Módulo 1 criado automaticamente ao criar treinamento.
+- Publicação requer >= 1 módulo; módulos com quiz precisam >= 1 pergunta.
+- Treinamentos publicados não podem ter conteúdo editado (mesmo padrão de Journey).
+- XP: module.xp_reward ao concluir módulo + training.xp_reward ao concluir treinamento.
+- Gamificação: usa mesma tabela scores com source="training_module" e source="training".
+- Badge criteria nova: trainings>=N.
+
+### Geração com IA
+
+- **Conteúdo**: admin fornece texto de orientação + anexo opcional (PDF/PPTX). IA gera HTML estruturado.
+- **Quiz**: baseado no conteúdo do módulo. Admin configura nº perguntas, tipos, nota mínima.
+
+### SCORM (MVP)
+
+- Upload .zip, extração server-side, iframe no frontend.
+- API wrapper mínimo para capturar cmi.core.lesson_status e cmi.core.score.raw.
+
+### Fases de implementação
+
+1. Models + Migration + CRUD básico (Training, Module, endpoints admin)
+2. Upload de arquivos + viewer frontend
+3. Publicação + enrollment + equipes
+4. Progresso do profissional (telas de consumo, barra de progresso)
+5. Quiz manual (CRUD, tentativa, correção automática)
+6. Geração IA — conteúdo
+7. Geração IA — quiz
+8. SCORM básico
+9. Dashboard pendências + XP
+10. Tela gestor
+
+### Endpoints planejados
+
+**Admin**: POST/GET/PUT /api/trainings, PATCH .../publish, PATCH .../archive, POST/PUT/DELETE .../modules, POST .../modules/.../upload, POST .../modules/.../generate-content, POST .../modules/.../quiz, POST .../modules/.../quiz/generate.
+
+**Profissional**: GET /api/trainings/my, GET .../my/pending, GET .../progress, POST .../modules/.../view, POST .../modules/.../quiz/attempt, GET .../modules/.../quiz/attempts.
+
+**Gestor**: GET /api/trainings/{id}/enrollments.

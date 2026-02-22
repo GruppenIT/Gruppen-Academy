@@ -16,6 +16,10 @@ from app.gamification.models import Badge, Score, UserBadge  # noqa: F401
 from app.journeys.models import Journey, JourneyParticipation, Question, QuestionResponse  # noqa: F401
 from app.learning.models import ActivityCompletion, LearningActivity, LearningPath, TutorSession  # noqa: F401
 from app.settings.models import SystemSetting  # noqa: F401
+from app.trainings.models import (  # noqa: F401
+    ModuleProgress, ModuleQuiz, QuizAttempt, QuizQuestion,
+    Training, TrainingEnrollment, TrainingModule,
+)
 from app.users.models import User  # noqa: F401
 
 config = context.config

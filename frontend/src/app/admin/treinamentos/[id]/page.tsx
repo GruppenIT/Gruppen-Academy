@@ -79,6 +79,17 @@ export default function AdminTrainingDetailPage() {
     } finally { setLoading(false) }
   }, [id])
 
+  // Reload only modules + training metadata (without resetting form fields)
+  const reloadModules = useCallback(async () => {
+    try {
+      const t = await api.getTraining(id)
+      setTraining(t)
+      setModules(t.modules || [])
+    } catch {
+      setError('Erro ao recarregar modulos')
+    }
+  }, [id])
+
   useEffect(() => { load() }, [load])
 
   const isDraft = training?.status === 'draft'
@@ -102,7 +113,7 @@ export default function AdminTrainingDetailPage() {
     try {
       await api.createTrainingModule(id, { title: newModuleTitle.trim() })
       setNewModuleTitle('')
-      load()
+      reloadModules()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao adicionar modulo')
     } finally { setAddingModule(false) }
@@ -112,7 +123,7 @@ export default function AdminTrainingDetailPage() {
     if (!confirm('Remover este modulo?')) return
     try {
       await api.deleteTrainingModule(id, moduleId)
-      load()
+      reloadModules()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao remover modulo')
     }
@@ -123,7 +134,7 @@ export default function AdminTrainingDetailPage() {
     setError('')
     try {
       await api.uploadModuleFile(id, moduleId, file, allowDownload)
-      load()
+      reloadModules()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao enviar arquivo')
     } finally { setUploadingModule(null) }
@@ -132,7 +143,7 @@ export default function AdminTrainingDetailPage() {
   const handleUpdateModuleSettings = async (moduleId: string, data: Record<string, unknown>) => {
     try {
       await api.updateTrainingModule(id, moduleId, data)
-      load()
+      reloadModules()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao atualizar modulo')
     }
@@ -315,7 +326,7 @@ export default function AdminTrainingDetailPage() {
                   isDraft={isDraft}
                   uploadingModule={uploadingModule}
                   onUpload={(file, allowDl) => handleUpload(mod.id, file, allowDl)}
-                  onReload={load}
+                  onReload={reloadModules}
                   onError={setError}
                   onUpdateModule={(data) => handleUpdateModuleSettings(mod.id, data)}
                 />
@@ -328,7 +339,7 @@ export default function AdminTrainingDetailPage() {
                   hasQuiz={mod.has_quiz}
                   quizRequiredProp={mod.quiz_required_to_advance}
                   isDraft={isDraft}
-                  onReload={load}
+                  onReload={reloadModules}
                   onError={setError}
                 />
 

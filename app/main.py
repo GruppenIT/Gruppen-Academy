@@ -29,20 +29,33 @@ logger = logging.getLogger(__name__)
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    # Paths served inside iframes (training module content)
+    _EMBEDDABLE_SUFFIXES = ("/preview", "/file", "/scorm-launch")
+
     async def dispatch(self, request: Request, call_next) -> Response:
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
         response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+
+        # Allow same-origin iframe embedding for training content endpoints
+        path = request.url.path
+        is_embeddable = (
+            path.startswith("/api/trainings/")
+            and any(path.endswith(s) or "/scorm/" in path for s in self._EMBEDDABLE_SUFFIXES)
+        )
+        response.headers["X-Frame-Options"] = "SAMEORIGIN" if is_embeddable else "DENY"
+
         if settings.app_env == "production":
             response.headers["Strict-Transport-Security"] = (
                 "max-age=31536000; includeSubDomains"
             )
             response.headers["Content-Security-Policy"] = (
-                "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
-                "img-src 'self' data:; font-src 'self'; connect-src 'self'"
+                "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data:; font-src 'self'; "
+                "connect-src 'self'; frame-src 'self'"
             )
         return response
 

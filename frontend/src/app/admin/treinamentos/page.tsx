@@ -5,7 +5,7 @@ import { api } from '@/lib/api'
 import type { Training } from '@/types'
 import {
   Plus, Search, Loader2, LibraryBig, Archive, Eye,
-  Upload, ChevronDown, X, FileArchive,
+  Upload, ChevronDown, X, FileArchive, PenLine,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -25,11 +25,11 @@ export default function AdminTrainingsPage() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
-  const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
 
-  // Dropdown + SCORM import
+  // Dropdown + creation modals
   const [showCreateMenu, setShowCreateMenu] = useState(false)
+  const [showManualModal, setShowManualModal] = useState(false)
   const [showScormModal, setShowScormModal] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -53,17 +53,9 @@ export default function AdminTrainingsPage() {
     return () => document.removeEventListener('mousedown', handler)
   }, [showCreateMenu])
 
-  const handleCreate = async () => {
+  const handleOpenManualModal = () => {
     setShowCreateMenu(false)
-    setCreating(true)
-    setError('')
-    try {
-      const t = await api.createTraining({ title: 'Novo Treinamento' })
-      window.location.href = `/admin/treinamentos/${t.id}`
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao criar')
-      setCreating(false)
-    }
+    setShowManualModal(true)
   }
 
   const handleArchive = async (id: string) => {
@@ -95,10 +87,9 @@ export default function AdminTrainingsPage() {
         <div className="relative" ref={menuRef}>
           <button
             onClick={() => setShowCreateMenu(!showCreateMenu)}
-            disabled={creating}
             className="btn-primary flex items-center gap-2"
           >
-            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            <Plus className="w-4 h-4" />
             Novo Treinamento
             <ChevronDown className="w-3.5 h-3.5 opacity-60" />
           </button>
@@ -106,11 +97,11 @@ export default function AdminTrainingsPage() {
           {showCreateMenu && (
             <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-xl shadow-lg border border-gray-100 z-20 overflow-hidden animate-slide-up">
               <button
-                onClick={handleCreate}
+                onClick={handleOpenManualModal}
                 className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center gap-3"
               >
                 <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
-                  <Plus className="w-4 h-4 text-indigo-600" />
+                  <PenLine className="w-4 h-4 text-indigo-600" />
                 </div>
                 <div>
                   <p className="text-sm font-medium text-gray-900">Criar manualmente</p>
@@ -215,6 +206,14 @@ export default function AdminTrainingsPage() {
         </div>
       )}
 
+      {/* Manual Create Modal */}
+      {showManualModal && (
+        <ManualCreateModal
+          onClose={() => setShowManualModal(false)}
+          onError={setError}
+        />
+      )}
+
       {/* SCORM Import Modal */}
       {showScormModal && (
         <ScormImportModal
@@ -222,6 +221,132 @@ export default function AdminTrainingsPage() {
           onError={setError}
         />
       )}
+    </div>
+  )
+}
+
+
+// ── Manual Create Modal ──
+function ManualCreateModal({ onClose, onError }: {
+  onClose: () => void
+  onError: (msg: string) => void
+}) {
+  const [title, setTitle] = useState('')
+  const [description, setDescription] = useState('')
+  const [domain, setDomain] = useState('vendas')
+  const [level, setLevel] = useState('intermediario')
+  const [duration, setDuration] = useState(60)
+  const [xpReward, setXpReward] = useState(100)
+  const [creating, setCreating] = useState(false)
+
+  const handleCreate = async () => {
+    if (!title.trim()) return
+    setCreating(true)
+    try {
+      const t = await api.createTraining({
+        title: title.trim(),
+        description: description.trim() || undefined,
+        domain,
+        participant_level: level,
+        estimated_duration_minutes: duration,
+        xp_reward: xpReward,
+      })
+      window.location.href = `/admin/treinamentos/${t.id}`
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao criar treinamento')
+      setCreating(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg animate-slide-up">
+        {/* Header */}
+        <div className="flex items-center justify-between p-5 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <PenLine className="w-5 h-5 text-indigo-600" />
+            <h3 className="font-bold text-gray-900">Criar treinamento</h3>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
+          {/* Info banner */}
+          <div className="rounded-xl bg-indigo-50 p-3 text-xs text-indigo-700">
+            O treinamento sera criado em rascunho. Voce podera adicionar modulos com upload de arquivos, geracao por IA ou conteudo rico na pagina seguinte.
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Titulo *</label>
+            <input
+              type="text"
+              className="input-field w-full"
+              placeholder="Ex: Fundamentos de BaaS para Vendas"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              autoFocus
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Descricao</label>
+            <textarea
+              className="input-field w-full"
+              rows={2}
+              placeholder="Opcional..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">Dominio</label>
+              <select className="input-field w-full" value={domain} onChange={(e) => setDomain(e.target.value)}>
+                <option value="vendas">Vendas</option>
+                <option value="suporte">Suporte</option>
+                <option value="lideranca">Lideranca</option>
+                <option value="cs">Customer Success</option>
+                <option value="geral">Geral</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">Nivel</label>
+              <select className="input-field w-full" value={level} onChange={(e) => setLevel(e.target.value)}>
+                <option value="iniciante">Iniciante</option>
+                <option value="intermediario">Intermediario</option>
+                <option value="avancado">Avancado</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">Duracao (min)</label>
+              <input type="number" className="input-field w-full" value={duration} onChange={(e) => setDuration(Number(e.target.value))} min={1} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-gray-700 block mb-1">XP ao concluir</label>
+              <input type="number" className="input-field w-full" value={xpReward} onChange={(e) => setXpReward(Number(e.target.value))} min={0} />
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-100">
+          <button onClick={onClose} className="btn-secondary px-4 py-2">Cancelar</button>
+          <button
+            onClick={handleCreate}
+            disabled={!title.trim() || creating}
+            className="btn-primary flex items-center gap-2 px-4 py-2"
+          >
+            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+            {creating ? 'Criando...' : 'Criar treinamento'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

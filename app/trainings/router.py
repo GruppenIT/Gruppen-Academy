@@ -57,6 +57,7 @@ from app.trainings.service import (
     get_quiz_question,
     get_training,
     get_training_enrollments,
+    hard_delete_training,
     list_modules,
     list_trainings,
     mark_content_viewed,
@@ -173,6 +174,22 @@ async def archive_training_endpoint(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return archived
+
+
+@router.delete("/{training_id}", status_code=status.HTTP_200_OK)
+async def delete_training_endpoint(
+    training_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+    ),
+):
+    """Hard delete a training, reversing all XP and removing all related data."""
+    try:
+        result = await hard_delete_training(db, training_id, settings.upload_dir)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
 
 
 # ──────────────────────────────────────────────

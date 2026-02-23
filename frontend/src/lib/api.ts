@@ -485,6 +485,9 @@ class ApiClient {
   archiveTraining(id: string) {
     return this.request<import('@/types').Training>(`/api/trainings/${id}/archive`, { method: 'PATCH' })
   }
+  deleteTraining(id: string) {
+    return this.request<{ deleted: boolean; affected_users: number; xp_reversed: number }>(`/api/trainings/${id}`, { method: 'DELETE' })
+  }
   getTrainingModules(trainingId: string) {
     return this.request<import('@/types').TrainingModule[]>(`/api/trainings/${trainingId}/modules`)
   }

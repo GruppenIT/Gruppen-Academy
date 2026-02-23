@@ -1,9 +1,14 @@
+import logging
+import os
+import shutil
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
 
 from app.catalog.models import Competency, Product
 from app.teams.models import Team
@@ -185,6 +190,106 @@ async def archive_training(db: AsyncSession, training: Training) -> Training:
     await db.commit()
     await db.refresh(training)
     return training
+
+
+async def hard_delete_training(
+    db: AsyncSession, training_id: uuid.UUID, upload_dir: str
+) -> dict:
+    """Permanently delete a training, reversing all XP and cleaning up files.
+
+    Returns summary with affected_users count and total XP reversed.
+    """
+    from app.gamification.models import Score, UserBadge
+    from app.gamification.service import check_and_award_badges
+
+    training = await get_training(db, training_id)
+    if not training:
+        raise ValueError("Treinamento não encontrado.")
+
+    # 1. Collect affected user IDs (before cascade wipes enrollments)
+    enrollment_result = await db.execute(
+        select(TrainingEnrollment.user_id).where(
+            TrainingEnrollment.training_id == training_id
+        )
+    )
+    affected_user_ids = list({row[0] for row in enrollment_result.all()})
+
+    # 2. Collect module IDs for score cleanup
+    module_result = await db.execute(
+        select(TrainingModule.id).where(
+            TrainingModule.training_id == training_id
+        )
+    )
+    module_ids = [row[0] for row in module_result.all()]
+
+    # 3. Calculate total XP to reverse, then delete scores
+    xp_conditions = [
+        (Score.source == "training") & (Score.source_id == training_id),
+    ]
+    if module_ids:
+        xp_conditions.append(
+            (Score.source == "training_module") & (Score.source_id.in_(module_ids))
+        )
+
+    from sqlalchemy import or_
+
+    combined_filter = or_(*xp_conditions)
+
+    xp_result = await db.execute(
+        select(func.coalesce(func.sum(Score.points), 0)).where(combined_filter)
+    )
+    total_xp_reversed = xp_result.scalar_one()
+
+    await db.execute(sa_delete(Score).where(combined_filter))
+
+    # 4. Delete the training (CASCADE handles modules, enrollments, progress, etc.)
+    await db.delete(training)
+    await db.flush()
+
+    # 5. Re-check badges for affected users (some may lose eligibility)
+    for user_id in affected_user_ids:
+        # Remove badges whose criteria are no longer met
+        existing_badges = await db.execute(
+            select(UserBadge).where(UserBadge.user_id == user_id)
+        )
+        from app.gamification.models import Badge
+
+        for ub in existing_badges.scalars().all():
+            badge = await db.get(Badge, ub.badge_id)
+            if not badge:
+                continue
+            from app.gamification.service import _check_criteria, get_user_points
+
+            pts = await get_user_points(db, user_id)
+            # Check points_threshold
+            if badge.points_threshold and pts.total_points < badge.points_threshold:
+                await db.delete(ub)
+                continue
+            # Check criteria-based badges
+            if badge.criteria:
+                still_earned = await _check_criteria(
+                    db, user_id, badge.criteria, pts.total_points
+                )
+                if not still_earned and not (
+                    badge.points_threshold and pts.total_points >= badge.points_threshold
+                ):
+                    await db.delete(ub)
+
+    await db.commit()
+
+    # 6. Clean up uploaded files (non-critical, log errors)
+    training_files_dir = os.path.join(upload_dir, "trainings", str(training_id))
+    if os.path.isdir(training_files_dir):
+        try:
+            shutil.rmtree(training_files_dir)
+        except OSError:
+            logger.warning("Failed to remove training files at %s", training_files_dir)
+
+    return {
+        "deleted": True,
+        "affected_users": len(affected_user_ids),
+        "xp_reversed": total_xp_reversed,
+    }
 
 
 # --- Module CRUD ---

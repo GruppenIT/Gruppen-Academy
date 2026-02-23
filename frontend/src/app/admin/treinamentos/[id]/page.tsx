@@ -47,6 +47,10 @@ export default function AdminTrainingDetailPage() {
   const [duration, setDuration] = useState(60)
   const [xpReward, setXpReward] = useState(100)
 
+  // Delete state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
   // Publish modal
   const [showPublish, setShowPublish] = useState(false)
   const [teams, setTeams] = useState<Team[]>([])
@@ -149,6 +153,17 @@ export default function AdminTrainingDetailPage() {
     }
   }
 
+  const handleDelete = async () => {
+    setDeleting(true); setError('')
+    try {
+      await api.deleteTraining(id)
+      router.push('/admin/treinamentos')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao excluir treinamento')
+      setShowDeleteConfirm(false)
+    } finally { setDeleting(false) }
+  }
+
   const handleOpenPublish = async () => {
     try {
       const t = await api.getTeams()
@@ -201,17 +216,23 @@ export default function AdminTrainingDetailPage() {
             {training.status === 'draft' ? 'Rascunho' : training.status === 'published' ? 'Publicado' : 'Arquivado'}
           </p>
         </div>
-        {isDraft && (
-          <div className="flex items-center gap-2">
-            <button onClick={handleSave} disabled={saving} className="btn-secondary flex items-center gap-2 px-4 py-2">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              Salvar
-            </button>
-            <button onClick={handleOpenPublish} className="btn-primary flex items-center gap-2 px-4 py-2">
-              <Send className="w-4 h-4" /> Publicar
-            </button>
-          </div>
-        )}
+        <div className="flex items-center gap-2">
+          {isDraft && (
+            <>
+              <button onClick={handleSave} disabled={saving} className="btn-secondary flex items-center gap-2 px-4 py-2">
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                Salvar
+              </button>
+              <button onClick={handleOpenPublish} className="btn-primary flex items-center gap-2 px-4 py-2">
+                <Send className="w-4 h-4" /> Publicar
+              </button>
+            </>
+          )}
+          <button onClick={() => setShowDeleteConfirm(true)}
+            className="text-sm text-red-500 hover:text-red-700 flex items-center gap-1 px-3 py-2">
+            <Trash2 className="w-4 h-4" /> Excluir
+          </button>
+        </div>
       </div>
 
       {error && <div className="p-3 rounded-xl bg-red-50 text-red-700 text-sm mb-4">{error}</div>}
@@ -406,6 +427,37 @@ export default function AdminTrainingDetailPage() {
               <button onClick={handlePublish} disabled={publishing || selectedTeams.length === 0}
                 className="btn-primary flex items-center gap-2 px-4 py-2">
                 {publishing && <Loader2 className="w-4 h-4 animate-spin" />} Publicar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm animate-slide-up">
+            <div className="p-6 text-center">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-4">
+                <Trash2 className="w-6 h-6 text-red-600" />
+              </div>
+              <h3 className="font-bold text-gray-900 mb-2">Excluir treinamento?</h3>
+              <p className="text-sm text-gray-600 mb-1">
+                <strong>{training.title}</strong> sera excluido permanentemente.
+              </p>
+              <p className="text-xs text-gray-400">
+                Todo o historico sera removido: modulos, quizzes, progresso dos profissionais e XP ganho com este treinamento.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 p-5 border-t border-gray-100">
+              <button onClick={() => setShowDeleteConfirm(false)} disabled={deleting}
+                className="btn-secondary flex-1 px-4 py-2">
+                Cancelar
+              </button>
+              <button onClick={handleDelete} disabled={deleting}
+                className="flex-1 px-4 py-2 rounded-xl text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50 flex items-center justify-center gap-2">
+                {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+                Excluir
               </button>
             </div>
           </div>

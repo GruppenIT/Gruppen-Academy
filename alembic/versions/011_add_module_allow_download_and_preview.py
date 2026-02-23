@@ -1,14 +1,14 @@
 """Add allow_download and preview_file_path to training_modules
 
-Revision ID: 011
-Revises: 010
+Revision ID: 011_allow_download_preview
+Revises: 010_add_trainings
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "011"
-down_revision = "010"
+revision = "011_allow_download_preview"
+down_revision = "010_add_trainings"
 branch_labels = None
 depends_on = None
 

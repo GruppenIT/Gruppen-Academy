@@ -274,6 +274,9 @@ O conteúdo deve:
 - Cobrir conceitos-chave, boas práticas e aplicações no dia a dia.
 - Evitar jargão excessivo quando o público não for técnico.
 - Se houver material de referência anexado, basear-se nele como fonte primária.
+- Quando fizer sentido, sugira vídeos complementares em cada seção usando o campo \
+"video_suggestions". Indique o tema/título do vídeo que seria útil — o admin vai \
+substituir pela URL real depois. Não invente URLs.
 
 Retorne SEMPRE um JSON válido no formato:
 {
@@ -281,13 +284,17 @@ Retorne SEMPRE um JSON válido no formato:
   "sections": [
     {
       "heading": "<título da seção>",
-      "content": "<conteúdo em formato markdown>"
+      "content": "<conteúdo em formato markdown>",
+      "video_suggestions": ["<descrição do vídeo sugerido>"]
     }
   ],
   "summary": "<resumo em 2-3 frases do conteúdo gerado>",
   "key_concepts": ["<conceito 1>", "<conceito 2>"],
   "estimated_reading_minutes": <número inteiro>
 }
+
+O campo "video_suggestions" é opcional em cada seção — inclua apenas quando um vídeo \
+realmente agregaria valor ao aprendizado.
 """
 
 TRAINING_QUIZ_SYSTEM_PROMPT = """\

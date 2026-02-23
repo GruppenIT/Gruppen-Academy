@@ -327,6 +327,7 @@ async def upload_module_file(
     training_id: uuid.UUID,
     module_id: uuid.UUID,
     file: UploadFile = File(...),
+    allow_download: bool = Form(True),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(
         require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)
@@ -374,11 +375,19 @@ async def upload_module_file(
     module.original_filename = file.filename
     module.mime_type = content_type
     module.content_type = MIME_TO_CONTENT_TYPE.get(content_type, ModuleContentType.DOCUMENT)
+    module.allow_download = allow_download
 
     # SCORM: extract zip and detect entry point
     if module.content_type == ModuleContentType.SCORM:
         scorm_data = _extract_scorm_package(file_path, upload_dir, str(module_id))
         module.content_data = scorm_data
+
+    # Generate PDF preview for non-PDF documents (PPTX, DOCX, etc.)
+    module.preview_file_path = None
+    if module.content_type == ModuleContentType.DOCUMENT and not content_type.endswith("/pdf"):
+        preview_path = _convert_to_pdf_preview(file_path, upload_dir, str(module_id))
+        if preview_path:
+            module.preview_file_path = preview_path
 
     await db.commit()
     await db.refresh(module)
@@ -446,6 +455,62 @@ def _extract_scorm_package(zip_path: str, upload_dir: str, module_id: str) -> di
         "extract_dir": extract_dir,
         "scorm_version": "auto",
     }
+
+
+def _convert_to_pdf_preview(file_path: str, upload_dir: str, module_id: str) -> str | None:
+    """Convert PPTX/DOCX to PDF using LibreOffice for inline preview."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            [
+                "libreoffice", "--headless", "--norestore", "--convert-to", "pdf",
+                "--outdir", upload_dir, file_path,
+            ],
+            capture_output=True,
+            timeout=120,
+        )
+        if result.returncode != 0:
+            logger.warning("LibreOffice conversion failed for %s: %s", file_path, result.stderr.decode(errors="replace"))
+            return None
+
+        # LibreOffice outputs {original_name}.pdf in the outdir
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        pdf_path = os.path.join(upload_dir, f"{base_name}.pdf")
+        if os.path.isfile(pdf_path):
+            return pdf_path
+        logger.warning("PDF preview not found after conversion: %s", pdf_path)
+        return None
+    except FileNotFoundError:
+        logger.info("LibreOffice not available — skipping PDF preview generation")
+        return None
+    except subprocess.TimeoutExpired:
+        logger.warning("LibreOffice conversion timed out for %s", file_path)
+        return None
+    except Exception as e:
+        logger.warning("Error converting to PDF preview: %s", e)
+        return None
+
+
+@router.get("/{training_id}/modules/{module_id}/preview")
+async def serve_module_preview(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Serve the PDF preview of a PPTX/DOCX module for inline viewing."""
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+    if not module.preview_file_path or not os.path.isfile(module.preview_file_path):
+        raise HTTPException(status_code=404, detail="Preview não disponível")
+
+    return FileResponse(
+        path=module.preview_file_path,
+        media_type="application/pdf",
+        filename=f"preview_{module.original_filename or 'document'}.pdf",
+    )
 
 
 @router.get("/{training_id}/modules/{module_id}/scorm-launch")
@@ -584,6 +649,11 @@ async def serve_module_file(
         raise HTTPException(status_code=404, detail="Módulo não encontrado")
     if not module.file_path or not os.path.isfile(module.file_path):
         raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+
+    # Admins always can download; professionals need allow_download
+    is_admin = current_user.role in (UserRole.ADMIN, UserRole.SUPER_ADMIN)
+    if not is_admin and not module.allow_download:
+        raise HTTPException(status_code=403, detail="Download não permitido para este conteúdo.")
 
     return FileResponse(
         path=module.file_path,
@@ -1011,9 +1081,11 @@ async def training_progress_endpoint(
                 order=mod.order,
                 content_type=mod.content_type,
                 original_filename=mod.original_filename,
+                mime_type=mod.mime_type,
                 has_quiz=mod.has_quiz,
                 quiz_required_to_advance=mod.quiz_required_to_advance,
                 xp_reward=mod.xp_reward,
+                allow_download=mod.allow_download,
                 content_viewed=content_viewed,
                 quiz_passed=quiz_passed,
                 quiz_score=quiz_score,

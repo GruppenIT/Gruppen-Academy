@@ -7,9 +7,17 @@ import { api } from '@/lib/api'
 import type { TrainingProgressOut, TrainingProgressModule, TrainingModule as TrainingModuleType, QuizQuestion, ModuleQuiz, QuizAttemptOut } from '@/types'
 import {
   ArrowLeft, FileText, CheckCircle2, XCircle, ChevronRight,
-  Loader2, Download, Eye, Box,
+  Loader2, Download, Eye, Box, Video,
 } from 'lucide-react'
 import { clsx } from 'clsx'
+
+function parseVideoEmbedUrl(url: string): string | null {
+  const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}`
+  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/)
+  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`
+  return null
+}
 
 export default function ModuleContentPage() {
   const params = useParams()
@@ -179,11 +187,17 @@ export default function ModuleContentPage() {
     )
   }
 
-  // Determine file URL
+  // Determine file URL and preview availability
   const fileUrl = currentModule.original_filename
     ? api.getModuleFileUrl(trainingId, currentModule.module_id)
     : null
   const isPdf = currentModule.original_filename?.toLowerCase().endsWith('.pdf')
+  const hasPreview = moduleDetail?.preview_file_path
+  const previewUrl = hasPreview ? api.getModulePreviewUrl(trainingId, currentModule.module_id) : null
+  const canDownload = currentModule.allow_download
+
+  // Video embeds from content_data
+  const videoEmbeds = (moduleDetail?.content_data?.videos as { url: string; title: string }[] | undefined) ?? []
 
   return (
     <AppShell>
@@ -257,14 +271,16 @@ export default function ModuleContentPage() {
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-gray-700">Conteúdo</h2>
-            <a
-              href={fileUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="btn-secondary text-xs flex items-center gap-1"
-            >
-              <Download className="w-3.5 h-3.5" /> Baixar arquivo
-            </a>
+            {canDownload && (
+              <a
+                href={fileUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary text-xs flex items-center gap-1"
+              >
+                <Download className="w-3.5 h-3.5" /> Baixar arquivo
+              </a>
+            )}
           </div>
           {isPdf ? (
             <div className="border rounded-xl overflow-hidden bg-gray-50" style={{ height: '70vh' }}>
@@ -274,19 +290,33 @@ export default function ModuleContentPage() {
                 title={currentModule.original_filename || 'Conteúdo'}
               />
             </div>
+          ) : previewUrl ? (
+            <div className="border rounded-xl overflow-hidden bg-gray-50" style={{ height: '70vh' }}>
+              <iframe
+                src={previewUrl}
+                className="w-full h-full"
+                title={currentModule.original_filename || 'Conteúdo'}
+              />
+            </div>
           ) : (
             <div className="card p-8 text-center">
               <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
               <p className="text-gray-600 font-medium">{currentModule.original_filename}</p>
-              <p className="text-sm text-gray-400 mt-1">Baixe o arquivo para visualizar o conteúdo.</p>
-              <a
-                href={fileUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-primary text-sm mt-4 inline-flex items-center gap-1"
-              >
-                <Download className="w-4 h-4" /> Baixar
-              </a>
+              {canDownload ? (
+                <>
+                  <p className="text-sm text-gray-400 mt-1">Baixe o arquivo para visualizar o conteúdo.</p>
+                  <a
+                    href={fileUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-primary text-sm mt-4 inline-flex items-center gap-1"
+                  >
+                    <Download className="w-4 h-4" /> Baixar
+                  </a>
+                </>
+              ) : (
+                <p className="text-sm text-gray-400 mt-1">Visualização não disponível para este formato.</p>
+              )}
             </div>
           )}
         </div>
@@ -294,6 +324,32 @@ export default function ModuleContentPage() {
         <div className="card p-8 text-center mb-6">
           <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
           <p className="text-gray-500">Este módulo não possui conteúdo anexado.</p>
+        </div>
+      )}
+
+      {/* Video Embeds */}
+      {videoEmbeds.length > 0 && (
+        <div className="mb-6 space-y-4">
+          {videoEmbeds.map((v, i) => {
+            const embedUrl = parseVideoEmbedUrl(v.url)
+            if (!embedUrl) return null
+            return (
+              <div key={i}>
+                <p className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                  <Video className="w-4 h-4 text-red-500" /> {v.title || 'Vídeo'}
+                </p>
+                <div className="aspect-video rounded-xl overflow-hidden bg-black border">
+                  <iframe
+                    src={embedUrl}
+                    className="w-full h-full"
+                    allowFullScreen
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    title={v.title || 'Vídeo'}
+                  />
+                </div>
+              </div>
+            )
+          })}
         </div>
       )}
 

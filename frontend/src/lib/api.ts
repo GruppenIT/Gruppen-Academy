@@ -500,9 +500,10 @@ class ApiClient {
   deleteTrainingModule(trainingId: string, moduleId: string) {
     return this.request<void>(`/api/trainings/${trainingId}/modules/${moduleId}`, { method: 'DELETE' })
   }
-  async uploadModuleFile(trainingId: string, moduleId: string, file: File): Promise<import('@/types').TrainingModule> {
+  async uploadModuleFile(trainingId: string, moduleId: string, file: File, allowDownload: boolean = true): Promise<import('@/types').TrainingModule> {
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('allow_download', String(allowDownload))
     const res = await fetch(`${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/upload`, {
       method: 'POST',
       body: formData,
@@ -516,6 +517,9 @@ class ApiClient {
   }
   getModuleFileUrl(trainingId: string, moduleId: string) {
     return `${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/file`
+  }
+  getModulePreviewUrl(trainingId: string, moduleId: string) {
+    return `${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/preview`
   }
   getScormLaunchUrl(trainingId: string, moduleId: string) {
     return `${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/scorm-launch`

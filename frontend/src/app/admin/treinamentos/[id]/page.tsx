@@ -7,7 +7,7 @@ import type { Training, TrainingModule, Team, ModuleQuiz, QuizQuestion, QuizQues
 import {
   ArrowLeft, Plus, Trash2, Upload, Loader2, Save, Send,
   GripVertical, FileText, CheckCircle2, X, ChevronDown, ChevronUp,
-  ClipboardCheck, Pencil, Star, Sparkles, Wand2,
+  ClipboardCheck, Pencil, Star, Sparkles, Wand2, Video, Download,
 } from 'lucide-react'
 import Link from 'next/link'
 import { clsx } from 'clsx'
@@ -118,11 +118,11 @@ export default function AdminTrainingDetailPage() {
     }
   }
 
-  const handleUpload = async (moduleId: string, file: File) => {
+  const handleUpload = async (moduleId: string, file: File, allowDownload: boolean = true) => {
     setUploadingModule(moduleId)
     setError('')
     try {
-      await api.uploadModuleFile(id, moduleId, file)
+      await api.uploadModuleFile(id, moduleId, file, allowDownload)
       load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Erro ao enviar arquivo')
@@ -314,9 +314,10 @@ export default function AdminTrainingDetailPage() {
                   mod={mod}
                   isDraft={isDraft}
                   uploadingModule={uploadingModule}
-                  onUpload={(file) => handleUpload(mod.id, file)}
+                  onUpload={(file, allowDl) => handleUpload(mod.id, file, allowDl)}
                   onReload={load}
                   onError={setError}
+                  onUpdateModule={(data) => handleUpdateModuleSettings(mod.id, data)}
                 />
 
                 {/* Quiz section */}
@@ -432,20 +433,38 @@ function ModuleSettingsPanel({ mod, onUpdate }: {
   )
 }
 
+// ── Video Embed Helpers ──
+function parseVideoEmbedUrl(url: string): string | null {
+  // YouTube
+  const ytMatch = url.match(/(?:youtube\.com\/(?:watch\?v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/)
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}`
+  // Vimeo
+  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/)
+  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`
+  return null
+}
+
 // ── Content Panel ──
-function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onReload, onError }: {
+function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onReload, onError, onUpdateModule }: {
   trainingId: string
   mod: TrainingModule
   isDraft: boolean
   uploadingModule: string | null
-  onUpload: (file: File) => void
+  onUpload: (file: File, allowDownload: boolean) => void
   onReload: () => void
   onError: (msg: string) => void
+  onUpdateModule: (data: Record<string, unknown>) => void
 }) {
   const [showAiForm, setShowAiForm] = useState(false)
   const [aiOrientation, setAiOrientation] = useState('')
   const [aiFile, setAiFile] = useState<File | null>(null)
   const [generating, setGenerating] = useState(false)
+  const [allowDownload, setAllowDownload] = useState(mod.allow_download ?? true)
+
+  // Video embeds state
+  const videos = ((mod.content_data?.videos ?? []) as { url: string; title: string }[])
+  const [newVideoUrl, setNewVideoUrl] = useState('')
+  const [newVideoTitle, setNewVideoTitle] = useState('')
 
   const handleGenerate = async () => {
     setGenerating(true)
@@ -460,10 +479,41 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
     } finally { setGenerating(false) }
   }
 
+  const handleAddVideo = async () => {
+    const url = newVideoUrl.trim()
+    if (!url) return
+    const embed = parseVideoEmbedUrl(url)
+    if (!embed) { onError('URL de video invalida. Use YouTube ou Vimeo.'); return }
+    const updated = [...videos, { url, title: newVideoTitle.trim() || 'Video' }]
+    const newData = { ...(mod.content_data || {}), videos: updated }
+    try {
+      await api.updateTrainingModule(trainingId, mod.id, {
+        content_data: newData,
+        content_type: mod.content_type || 'rich_text',
+      })
+      setNewVideoUrl('')
+      setNewVideoTitle('')
+      onReload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao adicionar video')
+    }
+  }
+
+  const handleRemoveVideo = async (index: number) => {
+    const updated = videos.filter((_, i) => i !== index)
+    const newData = { ...(mod.content_data || {}), videos: updated }
+    try {
+      await api.updateTrainingModule(trainingId, mod.id, { content_data: newData })
+      onReload()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Erro ao remover video')
+    }
+  }
+
   // Render AI-generated content preview
   const renderAiContent = () => {
     if (!mod.content_data) return null
-    const data = mod.content_data as { title?: string; sections?: { heading: string; content: string }[]; summary?: string; key_concepts?: string[] }
+    const data = mod.content_data as { title?: string; sections?: { heading: string; content: string; video_suggestions?: string[] }[]; summary?: string; key_concepts?: string[] }
     return (
       <div className="p-4 bg-gradient-to-br from-violet-50/50 to-indigo-50/50 rounded-xl border border-violet-100 space-y-3">
         {data.title && <h4 className="font-semibold text-gray-900 text-sm">{data.title}</h4>}
@@ -474,6 +524,12 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
               <div key={i}>
                 <p className="text-xs font-medium text-indigo-700">{sec.heading}</p>
                 <p className="text-xs text-gray-600 line-clamp-3">{sec.content}</p>
+                {sec.video_suggestions && sec.video_suggestions.length > 0 && (
+                  <div className="flex items-center gap-1 mt-1">
+                    <Video className="w-3 h-3 text-violet-400" />
+                    <span className="text-xs text-violet-500 italic">Sugestao de video: {sec.video_suggestions.join(', ')}</span>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -495,13 +551,36 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
 
       {/* Existing file */}
       {mod.original_filename ? (
-        <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
-          <FileText className="w-5 h-5 text-gray-400" />
-          <span className="text-sm text-gray-700 flex-1">{mod.original_filename}</span>
-          <a href={api.getModuleFileUrl(trainingId, mod.id)} target="_blank" rel="noopener noreferrer"
-            className="text-sm text-brand-600 hover:text-brand-700 font-medium">
-            Visualizar
-          </a>
+        <div className="space-y-2">
+          <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
+            <FileText className="w-5 h-5 text-gray-400" />
+            <span className="text-sm text-gray-700 flex-1">{mod.original_filename}</span>
+            {mod.preview_file_path && (
+              <a href={api.getModulePreviewUrl(trainingId, mod.id)} target="_blank" rel="noopener noreferrer"
+                className="text-sm text-brand-600 hover:text-brand-700 font-medium">
+                Preview PDF
+              </a>
+            )}
+            <a href={api.getModuleFileUrl(trainingId, mod.id)} target="_blank" rel="noopener noreferrer"
+              className="text-sm text-brand-600 hover:text-brand-700 font-medium flex items-center gap-1">
+              <Download className="w-3.5 h-3.5" /> Baixar
+            </a>
+          </div>
+          {/* Download toggle */}
+          {isDraft && (
+            <label className="flex items-center gap-2 cursor-pointer ml-1">
+              <input type="checkbox" checked={allowDownload}
+                onChange={(e) => {
+                  setAllowDownload(e.target.checked)
+                  onUpdateModule({ allow_download: e.target.checked })
+                }}
+                className="rounded border-gray-300 text-brand-600 focus:ring-brand-500" />
+              <span className="text-xs text-gray-600">Permitir download pelo profissional</span>
+            </label>
+          )}
+          {!isDraft && !mod.allow_download && (
+            <p className="text-xs text-amber-600 ml-1">Download desabilitado para profissionais.</p>
+          )}
         </div>
       ) : mod.content_type === 'ai_generated' && mod.content_data ? (
         renderAiContent()
@@ -513,14 +592,64 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
         <p className="text-sm text-gray-400">Nenhum conteudo adicionado.</p>
       )}
 
-      {/* Actions */}
+      {/* Video Embeds */}
+      {videos.length > 0 && (
+        <div className="mt-3 space-y-2">
+          <p className="text-xs font-medium text-gray-600 flex items-center gap-1">
+            <Video className="w-3.5 h-3.5 text-red-500" /> Videos incorporados ({videos.length})
+          </p>
+          {videos.map((v, i) => {
+            const embedUrl = parseVideoEmbedUrl(v.url)
+            return (
+              <div key={i} className="p-3 bg-gray-50 rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <Video className="w-4 h-4 text-red-400 shrink-0" />
+                  <span className="text-sm text-gray-700 flex-1 truncate">{v.title || v.url}</span>
+                  {isDraft && (
+                    <button onClick={() => handleRemoveVideo(i)} className="text-gray-400 hover:text-red-500">
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+                {embedUrl && (
+                  <div className="aspect-video rounded-lg overflow-hidden bg-black">
+                    <iframe src={embedUrl} className="w-full h-full" allowFullScreen
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" />
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Add video (draft only) */}
+      {isDraft && (
+        <div className="mt-3 p-3 border border-dashed border-gray-200 rounded-xl space-y-2">
+          <p className="text-xs font-medium text-gray-600 flex items-center gap-1">
+            <Video className="w-3.5 h-3.5" /> Adicionar video (YouTube / Vimeo)
+          </p>
+          <div className="flex gap-2">
+            <input type="text" className="input-field flex-1 text-sm" placeholder="URL do video..."
+              value={newVideoUrl} onChange={(e) => setNewVideoUrl(e.target.value)} />
+            <input type="text" className="input-field w-40 text-sm" placeholder="Titulo (opcional)"
+              value={newVideoTitle} onChange={(e) => setNewVideoTitle(e.target.value)} />
+            <button onClick={handleAddVideo} disabled={!newVideoUrl.trim()}
+              className="btn-secondary text-sm px-3 py-1.5 flex items-center gap-1 shrink-0">
+              <Plus className="w-3.5 h-3.5" /> Adicionar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Upload + AI actions */}
       {isDraft && (
         <div className="mt-2 flex items-center gap-2 flex-wrap">
           <label className="btn-secondary inline-flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer">
             {uploadingModule === mod.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
             Enviar arquivo
             <input type="file" className="hidden" accept=".pdf,.pptx,.docx,.ppt,.doc,.zip"
-              onChange={(e) => { const file = e.target.files?.[0]; if (file) onUpload(file); e.target.value = '' }}
+              onChange={(e) => { const file = e.target.files?.[0]; if (file) onUpload(file, allowDownload); e.target.value = '' }}
               disabled={uploadingModule === mod.id} />
           </label>
           <button onClick={() => setShowAiForm(!showAiForm)}

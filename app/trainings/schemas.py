@@ -70,6 +70,7 @@ class ModuleCreate(BaseModel):
     has_quiz: bool = False
     quiz_required_to_advance: bool = False
     xp_reward: int = 20
+    allow_download: bool = True
 
     @field_validator("content_type", mode="before")
     @classmethod
@@ -88,6 +89,7 @@ class ModuleUpdate(BaseModel):
     has_quiz: bool | None = None
     quiz_required_to_advance: bool | None = None
     xp_reward: int | None = None
+    allow_download: bool | None = None
 
     @field_validator("content_type", mode="before")
     @classmethod
@@ -111,6 +113,8 @@ class ModuleOut(BaseModel):
     has_quiz: bool
     quiz_required_to_advance: bool
     xp_reward: int
+    allow_download: bool
+    preview_file_path: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -271,9 +275,11 @@ class TrainingProgressModule(BaseModel):
     order: int
     content_type: ModuleContentType | None
     original_filename: str | None
+    mime_type: str | None
     has_quiz: bool
     quiz_required_to_advance: bool
     xp_reward: int
+    allow_download: bool
     content_viewed: bool
     quiz_passed: bool
     quiz_score: float | None

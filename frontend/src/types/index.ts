@@ -445,6 +445,8 @@ export interface TrainingModule {
   has_quiz: boolean
   quiz_required_to_advance: boolean
   xp_reward: number
+  allow_download: boolean
+  preview_file_path: string | null
   created_at: string
   quiz?: ModuleQuiz | null
 }
@@ -506,9 +508,11 @@ export interface TrainingProgressModule {
   order: number
   content_type: ModuleContentType | null
   original_filename: string | null
+  mime_type: string | null
   has_quiz: boolean
   quiz_required_to_advance: boolean
   xp_reward: number
+  allow_download: boolean
   content_viewed: boolean
   quiz_passed: boolean
   quiz_score: number | null

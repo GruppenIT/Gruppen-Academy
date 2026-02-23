@@ -468,6 +468,30 @@ class ApiClient {
     const q = statusFilter ? `&status_filter=${statusFilter}` : ''
     return this.request<import('@/types').Training[]>(`/api/trainings?skip=${skip}&limit=${limit}${q}`)
   }
+  async importScormTraining(
+    file: File,
+    opts?: { title?: string; description?: string; domain?: string; participant_level?: string; estimated_duration_minutes?: number; xp_reward?: number; module_xp_reward?: number }
+  ): Promise<import('@/types').Training> {
+    const formData = new FormData()
+    formData.append('file', file)
+    if (opts?.title) formData.append('title', opts.title)
+    if (opts?.description) formData.append('description', opts.description)
+    if (opts?.domain) formData.append('domain', opts.domain)
+    if (opts?.participant_level) formData.append('participant_level', opts.participant_level)
+    if (opts?.estimated_duration_minutes !== undefined) formData.append('estimated_duration_minutes', String(opts.estimated_duration_minutes))
+    if (opts?.xp_reward !== undefined) formData.append('xp_reward', String(opts.xp_reward))
+    if (opts?.module_xp_reward !== undefined) formData.append('module_xp_reward', String(opts.module_xp_reward))
+    const res = await fetch(`${API_BASE}/api/trainings/import-scorm`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || `Erro ${res.status}`)
+    }
+    return res.json()
+  }
   getTraining(id: string) {
     return this.request<import('@/types').Training>(`/api/trainings/${id}`)
   }

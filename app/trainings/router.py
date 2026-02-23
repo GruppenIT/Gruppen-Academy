@@ -58,6 +58,7 @@ from app.trainings.service import (
     get_training,
     get_training_enrollments,
     hard_delete_training,
+    import_scorm_training,
     list_modules,
     list_trainings,
     mark_content_viewed,
@@ -86,6 +87,212 @@ async def create_training_endpoint(
     ),
 ):
     training = await create_training(db, data, current_user.id)
+    return training
+
+
+def _parse_scorm_manifest(extract_dir: str) -> tuple[str | None, list[dict]]:
+    """Parse imsmanifest.xml and return (course_title, items).
+
+    Each item is a dict with 'title', 'entry_point'.  For single-SCO packages
+    there will be exactly one item.
+    """
+    import xml.etree.ElementTree as ET
+
+    manifest_path = os.path.join(extract_dir, "imsmanifest.xml")
+    if not os.path.isfile(manifest_path):
+        return None, []
+
+    try:
+        tree = ET.parse(manifest_path)
+        root = tree.getroot()
+    except ET.ParseError:
+        return None, []
+
+    # Namespace handling
+    ns = ""
+    if root.tag.startswith("{"):
+        ns = root.tag.split("}")[0] + "}"
+
+    # Build resource map: identifier -> href
+    resource_map: dict[str, str] = {}
+    for res in root.iter(f"{ns}resource"):
+        rid = res.get("identifier", "")
+        href = res.get("href", "")
+        if rid and href:
+            resource_map[rid] = href
+
+    # Get course title from organization
+    course_title: str | None = None
+    items: list[dict] = []
+
+    for org in root.iter(f"{ns}organization"):
+        org_title_el = org.find(f"{ns}title")
+        if org_title_el is not None and org_title_el.text:
+            course_title = org_title_el.text.strip()
+
+        for item in org.iter(f"{ns}item"):
+            item_title_el = item.find(f"{ns}title")
+            item_title = item_title_el.text.strip() if item_title_el is not None and item_title_el.text else None
+            identifierref = item.get("identifierref", "")
+            entry_point = resource_map.get(identifierref)
+
+            # Only include items that reference a resource (leaf items / SCOs)
+            if entry_point and item_title:
+                items.append({
+                    "title": item_title,
+                    "entry_point": entry_point,
+                })
+        break  # use first organization only
+
+    # Fallback: if no items found but resources exist, use first resource
+    if not items and resource_map:
+        first_href = next(iter(resource_map.values()))
+        items.append({
+            "title": course_title or "Módulo SCORM",
+            "entry_point": first_href,
+        })
+
+    # Fallback for entry_point: look for index.html
+    if not items:
+        for candidate in ["index.html", "index.htm", "launch.html"]:
+            if os.path.isfile(os.path.join(extract_dir, candidate)):
+                items.append({
+                    "title": course_title or "Módulo SCORM",
+                    "entry_point": candidate,
+                })
+                break
+
+    # Deep fallback: first .html file
+    if not items:
+        for root_dir, _dirs, files in os.walk(extract_dir):
+            for f in files:
+                if f.lower().endswith((".html", ".htm")):
+                    items.append({
+                        "title": course_title or "Módulo SCORM",
+                        "entry_point": os.path.relpath(os.path.join(root_dir, f), extract_dir),
+                    })
+                    break
+            if items:
+                break
+
+    return course_title, items
+
+
+@router.post("/import-scorm", response_model=TrainingDetailOut, status_code=status.HTTP_201_CREATED)
+async def import_scorm_endpoint(
+    file: UploadFile = File(...),
+    title: str = Form(""),
+    description: str = Form(""),
+    domain: str = Form("vendas"),
+    participant_level: str = Form("intermediario"),
+    estimated_duration_minutes: int = Form(60),
+    xp_reward: int = Form(100),
+    module_xp_reward: int = Form(20),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+    ),
+):
+    """Import a SCORM .zip package as a new training.
+
+    Parses imsmanifest.xml to discover course title and SCO items, then creates
+    a Training with one module per SCO.
+    """
+    import shutil
+    import zipfile
+
+    # Validate file type
+    content_type = file.content_type or ""
+    if content_type not in ("application/zip", "application/x-zip-compressed"):
+        raise HTTPException(
+            status_code=400,
+            detail="Apenas arquivos .zip são aceitos para importação SCORM.",
+        )
+
+    # Read and validate size
+    content = await file.read()
+    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    if len(content) > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Arquivo excede o limite de {settings.max_upload_size_mb}MB.",
+        )
+
+    # Create a temporary training ID for file storage
+    training_id_temp = uuid.uuid4()
+    upload_dir = os.path.join(settings.upload_dir, "trainings", str(training_id_temp))
+    os.makedirs(upload_dir, exist_ok=True)
+
+    # Save zip file
+    zip_filename = f"scorm_import.zip"
+    zip_path = os.path.join(upload_dir, zip_filename)
+    with open(zip_path, "wb") as f:
+        f.write(content)
+
+    # Validate and extract zip
+    extract_dir = os.path.join(upload_dir, "scorm_import")
+    try:
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            zf.extractall(extract_dir)
+    except zipfile.BadZipFile:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise HTTPException(status_code=400, detail="Arquivo ZIP inválido.")
+
+    # Parse manifest
+    course_title, items = _parse_scorm_manifest(extract_dir)
+    if not items:
+        shutil.rmtree(upload_dir, ignore_errors=True)
+        raise HTTPException(
+            status_code=400,
+            detail="Pacote SCORM inválido: não foi possível identificar conteúdo "
+                   "(imsmanifest.xml ausente ou sem recursos).",
+        )
+
+    # Use manifest title as fallback
+    final_title = title.strip() or course_title or "Treinamento SCORM"
+    final_description = description.strip() or None
+
+    # Prepare items with extract_dir
+    for item in items:
+        item["extract_dir"] = extract_dir
+
+    # Create training + modules via service
+    training = await import_scorm_training(
+        db=db,
+        created_by=current_user.id,
+        title=final_title,
+        description=final_description,
+        domain=domain,
+        participant_level=participant_level,
+        estimated_duration_minutes=estimated_duration_minutes,
+        xp_reward=xp_reward,
+        scorm_items=items,
+        module_xp_reward=module_xp_reward,
+    )
+
+    # Rename upload dir to match actual training ID
+    final_upload_dir = os.path.join(settings.upload_dir, "trainings", str(training.id))
+    if str(training_id_temp) != str(training.id):
+        try:
+            os.rename(upload_dir, final_upload_dir)
+        except OSError:
+            # If rename fails (cross-device), copy instead
+            shutil.copytree(upload_dir, final_upload_dir, dirs_exist_ok=True)
+            shutil.rmtree(upload_dir, ignore_errors=True)
+
+        # Update extract_dir in all modules
+        new_extract_dir = os.path.join(final_upload_dir, "scorm_import")
+        modules = await list_modules(db, training.id)
+        for mod in modules:
+            if mod.content_data and mod.content_data.get("extract_dir"):
+                mod.content_data = {
+                    **mod.content_data,
+                    "extract_dir": new_extract_dir,
+                }
+        await db.commit()
+
+    # Reload with full relations
+    training = await get_training(db, training.id)
     return training
 
 

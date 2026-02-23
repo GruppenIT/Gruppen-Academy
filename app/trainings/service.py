@@ -35,6 +35,7 @@ from app.trainings.schemas import (
     TrainingCreate,
     TrainingUpdate,
 )
+from app.trainings.models import ModuleContentType
 
 
 # --- Training CRUD ---
@@ -73,6 +74,57 @@ async def create_training(
         order=1,
     )
     db.add(module1)
+
+    await db.commit()
+    await db.refresh(training)
+    return training
+
+
+async def import_scorm_training(
+    db: AsyncSession,
+    created_by: uuid.UUID,
+    title: str,
+    description: str | None,
+    domain: str,
+    participant_level: str,
+    estimated_duration_minutes: int,
+    xp_reward: int,
+    scorm_items: list[dict],
+    module_xp_reward: int = 20,
+) -> Training:
+    """Create a training with modules pre-populated from SCORM manifest items.
+
+    Each item in scorm_items should have:
+        - title: str
+        - entry_point: str | None
+        - extract_dir: str
+    """
+    training = Training(
+        title=title,
+        description=description,
+        domain=domain,
+        participant_level=participant_level,
+        estimated_duration_minutes=estimated_duration_minutes,
+        xp_reward=xp_reward,
+        created_by=created_by,
+    )
+    db.add(training)
+    await db.flush()
+
+    for i, item in enumerate(scorm_items, start=1):
+        module = TrainingModule(
+            training_id=training.id,
+            title=item["title"],
+            order=i,
+            content_type=ModuleContentType.SCORM,
+            content_data={
+                "entry_point": item.get("entry_point"),
+                "extract_dir": item["extract_dir"],
+                "scorm_version": "auto",
+            },
+        )
+        module.xp_reward = module_xp_reward
+        db.add(module)
 
     await db.commit()
     await db.refresh(training)

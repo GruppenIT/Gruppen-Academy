@@ -499,18 +499,44 @@ async def serve_module_preview(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Serve the PDF preview of a PPTX/DOCX module for inline viewing."""
+    """Serve the PDF preview of a PPTX/DOCX module for inline viewing.
+
+    If preview_file_path is not set, attempts on-demand conversion.
+    For PDF files, serves the original directly.
+    """
     module = await get_module(db, module_id)
     if not module or module.training_id != training_id:
         raise HTTPException(status_code=404, detail="Módulo não encontrado")
-    if not module.preview_file_path or not os.path.isfile(module.preview_file_path):
-        raise HTTPException(status_code=404, detail="Preview não disponível")
+    if not module.file_path or not os.path.isfile(module.file_path):
+        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
 
-    return FileResponse(
-        path=module.preview_file_path,
-        media_type="application/pdf",
-        filename=f"preview_{module.original_filename or 'document'}.pdf",
-    )
+    # PDF files: serve original directly
+    if module.mime_type == "application/pdf":
+        return FileResponse(
+            path=module.file_path,
+            media_type="application/pdf",
+        )
+
+    # Non-PDF: try cached preview first
+    if module.preview_file_path and os.path.isfile(module.preview_file_path):
+        return FileResponse(
+            path=module.preview_file_path,
+            media_type="application/pdf",
+        )
+
+    # On-demand conversion for existing files without preview
+    upload_dir = os.path.dirname(module.file_path)
+    preview_path = _convert_to_pdf_preview(module.file_path, upload_dir, str(module.id))
+    if preview_path:
+        # Cache the path for next time
+        module.preview_file_path = preview_path
+        await db.commit()
+        return FileResponse(
+            path=preview_path,
+            media_type="application/pdf",
+        )
+
+    raise HTTPException(status_code=404, detail="Não foi possível gerar preview do documento.")
 
 
 @router.get("/{training_id}/modules/{module_id}/scorm-launch")

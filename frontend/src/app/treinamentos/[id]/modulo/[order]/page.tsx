@@ -188,13 +188,13 @@ export default function ModuleContentPage() {
   }
 
   // Determine file URL and preview availability
-  const fileUrl = currentModule.original_filename
-    ? api.getModuleFileUrl(trainingId, currentModule.module_id)
-    : null
-  const isPdf = currentModule.original_filename?.toLowerCase().endsWith('.pdf')
-  const hasPreview = moduleDetail?.preview_file_path
-  const previewUrl = hasPreview ? api.getModulePreviewUrl(trainingId, currentModule.module_id) : null
+  const hasFile = !!currentModule.original_filename
+  const fileUrl = hasFile ? api.getModuleFileUrl(trainingId, currentModule.module_id) : null
   const canDownload = currentModule.allow_download
+  // All document types use preview endpoint (it handles PDF passthrough and on-demand conversion)
+  const previewUrl = hasFile && currentModule.content_type === 'document'
+    ? api.getModulePreviewUrl(trainingId, currentModule.module_id)
+    : null
 
   // Video embeds from content_data
   const videoEmbeds = (moduleDetail?.content_data?.videos as { url: string; title: string }[] | undefined) ?? []
@@ -267,11 +267,11 @@ export default function ModuleContentPage() {
             ) : null}
           </div>
         </div>
-      ) : fileUrl ? (
+      ) : previewUrl ? (
         <div className="mb-6">
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-semibold text-gray-700">Conteúdo</h2>
-            {canDownload && (
+            {canDownload && fileUrl && (
               <a
                 href={fileUrl}
                 target="_blank"
@@ -282,43 +282,13 @@ export default function ModuleContentPage() {
               </a>
             )}
           </div>
-          {isPdf ? (
-            <div className="border rounded-xl overflow-hidden bg-gray-50" style={{ height: '70vh' }}>
-              <iframe
-                src={fileUrl}
-                className="w-full h-full"
-                title={currentModule.original_filename || 'Conteúdo'}
-              />
-            </div>
-          ) : previewUrl ? (
-            <div className="border rounded-xl overflow-hidden bg-gray-50" style={{ height: '70vh' }}>
-              <iframe
-                src={previewUrl}
-                className="w-full h-full"
-                title={currentModule.original_filename || 'Conteúdo'}
-              />
-            </div>
-          ) : (
-            <div className="card p-8 text-center">
-              <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
-              <p className="text-gray-600 font-medium">{currentModule.original_filename}</p>
-              {canDownload ? (
-                <>
-                  <p className="text-sm text-gray-400 mt-1">Baixe o arquivo para visualizar o conteúdo.</p>
-                  <a
-                    href={fileUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="btn-primary text-sm mt-4 inline-flex items-center gap-1"
-                  >
-                    <Download className="w-4 h-4" /> Baixar
-                  </a>
-                </>
-              ) : (
-                <p className="text-sm text-gray-400 mt-1">Visualização não disponível para este formato.</p>
-              )}
-            </div>
-          )}
+          <div className="border rounded-xl overflow-hidden bg-gray-50" style={{ height: '70vh' }}>
+            <iframe
+              src={previewUrl}
+              className="w-full h-full"
+              title={currentModule.original_filename || 'Conteúdo'}
+            />
+          </div>
         </div>
       ) : (
         <div className="card p-8 text-center mb-6">

@@ -504,11 +504,33 @@ async def serve_module_preview(
     If preview_file_path is not set, attempts on-demand conversion.
     For PDF files, serves the original directly.
     """
+    _PREVIEW_FALLBACK_HTML = (
+        '<!DOCTYPE html><html><head><meta charset="utf-8"></head>'
+        '<body style="display:flex;flex-direction:column;align-items:center;'
+        'justify-content:center;height:100vh;margin:0;font-family:system-ui,sans-serif;'
+        'color:#6b7280;background:#f9fafb">'
+        '<svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5"'
+        ' viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2'
+        ' 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg>'
+        '<p style="margin:12px 0 4px;font-size:15px;font-weight:500">%s</p>'
+        '<p style="font-size:13px;color:#9ca3af">%s</p>'
+        '</body></html>'
+    )
+
     module = await get_module(db, module_id)
     if not module or module.training_id != training_id:
-        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+        return Response(
+            content=_PREVIEW_FALLBACK_HTML % ("Módulo não encontrado", ""),
+            media_type="text/html",
+        )
     if not module.file_path or not os.path.isfile(module.file_path):
-        raise HTTPException(status_code=404, detail="Arquivo não encontrado")
+        return Response(
+            content=_PREVIEW_FALLBACK_HTML % (
+                "Arquivo não encontrado",
+                "Use o botão &ldquo;Baixar arquivo&rdquo; acima, se disponível.",
+            ),
+            media_type="text/html",
+        )
 
     # PDF files: serve original directly
     if module.mime_type == "application/pdf":
@@ -536,7 +558,13 @@ async def serve_module_preview(
             media_type="application/pdf",
         )
 
-    raise HTTPException(status_code=404, detail="Não foi possível gerar preview do documento.")
+    return Response(
+        content=_PREVIEW_FALLBACK_HTML % (
+            module.original_filename or "Documento",
+            "Visualização não disponível. Use o botão &ldquo;Baixar arquivo&rdquo; acima.",
+        ),
+        media_type="text/html",
+    )
 
 
 @router.get("/{training_id}/modules/{module_id}/scorm-launch")

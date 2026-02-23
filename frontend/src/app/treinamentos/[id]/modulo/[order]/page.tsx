@@ -33,9 +33,6 @@ export default function ModuleContentPage() {
   const [markingView, setMarkingView] = useState(false)
   const [contentMarked, setContentMarked] = useState(false)
 
-  // Preview availability (null = checking, true/false = result)
-  const [previewAvailable, setPreviewAvailable] = useState<boolean | null>(null)
-
   // Quiz state
   const [answers, setAnswers] = useState<Record<string, string>>({})
   const [submitting, setSubmitting] = useState(false)
@@ -69,18 +66,6 @@ export default function ModuleContentPage() {
   }, [trainingId, moduleOrder])
 
   useEffect(() => { loadData() }, [loadData])
-
-  // Check if preview endpoint returns a valid response (avoid showing raw JSON errors in iframe)
-  const previewCheckUrl = currentModule?.original_filename && currentModule?.content_type === 'document' && currentModule?.module_id
-    ? api.getModulePreviewUrl(trainingId, currentModule.module_id)
-    : null
-  useEffect(() => {
-    if (!previewCheckUrl) { setPreviewAvailable(null); return }
-    setPreviewAvailable(null)
-    fetch(previewCheckUrl, { method: 'HEAD', credentials: 'include' })
-      .then(res => setPreviewAvailable(res.ok))
-      .catch(() => setPreviewAvailable(false))
-  }, [previewCheckUrl])
 
   // SCORM postMessage listener: capture lesson_status and score from SCORM iframe
   useEffect(() => {
@@ -297,37 +282,13 @@ export default function ModuleContentPage() {
               </a>
             )}
           </div>
-          {previewAvailable === null ? (
-            <div className="border rounded-xl bg-gray-50 flex items-center justify-center" style={{ height: '70vh' }}>
-              <Loader2 className="w-6 h-6 text-gray-400 animate-spin" />
-            </div>
-          ) : previewAvailable ? (
-            <div className="border rounded-xl overflow-hidden bg-gray-50" style={{ height: '70vh' }}>
-              <iframe
-                src={previewUrl}
-                className="w-full h-full"
-                title={currentModule.original_filename || 'Conteúdo'}
-              />
-            </div>
-          ) : (
-            <div className="border rounded-xl bg-gray-50 flex flex-col items-center justify-center gap-4 py-16">
-              <FileText className="w-12 h-12 text-gray-300" />
-              <div className="text-center">
-                <p className="text-gray-600 font-medium">{currentModule.original_filename}</p>
-                <p className="text-sm text-gray-400 mt-1">Visualização inline não disponível para este arquivo.</p>
-              </div>
-              {canDownload && fileUrl && (
-                <a
-                  href={fileUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-primary text-sm flex items-center gap-2 px-4 py-2"
-                >
-                  <Download className="w-4 h-4" /> Baixar arquivo
-                </a>
-              )}
-            </div>
-          )}
+          <div className="border rounded-xl overflow-hidden bg-gray-50" style={{ height: '70vh' }}>
+            <iframe
+              src={previewUrl}
+              className="w-full h-full"
+              title={currentModule.original_filename || 'Conteúdo'}
+            />
+          </div>
         </div>
       ) : (
         <div className="card p-8 text-center mb-6">

@@ -477,24 +477,40 @@ def _extract_scorm_package(zip_path: str, upload_dir: str, module_id: str) -> di
 def _convert_to_pdf_preview(file_path: str, upload_dir: str, module_id: str) -> str | None:
     """Convert PPTX/DOCX to PDF using LibreOffice for inline preview."""
     import subprocess
+    import tempfile
+
+    # LibreOffice needs a writable HOME for its user profile.
+    # The container runs as 'appuser' which may not have a home directory.
+    # Use a unique temp profile per conversion to avoid lock conflicts.
+    lo_env = {**os.environ, "HOME": "/tmp"}
+    profile_dir = tempfile.mkdtemp(prefix="lo_profile_")
 
     try:
         result = subprocess.run(
             [
-                "libreoffice", "--headless", "--norestore", "--convert-to", "pdf",
+                "libreoffice", "--headless", "--norestore",
+                f"-env:UserInstallation=file://{profile_dir}",
+                "--convert-to", "pdf",
                 "--outdir", upload_dir, file_path,
             ],
             capture_output=True,
             timeout=120,
+            env=lo_env,
         )
         if result.returncode != 0:
-            logger.warning("LibreOffice conversion failed for %s: %s", file_path, result.stderr.decode(errors="replace"))
+            logger.warning(
+                "LibreOffice conversion failed for %s (rc=%d): stderr=%s stdout=%s",
+                file_path, result.returncode,
+                result.stderr.decode(errors="replace"),
+                result.stdout.decode(errors="replace"),
+            )
             return None
 
         # LibreOffice outputs {original_name}.pdf in the outdir
         base_name = os.path.splitext(os.path.basename(file_path))[0]
         pdf_path = os.path.join(upload_dir, f"{base_name}.pdf")
         if os.path.isfile(pdf_path):
+            logger.info("PDF preview generated: %s", pdf_path)
             return pdf_path
         logger.warning("PDF preview not found after conversion: %s", pdf_path)
         return None
@@ -507,6 +523,9 @@ def _convert_to_pdf_preview(file_path: str, upload_dir: str, module_id: str) -> 
     except Exception as e:
         logger.warning("Error converting to PDF preview: %s", e)
         return None
+    finally:
+        import shutil
+        shutil.rmtree(profile_dir, ignore_errors=True)
 
 
 @router.get("/{training_id}/modules/{module_id}/preview")

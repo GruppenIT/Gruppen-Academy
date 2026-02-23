@@ -23,7 +23,7 @@ COPY app/ app/
 COPY entrypoint.sh .
 
 # Run as non-root user for security
-RUN addgroup --system appuser && adduser --system --ingroup appuser appuser
+RUN addgroup --system appuser && adduser --system --create-home --ingroup appuser appuser
 RUN mkdir -p /tmp/gruppen-academy-uploads && chown appuser:appuser /tmp/gruppen-academy-uploads
 USER appuser
 

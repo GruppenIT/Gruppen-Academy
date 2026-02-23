@@ -17,7 +17,7 @@ ALEMBIC_CURRENT=$(alembic current 2>/dev/null || true)
 
 if echo "$ALEMBIC_CURRENT" | grep -q "(head)"; then
     echo "==> Alembic already at head, nothing to migrate."
-elif echo "$ALEMBIC_CURRENT" | grep -q "Rev:"; then
+elif [ -n "$ALEMBIC_CURRENT" ]; then
     echo "==> Existing alembic history found, running upgrade head ..."
     alembic upgrade head
 else

@@ -12,11 +12,14 @@ from app.database import Base, engine, async_session
 from app.users.models import User, UserRole
 
 # Import all models so Base.metadata knows about them
+from app.audit.models import AuditLog  # noqa: F401
 from app.catalog.models import Competency, MasterGuideline, Product  # noqa: F401
 from app.evaluations.models import AnalyticalReport, Evaluation  # noqa: F401
 from app.gamification.models import Badge, Score, UserBadge  # noqa: F401
 from app.journeys.models import Journey, JourneyParticipation, OCRUpload, Question, QuestionResponse  # noqa: F401
 from app.learning.models import ActivityCompletion, LearningActivity, LearningPath, TutorSession  # noqa: F401
+from app.teams.models import Team  # noqa: F401
+from app.trainings.models import Training, TrainingModule, ModuleQuiz, QuizQuestion, TrainingEnrollment, ModuleProgress, QuizAttempt  # noqa: F401
 
 logger = logging.getLogger(__name__)
 

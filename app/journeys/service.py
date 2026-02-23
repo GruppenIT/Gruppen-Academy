@@ -12,6 +12,7 @@ from app.catalog.models import Competency, Product
 from app.journeys.models import (
     Journey,
     JourneyParticipation,
+    JourneyStatus,
     OCRUpload,
     OCRUploadStatus,
     PageCode,

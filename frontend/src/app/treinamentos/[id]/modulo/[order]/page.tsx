@@ -235,7 +235,7 @@ export default function ModuleContentPage() {
                 <div className="text-gray-600 whitespace-pre-wrap text-sm">{sec.content}</div>
               </div>
             ))}
-            {moduleDetail.content_data.summary && (
+            {(moduleDetail.content_data.summary as string) && (
               <div className="mt-4 p-4 bg-blue-50 rounded-lg">
                 <p className="text-sm font-medium text-blue-800 mb-1">Resumo</p>
                 <p className="text-sm text-blue-700">{moduleDetail.content_data.summary as string}</p>

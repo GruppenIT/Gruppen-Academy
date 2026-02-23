@@ -70,6 +70,18 @@ export default function ModuleContentPage() {
 
   useEffect(() => { loadData() }, [loadData])
 
+  // Check if preview endpoint returns a valid response (avoid showing raw JSON errors in iframe)
+  const previewCheckUrl = currentModule?.original_filename && currentModule?.content_type === 'document' && currentModule?.module_id
+    ? api.getModulePreviewUrl(trainingId, currentModule.module_id)
+    : null
+  useEffect(() => {
+    if (!previewCheckUrl) { setPreviewAvailable(null); return }
+    setPreviewAvailable(null)
+    fetch(previewCheckUrl, { method: 'HEAD', credentials: 'include' })
+      .then(res => setPreviewAvailable(res.ok))
+      .catch(() => setPreviewAvailable(false))
+  }, [previewCheckUrl])
+
   // SCORM postMessage listener: capture lesson_status and score from SCORM iframe
   useEffect(() => {
     if (currentModule?.content_type !== 'scorm' || !moduleDetail) return
@@ -198,15 +210,6 @@ export default function ModuleContentPage() {
   const previewUrl = hasFile && currentModule.content_type === 'document'
     ? api.getModulePreviewUrl(trainingId, currentModule.module_id)
     : null
-
-  // Check if preview endpoint returns a valid PDF (avoid showing raw JSON errors in iframe)
-  useEffect(() => {
-    if (!previewUrl) { setPreviewAvailable(null); return }
-    setPreviewAvailable(null)
-    fetch(previewUrl, { method: 'HEAD', credentials: 'include' })
-      .then(res => setPreviewAvailable(res.ok))
-      .catch(() => setPreviewAvailable(false))
-  }, [previewUrl])
 
   // Video embeds from content_data
   const videoEmbeds = (moduleDetail?.content_data?.videos as { url: string; title: string }[] | undefined) ?? []

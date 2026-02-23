@@ -143,22 +143,16 @@ function ModuleCard({ module: mod, trainingId, index }: { module: TrainingProgre
 
   const canAccess = !mod.locked
 
-  const Wrapper = canAccess ? Link : 'div'
-  const wrapperProps = canAccess
-    ? { href: `/treinamentos/${trainingId}/modulo/${mod.order}` }
-    : {}
+  const className = clsx(
+    'flex items-center gap-4 p-4 rounded-xl border transition-all',
+    canAccess && !mod.completed && 'card-hover cursor-pointer',
+    mod.completed && 'bg-emerald-50/30 border-emerald-100',
+    mod.locked && 'bg-gray-50 border-gray-100 opacity-60',
+    !mod.completed && !mod.locked && 'border-gray-200 hover:border-brand-200',
+  )
 
-  return (
-    <Wrapper
-      {...wrapperProps as Record<string, string>}
-      className={clsx(
-        'flex items-center gap-4 p-4 rounded-xl border transition-all',
-        canAccess && !mod.completed && 'card-hover cursor-pointer',
-        mod.completed && 'bg-emerald-50/30 border-emerald-100',
-        mod.locked && 'bg-gray-50 border-gray-100 opacity-60',
-        !mod.completed && !mod.locked && 'border-gray-200 hover:border-brand-200',
-      )}
-    >
+  const inner = (
+    <>
       {/* Order number */}
       <div className={clsx(
         'w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold shrink-0',
@@ -212,6 +206,12 @@ function ModuleCard({ module: mod, trainingId, index }: { module: TrainingProgre
         {getStatusIcon()}
         {canAccess && !mod.completed && <ChevronRight className="w-4 h-4 text-gray-300" />}
       </div>
-    </Wrapper>
+    </>
+  )
+
+  if (canAccess) {
+    return <Link href={`/treinamentos/${trainingId}/modulo/${mod.order}`} className={className}>{inner}</Link>
+  }
+  return <div className={className}>{inner}</div>
   )
 }

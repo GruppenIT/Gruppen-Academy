@@ -213,5 +213,4 @@ function ModuleCard({ module: mod, trainingId, index }: { module: TrainingProgre
     return <Link href={`/treinamentos/${trainingId}/modulo/${mod.order}`} className={className}>{inner}</Link>
   }
   return <div className={className}>{inner}</div>
-  )
 }

@@ -7,7 +7,7 @@ import type { Training, TrainingModule, Team, ModuleQuiz, QuizQuestion, QuizQues
 import {
   ArrowLeft, Plus, Trash2, Upload, Loader2, Save, Send,
   GripVertical, FileText, CheckCircle2, X, ChevronDown, ChevronUp,
-  ClipboardCheck, Pencil, Star, Sparkles, Wand2, Video, Download, Box,
+  ClipboardCheck, Pencil, Star, Sparkles, Wand2, Video, Download, Box, Eye,
 } from 'lucide-react'
 import Link from 'next/link'
 import { clsx } from 'clsx'
@@ -523,6 +523,7 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
   const [showAiForm, setShowAiForm] = useState(false)
   const [aiOrientation, setAiOrientation] = useState('')
   const [aiFile, setAiFile] = useState<File | null>(null)
+  const [aiContentLength, setAiContentLength] = useState<'curto' | 'normal' | 'extendido'>('normal')
   const [generating, setGenerating] = useState(false)
   const [allowDownload, setAllowDownload] = useState(mod.allow_download ?? true)
 
@@ -534,10 +535,11 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
   const handleGenerate = async () => {
     setGenerating(true)
     try {
-      await api.generateModuleContent(trainingId, mod.id, aiOrientation, aiFile || undefined)
+      await api.generateModuleContent(trainingId, mod.id, aiOrientation, aiFile || undefined, aiContentLength)
       setShowAiForm(false)
       setAiOrientation('')
       setAiFile(null)
+      setAiContentLength('normal')
       onReload()
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erro ao gerar conteudo com IA')
@@ -582,11 +584,23 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
     const data = mod.content_data as { title?: string; sections?: { heading: string; content: string; video_suggestions?: string[] }[]; summary?: string; key_concepts?: string[] }
     return (
       <div className="p-4 bg-gradient-to-br from-violet-50/50 to-indigo-50/50 rounded-xl border border-violet-100 space-y-3">
-        {isScormAI && (
-          <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">
-            <Box className="w-3 h-3" /> SCORM interativo
-          </span>
-        )}
+        <div className="flex items-center justify-between">
+          {isScormAI && (
+            <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">
+              <Box className="w-3 h-3" /> SCORM interativo
+            </span>
+          )}
+          {isScormAI && (
+            <a
+              href={api.getScormLaunchUrl(trainingId, mod.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 bg-white px-3 py-1.5 rounded-lg border border-gray-200 hover:border-brand-300 transition-colors"
+            >
+              <Eye className="w-3.5 h-3.5" /> Visualizar conteudo
+            </a>
+          )}
+        </div>
         {data.title && <h4 className="font-semibold text-gray-900 text-sm">{data.title}</h4>}
         {data.summary && <p className="text-xs text-gray-500 italic">{data.summary}</p>}
         {data.sections && (
@@ -745,6 +759,31 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
             <label className="text-xs text-gray-600 block mb-1">Orientacoes (o que a IA deve cobrir)</label>
             <textarea className="input-field w-full text-sm" rows={3} placeholder="Ex: Foque em beneficios do BaaS para PMEs, inclua cenarios praticos..."
               value={aiOrientation} onChange={(e) => setAiOrientation(e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-600 block mb-1.5">Extensao do conteudo</label>
+            <div className="flex gap-2">
+              {([
+                { value: 'curto' as const, label: 'Curto', desc: '2-3 secoes, 3-5 min' },
+                { value: 'normal' as const, label: 'Normal', desc: '4-6 secoes, 8-12 min' },
+                { value: 'extendido' as const, label: 'Extendido', desc: '6-10 secoes, 15-25 min' },
+              ]).map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setAiContentLength(opt.value)}
+                  className={clsx(
+                    'flex-1 p-2.5 rounded-lg border-2 text-center transition-all',
+                    aiContentLength === opt.value
+                      ? 'border-violet-400 bg-violet-100 text-violet-700'
+                      : 'border-gray-200 bg-white text-gray-500 hover:border-violet-200'
+                  )}
+                >
+                  <span className="text-xs font-semibold block">{opt.label}</span>
+                  <span className="text-[10px] text-gray-400 block mt-0.5">{opt.desc}</span>
+                </button>
+              ))}
+            </div>
           </div>
           <div>
             <label className="text-xs text-gray-600 block mb-1">Material de referencia (opcional)</label>

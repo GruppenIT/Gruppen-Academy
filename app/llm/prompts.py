@@ -297,6 +297,33 @@ O campo "video_suggestions" é opcional em cada seção — inclua apenas quando
 realmente agregaria valor ao aprendizado.
 """
 
+CONTENT_LENGTH_INSTRUCTIONS = {
+    "curto": (
+        "\n\nEXTENSÃO DO CONTEÚDO: CURTO\n"
+        "- Gere 2 a 3 seções.\n"
+        "- Cada seção deve ter entre 2 e 4 parágrafos.\n"
+        "- Foque nos pontos essenciais sem aprofundar demais.\n"
+        "- Tempo de leitura esperado: 3 a 5 minutos.\n"
+    ),
+    "normal": (
+        "\n\nEXTENSÃO DO CONTEÚDO: NORMAL\n"
+        "- Gere 4 a 6 seções.\n"
+        "- Cada seção deve ter entre 3 e 6 parágrafos, com exemplos práticos.\n"
+        "- Equilibre profundidade e objetividade.\n"
+        "- Inclua listas, destaques e cenários reais quando pertinente.\n"
+        "- Tempo de leitura esperado: 8 a 12 minutos.\n"
+    ),
+    "extendido": (
+        "\n\nEXTENSÃO DO CONTEÚDO: EXTENDIDO\n"
+        "- Gere 6 a 10 seções.\n"
+        "- Cada seção deve ter entre 4 e 8 parágrafos, com exemplos detalhados, "
+        "cenários práticos, estudos de caso e dicas de aplicação.\n"
+        "- Aprofunde cada conceito com contexto, comparações e boas práticas.\n"
+        "- Inclua exercícios de reflexão ou perguntas para o leitor quando apropriado.\n"
+        "- Tempo de leitura esperado: 15 a 25 minutos.\n"
+    ),
+}
+
 TRAINING_QUIZ_SYSTEM_PROMPT = """\
 Você é um especialista em avaliação educacional da plataforma Gruppen Academy.
 Sua função é gerar perguntas de quiz para verificar a compreensão de conteúdo de treinamento.

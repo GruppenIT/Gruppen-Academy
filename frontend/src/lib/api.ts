@@ -576,9 +576,10 @@ class ApiClient {
   }
 
   // Trainings — AI Generation
-  async generateModuleContent(trainingId: string, moduleId: string, orientation: string, referenceFile?: File): Promise<Record<string, unknown>> {
+  async generateModuleContent(trainingId: string, moduleId: string, orientation: string, referenceFile?: File, contentLength: string = 'normal'): Promise<Record<string, unknown>> {
     const formData = new FormData()
     formData.append('orientation', orientation)
+    formData.append('content_length', contentLength)
     if (referenceFile) formData.append('reference_file', referenceFile)
     const res = await fetch(`${API_BASE}/api/trainings/${trainingId}/modules/${moduleId}/generate-content`, {
       method: 'POST',

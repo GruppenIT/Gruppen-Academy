@@ -7,6 +7,7 @@ from app.config import settings
 from app.evaluations.schemas import EvaluationResult
 from app.llm.prompts import (
     COMPETENCY_SUGGESTION_SYSTEM_PROMPT,
+    CONTENT_LENGTH_INSTRUCTIONS,
     EVALUATION_SYSTEM_PROMPT,
     GUIDELINE_SUGGESTION_SYSTEM_PROMPT,
     OCR_CLEANUP_SYSTEM_PROMPT,
@@ -340,9 +341,26 @@ async def generate_training_content(
     participant_level: str,
     orientation: str | None = None,
     reference_text: str | None = None,
+    content_length: str = "normal",
 ) -> dict:
-    """Generate structured educational content for a training module."""
+    """Generate structured educational content for a training module.
+
+    Parameters
+    ----------
+    content_length : str
+        One of "curto", "normal", "extendido".  Controls the depth, number of
+        sections, and max_tokens sent to the model.
+    """
     client = _get_client()
+
+    # Determine max_tokens based on content length
+    length_key = content_length.lower() if content_length else "normal"
+    max_tokens_map = {"curto": 4096, "normal": 8192, "extendido": 16384}
+    max_tokens = max_tokens_map.get(length_key, 8192)
+
+    # Build system prompt with length instructions
+    length_instruction = CONTENT_LENGTH_INSTRUCTIONS.get(length_key, "")
+    system_prompt = TRAINING_CONTENT_SYSTEM_PROMPT + length_instruction
 
     user_content = f"""Gere conteúdo educacional para o seguinte módulo de treinamento:
 
@@ -358,10 +376,10 @@ Nível dos participantes: {participant_level}
 
     response = await client.chat.completions.create(
         model=settings.openai_model,
-        max_tokens=4096,
+        max_tokens=max_tokens,
         response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": TRAINING_CONTENT_SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
     )

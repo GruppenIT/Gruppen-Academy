@@ -1131,6 +1131,7 @@ async def generate_module_content_endpoint(
     training_id: uuid.UUID,
     module_id: uuid.UUID,
     orientation: str = Form(""),
+    content_length: str = Form("normal"),
     reference_file: UploadFile | None = File(None),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
@@ -1141,6 +1142,12 @@ async def generate_module_content_endpoint(
     a self-contained HTML page with the Gruppen Academy brand colours and
     wrapped in a SCORM 1.2 package so it can be played in the platform's SCORM
     launcher.
+
+    Parameters
+    ----------
+    content_length : str
+        Controls the depth of the generated content.
+        One of ``curto``, ``normal``, ``extendido``.
     """
     from app.llm.client import generate_training_content
     from app.trainings.scorm_builder import build_scorm_from_ai_content
@@ -1154,6 +1161,12 @@ async def generate_module_content_endpoint(
     module = await get_module(db, module_id)
     if not module or module.training_id != training_id:
         raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    # Validate content_length
+    valid_lengths = {"curto", "normal", "extendido"}
+    cl = (content_length or "normal").lower()
+    if cl not in valid_lengths:
+        cl = "normal"
 
     # Extract text from reference file if provided
     reference_text = None
@@ -1172,6 +1185,7 @@ async def generate_module_content_endpoint(
             participant_level=training.participant_level,
             orientation=orientation or None,
             reference_text=reference_text,
+            content_length=cl,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

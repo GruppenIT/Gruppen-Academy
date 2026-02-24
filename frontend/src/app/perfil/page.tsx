@@ -89,7 +89,7 @@ export default function PerfilPage() {
               <p className="text-sm text-gray-400 text-center py-4">Nenhuma conquista ainda. Continue evoluindo!</p>
             ) : (
               <div className="grid grid-cols-2 gap-3">
-                {badges.map((ub) => (
+                {badges.filter(ub => ub.badge).map((ub) => (
                   <BadgeCard
                     key={ub.id}
                     name={ub.badge.name}

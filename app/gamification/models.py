@@ -47,3 +47,5 @@ class UserBadge(Base):
         UUID(as_uuid=True), ForeignKey("badges.id", ondelete="CASCADE"), nullable=False
     )
     earned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    badge: Mapped["Badge"] = relationship(lazy="selectin")

@@ -57,6 +57,7 @@ class UserBadgeOut(BaseModel):
     id: uuid.UUID
     user_id: uuid.UUID
     badge_id: uuid.UUID
+    badge: BadgeOut
     earned_at: datetime
 
     model_config = {"from_attributes": True}

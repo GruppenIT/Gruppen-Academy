@@ -32,7 +32,7 @@ export default function RankingPage() {
     }).catch(() => {}).finally(() => setLoading(false))
   }, [])
 
-  const earnedBadgeIds = new Set(myBadges.map(ub => ub.badge.id))
+  const earnedBadgeIds = new Set(myBadges.filter(ub => ub.badge).map(ub => ub.badge.id))
 
   if (loading) {
     return <AppShell><div className="flex justify-center py-20"><Loader2 className="w-8 h-8 text-brand-600 animate-spin" /></div></AppShell>
@@ -95,7 +95,7 @@ export default function RankingPage() {
               <div className="grid grid-cols-2 gap-3">
                 {badges.map((badge) => {
                   const earned = earnedBadgeIds.has(badge.id)
-                  const userBadge = myBadges.find(ub => ub.badge.id === badge.id)
+                  const userBadge = myBadges.find(ub => ub.badge?.id === badge.id)
                   return (
                     <BadgeCard
                       key={badge.id}

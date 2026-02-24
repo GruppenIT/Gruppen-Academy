@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import cast, func, select, Date
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.gamification.models import Badge, Score, UserBadge
 from app.gamification.schemas import BadgeCreate, ScoreCreate, UserPointsSummary
@@ -106,7 +107,11 @@ async def award_badge(db: AsyncSession, user_id: uuid.UUID, badge_id: uuid.UUID)
 
 
 async def get_user_badges(db: AsyncSession, user_id: uuid.UUID) -> list[UserBadge]:
-    result = await db.execute(select(UserBadge).where(UserBadge.user_id == user_id))
+    result = await db.execute(
+        select(UserBadge)
+        .where(UserBadge.user_id == user_id)
+        .options(selectinload(UserBadge.badge))
+    )
     return list(result.scalars().all())
 
 

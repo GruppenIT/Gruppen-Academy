@@ -21,6 +21,7 @@ export default function CertificadosAdminPage() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
 
+  const [logoHeight, setLogoHeight] = useState(56)
   const [companyName, setCompanyName] = useState('')
   const [signerName, setSignerName] = useState('')
   const [signerTitle, setSignerTitle] = useState('')
@@ -38,8 +39,8 @@ export default function CertificadosAdminPage() {
     api.getCertificateSettings()
       .then((s) => {
         setSettings(s)
+        setLogoHeight(s.logo_height ?? 56)
         setCompanyName(s.company_name)
-        setSignerName(s.signer_name)
         setSignerTitle(s.signer_title)
         setSignatureStyle(s.signature_style)
         setExtraText(s.extra_text || '')
@@ -62,6 +63,7 @@ export default function CertificadosAdminPage() {
         extra_text: extraText || null,
         primary_color: primaryColor,
         secondary_color: secondaryColor,
+        logo_height: logoHeight,
       })
       setSettings(updated)
       setSaved(true)
@@ -163,6 +165,26 @@ export default function CertificadosAdminPage() {
             <input ref={logoRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
           </div>
         </div>
+        {settings?.logo_path && (
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Tamanho do logo no certificado: <span className="font-bold text-brand-600">{logoHeight}px</span>
+            </label>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-400">24px</span>
+              <input
+                type="range"
+                min={24}
+                max={120}
+                step={4}
+                value={logoHeight}
+                onChange={(e) => setLogoHeight(Number(e.target.value))}
+                className="flex-1 accent-brand-600"
+              />
+              <span className="text-xs text-gray-400">120px</span>
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Company & Signer Info */}
@@ -372,7 +394,8 @@ export default function CertificadosAdminPage() {
                 <img
                   src={api.getCertificateLogoUrl()}
                   alt="Logo"
-                  className="h-12 object-contain"
+                  className="object-contain"
+                  style={{ height: `${logoHeight}px` }}
                   crossOrigin="use-credentials"
                 />
               </div>

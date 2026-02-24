@@ -8,6 +8,7 @@ class CertificateSettingsOut(BaseModel):
     id: uuid.UUID
     logo_path: str | None
     logo_original_filename: str | None
+    logo_height: int
     company_name: str
     signer_name: str
     signer_title: str
@@ -29,6 +30,7 @@ class CertificateSettingsUpdate(BaseModel):
     extra_text: str | None = None
     primary_color: str | None = None
     secondary_color: str | None = None
+    logo_height: int | None = None
 
 
 class CertificateOut(BaseModel):
@@ -61,6 +63,7 @@ class CertificateViewOut(BaseModel):
     signature_style: str
     signature_image_url: str | None
     logo_url: str | None
+    logo_height: int
     extra_text: str | None
     primary_color: str
     secondary_color: str

@@ -779,7 +779,7 @@ class ApiClient {
   updateCertificateSettings(data: {
     company_name?: string; signer_name?: string; signer_title?: string;
     signature_style?: string; extra_text?: string | null;
-    primary_color?: string; secondary_color?: string;
+    primary_color?: string; secondary_color?: string; logo_height?: number;
   }) {
     return this.request<import('@/types').CertificateSettings>('/api/certificates/settings', {
       method: 'PUT', body: JSON.stringify(data),

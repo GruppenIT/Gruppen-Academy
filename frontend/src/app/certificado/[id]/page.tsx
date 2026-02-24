@@ -122,7 +122,8 @@ export default function CertificateViewPage() {
                   <img
                     src={api.getCertificateFileUrl('logo', cert.id)}
                     alt="Logo"
-                    className="h-14 object-contain"
+                    className="object-contain"
+                    style={{ height: `${cert.logo_height ?? 56}px` }}
                     crossOrigin="use-credentials"
                   />
                 </div>

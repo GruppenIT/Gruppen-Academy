@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -21,6 +21,9 @@ class CertificateSettings(Base):
     )
     logo_path: Mapped[str | None] = mapped_column(String(500))
     logo_original_filename: Mapped[str | None] = mapped_column(String(255))
+    logo_height: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=56
+    )  # height in pixels (default 56px ≈ h-14)
     company_name: Mapped[str] = mapped_column(
         String(255), nullable=False, default="Gruppen"
     )

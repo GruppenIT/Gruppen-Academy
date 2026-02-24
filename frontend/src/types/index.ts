@@ -700,6 +700,7 @@ export interface CertificateSettings {
   id: string
   logo_path: string | null
   logo_original_filename: string | null
+  logo_height: number
   company_name: string
   signer_name: string
   signer_title: string
@@ -737,6 +738,7 @@ export interface CertificateView {
   signature_style: string
   signature_image_url: string | null
   logo_url: string | null
+  logo_height: number
   extra_text: string | null
   primary_color: string
   secondary_color: string

@@ -21,6 +21,9 @@ from app.trainings.models import (
     Training,
     TrainingEnrollment,
     TrainingModule,
+    TrainingQuiz,
+    TrainingQuizAttempt,
+    TrainingQuizQuestion,
     TrainingStatus,
 )
 from app.gamification.schemas import ScoreCreate
@@ -33,6 +36,10 @@ from app.trainings.schemas import (
     QuizQuestionUpdate,
     QuizUpdate,
     TrainingCreate,
+    TrainingQuizCreate,
+    TrainingQuizQuestionCreate,
+    TrainingQuizQuestionUpdate,
+    TrainingQuizUpdate,
     TrainingUpdate,
 )
 from app.trainings.models import ModuleContentType
@@ -90,15 +97,8 @@ async def import_scorm_training(
     estimated_duration_minutes: int,
     xp_reward: int,
     scorm_items: list[dict],
-    module_xp_reward: int = 20,
 ) -> Training:
-    """Create a training with modules pre-populated from SCORM manifest items.
-
-    Each item in scorm_items should have:
-        - title: str
-        - entry_point: str | None
-        - extract_dir: str
-    """
+    """Create a training with modules pre-populated from SCORM manifest items."""
     training = Training(
         title=title,
         description=description,
@@ -123,7 +123,6 @@ async def import_scorm_training(
                 "scorm_version": "auto",
             },
         )
-        module.xp_reward = module_xp_reward
         db.add(module)
 
     await db.commit()
@@ -137,6 +136,7 @@ async def get_training(db: AsyncSession, training_id: uuid.UUID) -> Training | N
         .where(Training.id == training_id)
         .options(
             selectinload(Training.modules).selectinload(TrainingModule.quiz).selectinload(ModuleQuiz.questions),
+            selectinload(Training.final_quiz).selectinload(TrainingQuiz.questions),
             selectinload(Training.products),
             selectinload(Training.competencies),
             selectinload(Training.teams),
@@ -198,6 +198,11 @@ async def publish_training(
                     f"O módulo '{mod.title}' tem quiz habilitado mas sem perguntas."
                 )
 
+    # Validate: final quiz (if exists) must have at least 1 question
+    final_quiz = await get_training_quiz(db, training.id)
+    if final_quiz and not final_quiz.questions:
+        raise ValueError("A avaliação final está configurada mas sem perguntas.")
+
     # Validate: at least 1 team
     if not team_ids:
         raise ValueError("Selecione pelo menos uma equipe.")
@@ -247,10 +252,7 @@ async def archive_training(db: AsyncSession, training: Training) -> Training:
 async def hard_delete_training(
     db: AsyncSession, training_id: uuid.UUID, upload_dir: str
 ) -> dict:
-    """Permanently delete a training, reversing all XP and cleaning up files.
-
-    Returns summary with affected_users count and total XP reversed.
-    """
+    """Permanently delete a training, reversing all XP and cleaning up files."""
     from app.gamification.models import Score, UserBadge
     from app.gamification.service import check_and_award_badges
 
@@ -266,41 +268,24 @@ async def hard_delete_training(
     )
     affected_user_ids = list({row[0] for row in enrollment_result.all()})
 
-    # 2. Collect module IDs for score cleanup
-    module_result = await db.execute(
-        select(TrainingModule.id).where(
-            TrainingModule.training_id == training_id
-        )
-    )
-    module_ids = [row[0] for row in module_result.all()]
-
-    # 3. Calculate total XP to reverse, then delete scores
-    xp_conditions = [
-        (Score.source == "training") & (Score.source_id == training_id),
-    ]
-    if module_ids:
-        xp_conditions.append(
-            (Score.source == "training_module") & (Score.source_id.in_(module_ids))
-        )
-
+    # 2. Delete scores related to this training
     from sqlalchemy import or_
 
-    combined_filter = or_(*xp_conditions)
+    xp_filter = (Score.source == "training") & (Score.source_id == training_id)
 
     xp_result = await db.execute(
-        select(func.coalesce(func.sum(Score.points), 0)).where(combined_filter)
+        select(func.coalesce(func.sum(Score.points), 0)).where(xp_filter)
     )
     total_xp_reversed = xp_result.scalar_one()
 
-    await db.execute(sa_delete(Score).where(combined_filter))
+    await db.execute(sa_delete(Score).where(xp_filter))
 
-    # 4. Delete the training (CASCADE handles modules, enrollments, progress, etc.)
+    # 3. Delete the training (CASCADE handles modules, enrollments, progress, etc.)
     await db.delete(training)
     await db.flush()
 
-    # 5. Re-check badges for affected users (some may lose eligibility)
+    # 4. Re-check badges for affected users (some may lose eligibility)
     for user_id in affected_user_ids:
-        # Remove badges whose criteria are no longer met
         existing_badges = await db.execute(
             select(UserBadge).where(UserBadge.user_id == user_id)
         )
@@ -313,11 +298,9 @@ async def hard_delete_training(
             from app.gamification.service import _check_criteria, get_user_points
 
             pts = await get_user_points(db, user_id)
-            # Check points_threshold
             if badge.points_threshold and pts.total_points < badge.points_threshold:
                 await db.delete(ub)
                 continue
-            # Check criteria-based badges
             if badge.criteria:
                 still_earned = await _check_criteria(
                     db, user_id, badge.criteria, pts.total_points
@@ -329,7 +312,7 @@ async def hard_delete_training(
 
     await db.commit()
 
-    # 6. Clean up uploaded files (non-critical, log errors)
+    # 5. Clean up uploaded files (non-critical, log errors)
     training_files_dir = os.path.join(upload_dir, "trainings", str(training_id))
     if os.path.isdir(training_files_dir):
         try:
@@ -393,7 +376,6 @@ async def add_module(
         content_data=data.content_data,
         has_quiz=data.has_quiz,
         quiz_required_to_advance=data.quiz_required_to_advance,
-        xp_reward=data.xp_reward,
     )
     db.add(module)
     await db.commit()
@@ -416,7 +398,7 @@ async def delete_module(db: AsyncSession, module: TrainingModule) -> None:
     await db.commit()
 
 
-# --- Quiz CRUD ---
+# --- Module Quiz CRUD ---
 
 
 async def get_module_quiz(
@@ -426,8 +408,9 @@ async def get_module_quiz(
         select(ModuleQuiz)
         .where(ModuleQuiz.module_id == module_id)
         .options(selectinload(ModuleQuiz.questions))
+        .limit(1)
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def create_or_update_quiz(
@@ -541,6 +524,96 @@ async def get_quiz_question(
     return result.scalar_one_or_none()
 
 
+# --- Training Final Quiz CRUD ---
+
+
+async def get_training_quiz(
+    db: AsyncSession, training_id: uuid.UUID
+) -> TrainingQuiz | None:
+    result = await db.execute(
+        select(TrainingQuiz)
+        .where(TrainingQuiz.training_id == training_id)
+        .options(selectinload(TrainingQuiz.questions))
+        .limit(1)
+    )
+    return result.scalars().first()
+
+
+async def create_or_update_training_quiz(
+    db: AsyncSession, training_id: uuid.UUID, data: TrainingQuizCreate
+) -> TrainingQuiz:
+    existing = await get_training_quiz(db, training_id)
+    if existing:
+        existing.title = data.title
+        existing.passing_score = data.passing_score
+        existing.max_attempts = data.max_attempts
+        quiz = existing
+    else:
+        quiz = TrainingQuiz(
+            training_id=training_id,
+            title=data.title,
+            passing_score=data.passing_score,
+            max_attempts=data.max_attempts,
+        )
+        db.add(quiz)
+
+    await db.commit()
+    await db.refresh(quiz)
+    return quiz
+
+
+async def add_training_quiz_question(
+    db: AsyncSession, quiz_id: uuid.UUID, data: TrainingQuizQuestionCreate
+) -> TrainingQuizQuestion:
+    result = await db.execute(
+        select(func.coalesce(func.max(TrainingQuizQuestion.order), 0)).where(
+            TrainingQuizQuestion.quiz_id == quiz_id
+        )
+    )
+    order = data.order or (result.scalar_one() + 1)
+
+    question = TrainingQuizQuestion(
+        quiz_id=quiz_id,
+        text=data.text,
+        type=data.type,
+        options=data.options,
+        correct_answer=data.correct_answer,
+        explanation=data.explanation,
+        weight=data.weight,
+        order=order,
+    )
+    db.add(question)
+    await db.commit()
+    await db.refresh(question)
+    return question
+
+
+async def update_training_quiz_question(
+    db: AsyncSession, question: TrainingQuizQuestion, data: TrainingQuizQuestionUpdate
+) -> TrainingQuizQuestion:
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(question, field, value)
+    await db.commit()
+    await db.refresh(question)
+    return question
+
+
+async def delete_training_quiz_question(
+    db: AsyncSession, question: TrainingQuizQuestion
+) -> None:
+    await db.delete(question)
+    await db.commit()
+
+
+async def get_training_quiz_question(
+    db: AsyncSession, question_id: uuid.UUID
+) -> TrainingQuizQuestion | None:
+    result = await db.execute(
+        select(TrainingQuizQuestion).where(TrainingQuizQuestion.id == question_id)
+    )
+    return result.scalar_one_or_none()
+
+
 # --- Enrollment queries ---
 
 
@@ -550,7 +623,10 @@ async def get_training_enrollments(
     result = await db.execute(
         select(TrainingEnrollment)
         .where(TrainingEnrollment.training_id == training_id)
-        .options(selectinload(TrainingEnrollment.user))
+        .options(
+            selectinload(TrainingEnrollment.user),
+            selectinload(TrainingEnrollment.training_quiz_attempts),
+        )
     )
     return list(result.scalars().all())
 
@@ -566,6 +642,7 @@ async def get_my_enrollments(
         .where(TrainingEnrollment.user_id == user_id)
         .options(
             selectinload(TrainingEnrollment.training).selectinload(Training.modules),
+            selectinload(TrainingEnrollment.training).selectinload(Training.final_quiz).selectinload(TrainingQuiz.questions),
             selectinload(TrainingEnrollment.module_progress),
         )
         .order_by(TrainingEnrollment.enrolled_at.desc())
@@ -605,9 +682,11 @@ async def get_enrollment_for_user(
         )
         .options(
             selectinload(TrainingEnrollment.module_progress),
+            selectinload(TrainingEnrollment.training_quiz_attempts),
         )
+        .limit(1)
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def get_or_create_module_progress(
@@ -618,8 +697,9 @@ async def get_or_create_module_progress(
             ModuleProgress.enrollment_id == enrollment_id,
             ModuleProgress.module_id == module_id,
         )
+        .limit(1)
     )
-    progress = result.scalar_one_or_none()
+    progress = result.scalars().first()
     if not progress:
         progress = ModuleProgress(
             enrollment_id=enrollment_id,
@@ -647,18 +727,6 @@ async def mark_content_viewed(
     if not module.has_quiz or not module.quiz_required_to_advance:
         if not progress.completed_at:
             progress.completed_at = datetime.now(timezone.utc)
-            # Award module XP
-            if module.xp_reward > 0:
-                await add_score(
-                    db,
-                    ScoreCreate(
-                        user_id=enrollment.user_id,
-                        points=module.xp_reward,
-                        source="training_module",
-                        source_id=module.id,
-                        description=f"Módulo concluído: {module.title}",
-                    ),
-                )
             await _check_training_completion(db, enrollment)
 
     await db.commit()
@@ -672,23 +740,63 @@ async def submit_quiz_attempt(
     module: TrainingModule,
     answers: dict,
 ) -> QuizAttempt:
+    logger.info("submit_quiz_attempt: start enrollment=%s module=%s", enrollment.id, module.id)
+
     # Update enrollment status to IN_PROGRESS if PENDING
     if enrollment.status == EnrollmentStatus.PENDING:
         enrollment.status = EnrollmentStatus.IN_PROGRESS
 
     progress = await get_or_create_module_progress(db, enrollment.id, module.id)
+    logger.info("submit_quiz_attempt: progress=%s", progress.id)
 
     # Get quiz with questions
     quiz = await get_module_quiz(db, module.id)
     if not quiz or not quiz.questions:
         raise ValueError("Este módulo não possui quiz.")
+    logger.info("submit_quiz_attempt: quiz=%s questions=%d", quiz.id, len(quiz.questions))
 
     # Grade the quiz
+    score, graded_answers = _grade_quiz(quiz.questions, answers)
+    passed = score >= quiz.passing_score
+    logger.info("submit_quiz_attempt: score=%.2f passed=%s", score, passed)
+
+    attempt = QuizAttempt(
+        module_progress_id=progress.id,
+        score=score,
+        answers=graded_answers,
+        passed=passed,
+        completed_at=datetime.now(timezone.utc),
+    )
+    db.add(attempt)
+
+    # Update progress
+    progress.quiz_score = score
+    if passed and not progress.completed_at:
+        progress.completed_at = datetime.now(timezone.utc)
+
+    logger.info("submit_quiz_attempt: flushing")
+    await db.flush()
+
+    logger.info("submit_quiz_attempt: checking training completion")
+    await _check_training_completion(db, enrollment)
+
+    logger.info("submit_quiz_attempt: committing")
+    await db.commit()
+
+    logger.info("submit_quiz_attempt: refreshing attempt")
+    await db.refresh(attempt)
+
+    logger.info("submit_quiz_attempt: done attempt=%s", attempt.id)
+    return attempt
+
+
+def _grade_quiz(questions, answers: dict) -> tuple[float, dict]:
+    """Grade a quiz and return (score, graded_answers)."""
     total_weight = 0.0
     earned_weight = 0.0
     graded_answers: dict = {}
 
-    for question in quiz.questions:
+    for question in questions:
         q_id = str(question.id)
         user_answer = answers.get(q_id, "")
         is_correct = False
@@ -711,46 +819,210 @@ async def submit_quiz_attempt(
             earned_weight += question.weight
 
     score = earned_weight / total_weight if total_weight > 0 else 0.0
-    passed = score >= quiz.passing_score
+    return score, graded_answers
 
-    attempt = QuizAttempt(
-        module_progress_id=progress.id,
+
+# --- Training Final Quiz Attempt ---
+
+
+async def submit_training_quiz_attempt(
+    db: AsyncSession,
+    enrollment: TrainingEnrollment,
+    answers: dict,
+) -> TrainingQuizAttempt:
+    """Submit an attempt for the training-level final quiz."""
+    logger.info("submit_training_quiz_attempt: enrollment=%s", enrollment.id)
+
+    # Get the final quiz
+    quiz = await get_training_quiz(db, enrollment.training_id)
+    if not quiz or not quiz.questions:
+        raise ValueError("Este treinamento não possui avaliação final.")
+
+    # Check all modules are completed
+    modules = await list_modules(db, enrollment.training_id)
+    if modules:
+        result = await db.execute(
+            select(ModuleProgress).where(
+                ModuleProgress.enrollment_id == enrollment.id,
+                ModuleProgress.completed_at.isnot(None),
+            )
+        )
+        completed_ids = {p.module_id for p in result.scalars().all()}
+        if not all(m.id in completed_ids for m in modules):
+            raise ValueError("Complete todos os módulos antes de realizar a avaliação final.")
+
+    # Check attempts limit
+    existing_attempts = await get_training_quiz_attempts(db, enrollment.id)
+    attempts_used = len(existing_attempts)
+
+    if quiz.max_attempts > 0 and attempts_used >= quiz.max_attempts:
+        # Check if manager unlocked retry
+        if not enrollment.quiz_unlocked_at or (
+            existing_attempts
+            and existing_attempts[0].completed_at
+            and enrollment.quiz_unlocked_at < existing_attempts[0].completed_at
+        ):
+            raise ValueError(
+                "Você esgotou suas tentativas. Solicite liberação ao seu gestor."
+            )
+        # Manager unlocked — reset the unlock flag after this attempt
+        enrollment.quiz_unlocked_at = None
+        enrollment.quiz_unlocked_by = None
+
+    # Grade
+    score, graded_answers = _grade_quiz(quiz.questions, answers)
+    passed = score >= quiz.passing_score
+    logger.info("submit_training_quiz_attempt: score=%.2f passed=%s", score, passed)
+
+    attempt = TrainingQuizAttempt(
+        enrollment_id=enrollment.id,
         score=score,
         answers=graded_answers,
         passed=passed,
         completed_at=datetime.now(timezone.utc),
     )
     db.add(attempt)
+    await db.flush()
 
-    # Update progress
-    progress.quiz_score = score
-    if passed and not progress.completed_at:
-        progress.completed_at = datetime.now(timezone.utc)
-        # Award module XP
-        if module.xp_reward > 0:
+    if passed and enrollment.status != EnrollmentStatus.COMPLETED:
+        enrollment.status = EnrollmentStatus.COMPLETED
+        enrollment.completed_at = datetime.now(timezone.utc)
+
+        # XP proportional to score: xp_reward * score
+        training_result = await db.execute(
+            select(Training).where(Training.id == enrollment.training_id)
+        )
+        training = training_result.scalar_one_or_none()
+        if training and training.xp_reward > 0:
+            xp_earned = round(training.xp_reward * score)
+            logger.info("submit_training_quiz_attempt: awarding XP=%d (%.0f%% of %d)",
+                        xp_earned, score * 100, training.xp_reward)
             await add_score(
                 db,
                 ScoreCreate(
                     user_id=enrollment.user_id,
-                    points=module.xp_reward,
-                    source="training_module",
-                    source_id=module.id,
-                    description=f"Módulo concluído: {module.title}",
+                    points=xp_earned,
+                    source="training",
+                    source_id=training.id,
+                    description=f"Treinamento concluído: {training.title} (nota {score:.0%})",
                 ),
+                commit=False,
             )
-
-    await db.flush()
-    await _check_training_completion(db, enrollment)
+        await check_and_award_badges(db, enrollment.user_id, commit=False)
 
     await db.commit()
     await db.refresh(attempt)
     return attempt
 
 
+async def get_training_quiz_attempts(
+    db: AsyncSession, enrollment_id: uuid.UUID
+) -> list[TrainingQuizAttempt]:
+    result = await db.execute(
+        select(TrainingQuizAttempt)
+        .where(TrainingQuizAttempt.enrollment_id == enrollment_id)
+        .order_by(TrainingQuizAttempt.started_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def unlock_quiz_retry(
+    db: AsyncSession, enrollment_id: uuid.UUID, manager_id: uuid.UUID
+) -> TrainingEnrollment:
+    """Manager unlocks a new quiz attempt for an enrolled user."""
+    result = await db.execute(
+        select(TrainingEnrollment).where(TrainingEnrollment.id == enrollment_id)
+    )
+    enrollment = result.scalar_one_or_none()
+    if not enrollment:
+        raise ValueError("Inscrição não encontrada.")
+
+    enrollment.quiz_unlocked_by = manager_id
+    enrollment.quiz_unlocked_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(enrollment)
+    return enrollment
+
+
+async def get_user_enrollments_for_manager(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[TrainingEnrollment]:
+    """Return all enrollments for a user, with training and progress eagerly loaded."""
+    result = await db.execute(
+        select(TrainingEnrollment)
+        .where(TrainingEnrollment.user_id == user_id)
+        .options(
+            selectinload(TrainingEnrollment.training).selectinload(Training.modules),
+            selectinload(TrainingEnrollment.module_progress),
+        )
+        .order_by(TrainingEnrollment.enrolled_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def reset_enrollment(
+    db: AsyncSession, enrollment_id: uuid.UUID
+) -> TrainingEnrollment:
+    """Reset an enrollment so the user can redo the training from scratch.
+
+    Deletes all module progress, quiz attempts, training quiz attempts,
+    reverses XP, and resets enrollment status to PENDING.
+    """
+    from app.gamification.models import Score
+
+    result = await db.execute(
+        select(TrainingEnrollment)
+        .where(TrainingEnrollment.id == enrollment_id)
+        .options(
+            selectinload(TrainingEnrollment.module_progress).selectinload(ModuleProgress.quiz_attempts),
+            selectinload(TrainingEnrollment.training_quiz_attempts),
+        )
+    )
+    enrollment = result.scalar_one_or_none()
+    if not enrollment:
+        raise ValueError("Inscrição não encontrada.")
+
+    # 1. Reverse XP for this specific enrollment (source=training, source_id=training_id, user_id)
+    await db.execute(
+        sa_delete(Score).where(
+            Score.source == "training",
+            Score.source_id == enrollment.training_id,
+            Score.user_id == enrollment.user_id,
+        )
+    )
+
+    # 2. Delete training quiz attempts
+    for tqa in (enrollment.training_quiz_attempts or []):
+        await db.delete(tqa)
+
+    # 3. Delete module progress (cascades to quiz attempts)
+    for mp in (enrollment.module_progress or []):
+        await db.delete(mp)
+
+    await db.flush()
+
+    # 4. Reset enrollment fields
+    enrollment.status = EnrollmentStatus.PENDING
+    enrollment.current_module_order = 1
+    enrollment.completed_at = None
+    enrollment.quiz_unlocked_at = None
+    enrollment.quiz_unlocked_by = None
+
+    await db.commit()
+    await db.refresh(enrollment)
+    return enrollment
+
+
 async def _check_training_completion(
     db: AsyncSession, enrollment: TrainingEnrollment
 ) -> None:
-    """Check if all modules are completed and mark training as done."""
+    """Check if all modules are completed and handle training completion.
+
+    - If training has a final quiz: do NOT mark as completed (quiz handles that)
+    - If training has NO final quiz: mark as completed and award full XP
+
+    NOTE: This function does NOT commit.
+    """
     modules = await list_modules(db, enrollment.training_id)
     if not modules:
         return
@@ -766,28 +1038,38 @@ async def _check_training_completion(
     completed_module_ids = {p.module_id for p in completed_progress}
 
     all_completed = all(m.id in completed_module_ids for m in modules)
-    if all_completed and enrollment.status != EnrollmentStatus.COMPLETED:
-        enrollment.status = EnrollmentStatus.COMPLETED
-        enrollment.completed_at = datetime.now(timezone.utc)
+    logger.info("_check_training_completion: modules=%d completed=%d all_completed=%s enrollment_status=%s",
+                len(modules), len(completed_module_ids), all_completed, enrollment.status.value)
 
-        # Award training-level XP
-        training_result = await db.execute(
-            select(Training).where(Training.id == enrollment.training_id)
-        )
-        training = training_result.scalar_one_or_none()
-        if training and training.xp_reward > 0:
-            await add_score(
-                db,
-                ScoreCreate(
-                    user_id=enrollment.user_id,
-                    points=training.xp_reward,
-                    source="training",
-                    source_id=training.id,
-                    description=f"Treinamento concluído: {training.title}",
-                ),
+    if all_completed and enrollment.status != EnrollmentStatus.COMPLETED:
+        # Check if training has a final quiz
+        final_quiz = await get_training_quiz(db, enrollment.training_id)
+        if final_quiz and final_quiz.questions:
+            # Don't complete — user must pass the final quiz first
+            logger.info("_check_training_completion: final quiz exists, not completing yet")
+        else:
+            # No final quiz — complete and award full XP
+            enrollment.status = EnrollmentStatus.COMPLETED
+            enrollment.completed_at = datetime.now(timezone.utc)
+
+            training_result = await db.execute(
+                select(Training).where(Training.id == enrollment.training_id)
             )
-        # Check badge criteria
-        await check_and_award_badges(db, enrollment.user_id)
+            training = training_result.scalar_one_or_none()
+            if training and training.xp_reward > 0:
+                logger.info("_check_training_completion: awarding training XP=%d", training.xp_reward)
+                await add_score(
+                    db,
+                    ScoreCreate(
+                        user_id=enrollment.user_id,
+                        points=training.xp_reward,
+                        source="training",
+                        source_id=training.id,
+                        description=f"Treinamento concluído: {training.title}",
+                    ),
+                    commit=False,
+                )
+            await check_and_award_badges(db, enrollment.user_id, commit=False)
 
     # Update current_module_order
     enrollment.current_module_order = len(completed_module_ids) + 1

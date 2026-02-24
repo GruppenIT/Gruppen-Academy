@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
-import type { Training, TrainingModule, Team, ModuleQuiz, QuizQuestion, QuizQuestionType } from '@/types'
+import type { Training, TrainingModule, Team, ModuleQuiz, QuizQuestion, QuizQuestionType, TrainingQuiz, TrainingQuizQuestion } from '@/types'
 import {
   ArrowLeft, Plus, Trash2, Upload, Loader2, Save, Send,
   GripVertical, FileText, CheckCircle2, X, ChevronDown, ChevronUp,
@@ -323,7 +323,6 @@ export default function AdminTrainingDetailPage() {
                         : mod.content_type === 'ai_generated' ? 'Conteudo IA' : 'Texto rico'
                     : 'Sem conteudo'}
                   {mod.has_quiz && ` · Quiz (${mod.quiz?.questions?.length || 0} perguntas)${mod.quiz_required_to_advance ? ' obrigatorio' : ''}`}
-                  {` · ${mod.xp_reward} XP`}
                 </p>
               </div>
               {mod.content_type && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
@@ -394,6 +393,9 @@ export default function AdminTrainingDetailPage() {
           </button>
         </div>
       )}
+
+      {/* Training Final Quiz */}
+      <FinalQuizSection trainingId={id} training={training} isDraft={isDraft} onReload={load} onError={setError} />
 
       {/* Publish Modal */}
       {showPublish && (
@@ -484,11 +486,6 @@ function ModuleSettingsPanel({ mod, onUpdate }: {
             onBlur={(e) => { if (e.target.value !== mod.title) onUpdate({ title: e.target.value }) }} />
         </div>
         <div>
-          <label className="text-xs text-gray-500 block mb-1">XP do modulo</label>
-          <input type="number" className="input-field w-full text-sm" defaultValue={mod.xp_reward} min={0}
-            onBlur={(e) => { const v = Number(e.target.value); if (v !== mod.xp_reward) onUpdate({ xp_reward: v }) }} />
-        </div>
-        <div>
           <label className="text-xs text-gray-500 block mb-1">Descricao</label>
           <input type="text" className="input-field w-full text-sm" defaultValue={mod.description || ''} placeholder="Opcional"
             onBlur={(e) => { if (e.target.value !== (mod.description || '')) onUpdate({ description: e.target.value || null }) }} />
@@ -509,6 +506,284 @@ function parseVideoEmbedUrl(url: string): string | null {
   return null
 }
 
+// ── Rich Text Section Editor ──
+function RichEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const editorRef = useRef<HTMLDivElement>(null)
+  const isInitialMount = useRef(true)
+
+  useEffect(() => {
+    if (editorRef.current && isInitialMount.current) {
+      editorRef.current.innerHTML = value
+      isInitialMount.current = false
+    }
+  }, [value])
+
+  const exec = (cmd: string, val?: string) => {
+    document.execCommand(cmd, false, val)
+    editorRef.current?.focus()
+    if (editorRef.current) onChange(editorRef.current.innerHTML)
+  }
+
+  return (
+    <div className="border border-gray-300 rounded-lg overflow-hidden">
+      <div className="flex items-center gap-0.5 px-2 py-1.5 bg-gray-50 border-b border-gray-200 flex-wrap">
+        <button type="button" onClick={() => exec('bold')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 font-bold text-sm" title="Negrito">B</button>
+        <button type="button" onClick={() => exec('italic')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 italic text-sm" title="Itálico">I</button>
+        <div className="w-px h-5 bg-gray-300 mx-1" />
+        <button type="button" onClick={() => exec('insertUnorderedList')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 text-xs" title="Lista">• Lista</button>
+        <button type="button" onClick={() => exec('insertOrderedList')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 text-xs" title="Lista numerada">1. Lista</button>
+        <div className="w-px h-5 bg-gray-300 mx-1" />
+        <button type="button" onClick={() => exec('formatBlock', 'h3')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 text-xs font-semibold" title="Subtítulo">H3</button>
+        <button type="button" onClick={() => exec('formatBlock', 'h4')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 text-xs font-semibold" title="Subtítulo menor">H4</button>
+        <button type="button" onClick={() => exec('formatBlock', 'p')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 text-xs" title="Parágrafo">¶</button>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        className="p-3 min-h-[120px] max-h-[300px] overflow-y-auto text-sm text-gray-800 focus:outline-none prose prose-sm max-w-none"
+        onInput={() => {
+          if (editorRef.current) onChange(editorRef.current.innerHTML)
+        }}
+      />
+    </div>
+  )
+}
+
+// ── Manual Content Editor Modal ──
+function ManualEditorModal({ trainingId, mod, onClose, onSave }: {
+  trainingId: string
+  mod: TrainingModule
+  onClose: () => void
+  onSave: () => void
+}) {
+  const data = mod.content_data as {
+    title?: string
+    sections?: { heading: string; content: string }[]
+    summary?: string
+    key_concepts?: string[]
+  } | null
+
+  const [title, setTitle] = useState(data?.title || '')
+  const [sections, setSections] = useState<{ heading: string; content: string }[]>(
+    data?.sections?.map(s => ({ heading: s.heading, content: s.content })) || [{ heading: '', content: '' }]
+  )
+  const [summary, setSummary] = useState(data?.summary || '')
+  const [keyConcepts, setKeyConcepts] = useState(data?.key_concepts?.join(', ') || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const updateSection = (i: number, field: 'heading' | 'content', val: string) => {
+    setSections(prev => prev.map((s, idx) => idx === i ? { ...s, [field]: val } : s))
+  }
+
+  const addSection = () => setSections(prev => [...prev, { heading: '', content: '' }])
+
+  const removeSection = (i: number) => {
+    if (sections.length <= 1) return
+    setSections(prev => prev.filter((_, idx) => idx !== i))
+  }
+
+  const moveSection = (i: number, dir: -1 | 1) => {
+    const j = i + dir
+    if (j < 0 || j >= sections.length) return
+    setSections(prev => {
+      const next = [...prev]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return next
+    })
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      await api.updateModuleContent(trainingId, mod.id, {
+        title,
+        sections,
+        summary,
+        key_concepts: keyConcepts.split(',').map(c => c.trim()).filter(Boolean),
+      })
+      onSave()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao salvar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm overflow-y-auto p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <Pencil className="w-5 h-5 text-brand-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Editar conteudo manualmente</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
+          {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          {/* Title */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Titulo do modulo</label>
+            <input type="text" className="input-field w-full" value={title} onChange={e => setTitle(e.target.value)} />
+          </div>
+
+          {/* Sections */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">Secoes</label>
+              <button type="button" onClick={addSection} className="btn-secondary text-xs px-2.5 py-1 flex items-center gap-1">
+                <Plus className="w-3.5 h-3.5" /> Nova secao
+              </button>
+            </div>
+            {sections.map((sec, i) => (
+              <div key={i} className="p-4 border border-gray-200 rounded-xl bg-gray-50/50 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 font-mono w-6 text-center">{i + 1}</span>
+                  <input type="text" className="input-field flex-1 text-sm font-medium" placeholder="Titulo da secao"
+                    value={sec.heading} onChange={e => updateSection(i, 'heading', e.target.value)} />
+                  <button type="button" onClick={() => moveSection(i, -1)} disabled={i === 0}
+                    className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"><ChevronUp className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => moveSection(i, 1)} disabled={i === sections.length - 1}
+                    className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"><ChevronDown className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => removeSection(i)} disabled={sections.length <= 1}
+                    className="p-1 text-gray-400 hover:text-red-500 disabled:opacity-30"><Trash2 className="w-4 h-4" /></button>
+                </div>
+                <RichEditor value={sec.content} onChange={v => updateSection(i, 'content', v)} />
+              </div>
+            ))}
+          </div>
+
+          {/* Summary */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Resumo</label>
+            <textarea className="input-field w-full text-sm" rows={2} value={summary} onChange={e => setSummary(e.target.value)} />
+          </div>
+
+          {/* Key Concepts */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Conceitos-chave <span className="font-normal text-gray-400">(separados por virgula)</span></label>
+            <input type="text" className="input-field w-full text-sm" value={keyConcepts} onChange={e => setKeyConcepts(e.target.value)}
+              placeholder="Ex: RTO, RPO, Backup automatizado" />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+          <button onClick={onClose} className="btn-secondary px-4 py-2 text-sm">Cancelar</button>
+          <button onClick={handleSave} disabled={saving} className="btn-primary px-4 py-2 text-sm flex items-center gap-2">
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</> : <><Save className="w-4 h-4" /> Salvar conteudo</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── AI Content Editor Modal ──
+function AIEditorModal({ trainingId, mod, onClose, onSave }: {
+  trainingId: string
+  mod: TrainingModule
+  onClose: () => void
+  onSave: () => void
+}) {
+  const [prompt, setPrompt] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [error, setError] = useState('')
+
+  const data = mod.content_data as {
+    title?: string
+    sections?: { heading: string; content: string }[]
+    summary?: string
+  } | null
+
+  const handleEdit = async () => {
+    if (!prompt.trim()) return
+    setEditing(true)
+    setError('')
+    try {
+      await api.editModuleContentAI(trainingId, mod.id, prompt)
+      onSave()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao editar com IA')
+    } finally {
+      setEditing(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm overflow-y-auto p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <Wand2 className="w-5 h-5 text-violet-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Editar conteudo com IA</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          {/* Current content summary */}
+          {data && (
+            <div className="p-3 bg-gray-50 rounded-xl space-y-1.5">
+              <p className="text-xs font-medium text-gray-500">Conteudo atual</p>
+              {data.title && <p className="text-sm font-semibold text-gray-800">{data.title}</p>}
+              {data.sections && (
+                <div className="flex flex-wrap gap-1.5">
+                  {data.sections.map((sec, i) => (
+                    <span key={i} className="inline-flex items-center text-xs bg-white border border-gray-200 px-2 py-0.5 rounded-md text-gray-600">
+                      {i + 1}. {sec.heading}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Edit prompt */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">
+              O que voce gostaria de alterar?
+            </label>
+            <textarea
+              className="input-field w-full text-sm"
+              rows={5}
+              placeholder="Ex: Adicione uma seção sobre recuperação de desastres. Simplifique a linguagem da seção 2. Inclua mais exemplos práticos em todas as seções..."
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+            />
+            <p className="text-xs text-gray-400 mt-1">A IA vai ajustar o conteudo existente com base nas suas instrucoes.</p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+          <button onClick={onClose} className="btn-secondary px-4 py-2 text-sm">Cancelar</button>
+          <button onClick={handleEdit} disabled={editing || !prompt.trim()}
+            className="btn-primary px-4 py-2 text-sm flex items-center gap-2 bg-violet-600 hover:bg-violet-700">
+            {editing ? <><Loader2 className="w-4 h-4 animate-spin" /> Editando...</> : <><Wand2 className="w-4 h-4" /> Aplicar com IA</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Content Panel ──
 function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onReload, onError, onUpdateModule }: {
   trainingId: string
@@ -526,6 +801,8 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
   const [aiContentLength, setAiContentLength] = useState<'curto' | 'normal' | 'extendido'>('normal')
   const [generating, setGenerating] = useState(false)
   const [allowDownload, setAllowDownload] = useState(mod.allow_download ?? true)
+  const [showManualEditor, setShowManualEditor] = useState(false)
+  const [showAiEditor, setShowAiEditor] = useState(false)
 
   // Video embeds state
   const videos = ((mod.content_data?.videos ?? []) as { url: string; title: string }[])
@@ -584,22 +861,38 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
     const data = mod.content_data as { title?: string; sections?: { heading: string; content: string; video_suggestions?: string[] }[]; summary?: string; key_concepts?: string[] }
     return (
       <div className="p-4 bg-gradient-to-br from-violet-50/50 to-indigo-50/50 rounded-xl border border-violet-100 space-y-3">
-        <div className="flex items-center justify-between">
-          {isScormAI && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">
-              <Box className="w-3 h-3" /> SCORM interativo
-            </span>
-          )}
-          {isScormAI && (
-            <a
-              href={api.getScormLaunchUrl(trainingId, mod.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 bg-white px-3 py-1.5 rounded-lg border border-gray-200 hover:border-brand-300 transition-colors"
-            >
-              <Eye className="w-3.5 h-3.5" /> Visualizar conteudo
-            </a>
-          )}
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            {isScormAI && (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">
+                <Box className="w-3 h-3" /> SCORM interativo
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            {isScormAI && (
+              <a
+                href={api.getScormLaunchUrl(trainingId, mod.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 bg-white px-3 py-1.5 rounded-lg border border-gray-200 hover:border-brand-300 transition-colors"
+              >
+                <Eye className="w-3.5 h-3.5" /> Visualizar
+              </a>
+            )}
+            {isDraft && (
+              <>
+                <button onClick={() => setShowManualEditor(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-white px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
+                  <Pencil className="w-3.5 h-3.5" /> Editar
+                </button>
+                <button onClick={() => setShowAiEditor(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-600 hover:text-violet-700 bg-white px-3 py-1.5 rounded-lg border border-violet-200 hover:border-violet-300 transition-colors">
+                  <Wand2 className="w-3.5 h-3.5" /> Editar com IA
+                </button>
+              </>
+            )}
+          </div>
         </div>
         {data.title && <h4 className="font-semibold text-gray-900 text-sm">{data.title}</h4>}
         {data.summary && <p className="text-xs text-gray-500 italic">{data.summary}</p>}
@@ -805,6 +1098,14 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
           </div>
         </div>
       )}
+
+      {/* Edit Modals */}
+      {showManualEditor && (
+        <ManualEditorModal trainingId={trainingId} mod={mod} onClose={() => setShowManualEditor(false)} onSave={onReload} />
+      )}
+      {showAiEditor && (
+        <AIEditorModal trainingId={trainingId} mod={mod} onClose={() => setShowAiEditor(false)} onSave={onReload} />
+      )}
     </div>
   )
 }
@@ -825,6 +1126,10 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
   const [savingQuiz, setSavingQuiz] = useState(false)
   const [generatingQuiz, setGeneratingQuiz] = useState(false)
+  const [showAiModal, setShowAiModal] = useState(false)
+  const [aiNumQuestions, setAiNumQuestions] = useState(5)
+  const [aiDifficulty, setAiDifficulty] = useState('intermediario')
+  const [aiOrientation, setAiOrientation] = useState('')
   const [passingScore, setPassingScore] = useState(quiz?.passing_score ?? 0.7)
   const [quizRequired, setQuizRequired] = useState(quizRequiredProp)
 
@@ -908,8 +1213,13 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
 
   const handleGenerateQuiz = async () => {
     setGeneratingQuiz(true)
+    setShowAiModal(false)
     try {
-      await api.generateModuleQuiz(trainingId, moduleId)
+      await api.generateModuleQuiz(trainingId, moduleId, {
+        num_questions: aiNumQuestions,
+        difficulty: aiDifficulty,
+        orientation: aiOrientation || undefined,
+      })
       onReload()
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erro ao gerar quiz com IA')
@@ -929,7 +1239,7 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
               {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
               Criar quiz
             </button>
-            <button onClick={handleGenerateQuiz} disabled={generatingQuiz}
+            <button onClick={() => setShowAiModal(true)} disabled={generatingQuiz}
               className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 rounded-lg transition-colors">
               {generatingQuiz ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
               Gerar com IA
@@ -937,6 +1247,44 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
           </div>
         )}
       </div>
+
+      {/* AI Quiz Generation Modal */}
+      {showAiModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 p-6 animate-slide-up">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-violet-500" /> Gerar Quiz com IA
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantas perguntas?</label>
+                <input type="number" min={3} max={20} value={aiNumQuestions} onChange={e => setAiNumQuestions(Number(e.target.value))}
+                  className="input-field w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nível de dificuldade</label>
+                <select value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)} className="input-field w-full">
+                  <option value="facil">Fácil</option>
+                  <option value="intermediario">Intermediário</option>
+                  <option value="dificil">Difícil</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Orientação para a IA</label>
+                <textarea value={aiOrientation} onChange={e => setAiOrientation(e.target.value)}
+                  placeholder="Descreva o foco das perguntas ou cole perguntas que deseja melhorar..."
+                  rows={4} className="input-field w-full resize-none" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => setShowAiModal(false)} className="btn-secondary text-sm px-4 py-2">Cancelar</button>
+              <button onClick={handleGenerateQuiz} className="btn-primary text-sm px-4 py-2 flex items-center gap-1">
+                <Sparkles className="w-4 h-4" /> Gerar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!quiz ? (
         <p className="text-sm text-gray-400">Nenhum quiz configurado.</p>
@@ -1058,7 +1406,7 @@ function QuestionCard({ question: q, index, isDraft, onEdit, onDelete }: {
               <span className="text-xs text-emerald-600">Resp: {q.correct_answer}</span>
             )}
           </div>
-          {q.type === 'multiple_choice' && q.options && (
+          {(q.type === 'multiple_choice' || q.type === 'true_false') && q.options && (
             <div className="mt-2 space-y-1">
               {q.options.map((opt, i) => {
                 const letter = String.fromCharCode(65 + i)
@@ -1131,7 +1479,11 @@ function QuestionForm({ initial, onSave, onCancel, index }: {
               update({
                 type,
                 correct_answer: '',
-                options: type === 'multiple_choice' ? [{ text: '' }, { text: '' }, { text: '' }, { text: '' }] : [],
+                options: type === 'multiple_choice'
+                  ? [{ text: '' }, { text: '' }, { text: '' }, { text: '' }]
+                  : type === 'true_false'
+                    ? [{ text: 'Verdadeiro' }, { text: 'Falso' }]
+                    : [],
               })
             }}>
             <option value="multiple_choice">Multipla escolha</option>
@@ -1150,8 +1502,8 @@ function QuestionForm({ initial, onSave, onCancel, index }: {
             <select className="input-field w-full text-sm" value={form.correct_answer}
               onChange={(e) => update({ correct_answer: e.target.value })}>
               <option value="">Selecionar...</option>
-              <option value="true">Verdadeiro</option>
-              <option value="false">Falso</option>
+              <option value="A">Verdadeiro</option>
+              <option value="B">Falso</option>
             </select>
           </div>
         )}
@@ -1228,12 +1580,291 @@ function QuestionForm({ initial, onSave, onCancel, index }: {
   )
 }
 
+// ── Training Final Quiz Section ──
+function FinalQuizSection({ trainingId, training, isDraft, onReload, onError }: {
+  trainingId: string; training: Training; isDraft: boolean; onReload: () => void; onError: (msg: string) => void
+}) {
+  const [quiz, setQuiz] = useState<TrainingQuiz | null>(training.final_quiz || null)
+  const [creating, setCreating] = useState(false)
+  const [generatingQuiz, setGeneratingQuiz] = useState(false)
+  const [showAiModal, setShowAiModal] = useState(false)
+  const [aiNumQuestions, setAiNumQuestions] = useState(5)
+  const [aiDifficulty, setAiDifficulty] = useState('intermediario')
+  const [aiOrientation, setAiOrientation] = useState('')
+  const [addingQuestion, setAddingQuestion] = useState(false)
+  const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
+  const [savingQuiz, setSavingQuiz] = useState(false)
+  const [passingScore, setPassingScore] = useState(quiz?.passing_score ?? 0.7)
+  const [maxAttempts, setMaxAttempts] = useState(quiz?.max_attempts ?? 3)
+
+  useEffect(() => {
+    setQuiz(training.final_quiz || null)
+    setPassingScore(training.final_quiz?.passing_score ?? 0.7)
+    setMaxAttempts(training.final_quiz?.max_attempts ?? 3)
+  }, [training])
+
+  const loadQuiz = async () => {
+    const q = await api.getTrainingQuiz(trainingId)
+    setQuiz(q)
+    onReload()
+  }
+
+  const handleCreate = async () => {
+    setCreating(true)
+    try {
+      await api.createTrainingQuiz(trainingId)
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao criar avaliação') }
+    finally { setCreating(false) }
+  }
+
+  const handleDelete = async () => {
+    if (!confirm('Remover a avaliação final e todas as perguntas?')) return
+    try {
+      await api.deleteTrainingQuiz(trainingId)
+      setQuiz(null)
+      onReload()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao remover avaliação') }
+  }
+
+  const handleGenerate = async () => {
+    setGeneratingQuiz(true)
+    setShowAiModal(false)
+    try {
+      await api.generateTrainingQuiz(trainingId, {
+        num_questions: aiNumQuestions,
+        difficulty: aiDifficulty,
+        orientation: aiOrientation || undefined,
+      })
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao gerar avaliação com IA') }
+    finally { setGeneratingQuiz(false) }
+  }
+
+  const handleUpdateSettings = async (updates: { passing_score?: number; max_attempts?: number }) => {
+    setSavingQuiz(true)
+    try {
+      await api.updateTrainingQuiz(trainingId, updates)
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao atualizar avaliação') }
+    finally { setSavingQuiz(false) }
+  }
+
+  const handleAddQuestion = async (data: QuestionFormData) => {
+    try {
+      await api.addTrainingQuizQuestion(trainingId, {
+        text: data.text, type: data.type,
+        options: data.type === 'multiple_choice' ? data.options.filter(o => o.text.trim()) : undefined,
+        correct_answer: data.correct_answer || undefined,
+        explanation: data.explanation || undefined,
+        weight: data.weight,
+      })
+      setAddingQuestion(false)
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao adicionar pergunta') }
+  }
+
+  const handleUpdateQuestion = async (questionId: string, data: QuestionFormData) => {
+    try {
+      await api.updateTrainingQuizQuestion(trainingId, questionId, {
+        text: data.text, type: data.type,
+        options: data.type === 'multiple_choice' ? data.options.filter(o => o.text.trim()) : undefined,
+        correct_answer: data.correct_answer || undefined,
+        explanation: data.explanation || undefined,
+        weight: data.weight,
+      })
+      setEditingQuestion(null)
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao atualizar pergunta') }
+  }
+
+  const handleDeleteQuestion = async (questionId: string) => {
+    if (!confirm('Remover esta pergunta?')) return
+    try {
+      await api.deleteTrainingQuizQuestion(trainingId, questionId)
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao remover pergunta') }
+  }
+
+  return (
+    <div className="card p-6 border-2 border-dashed border-violet-200 bg-violet-50/30">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+          <ClipboardCheck className="w-5 h-5 text-violet-600" />
+          Avaliação Final do Treinamento
+        </h3>
+        {isDraft && !quiz && (
+          <div className="flex items-center gap-2">
+            <button onClick={handleCreate} disabled={creating}
+              className="btn-secondary text-xs px-3 py-1 flex items-center gap-1">
+              {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+              Criar avaliação
+            </button>
+            <button onClick={() => setShowAiModal(true)} disabled={generatingQuiz}
+              className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-violet-600 bg-violet-100 hover:bg-violet-200 rounded-lg transition-colors">
+              {generatingQuiz ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+              Gerar com IA
+            </button>
+          </div>
+        )}
+      </div>
+
+      {!quiz ? (
+        <p className="text-sm text-gray-500">
+          Adicione uma avaliação final para que os profissionais sejam avaliados após concluir todos os módulos.
+          A nota influencia diretamente o XP recebido.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {/* Settings */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Nota mínima (%)</label>
+              <select value={passingScore} disabled={!isDraft || savingQuiz}
+                onChange={e => { const v = Number(e.target.value); setPassingScore(v); handleUpdateSettings({ passing_score: v }) }}
+                className="input-field w-full text-sm">
+                {[0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map(v => (
+                  <option key={v} value={v}>{Math.round(v * 100)}%</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Máx. tentativas</label>
+              <select value={maxAttempts} disabled={!isDraft || savingQuiz}
+                onChange={e => { const v = Number(e.target.value); setMaxAttempts(v); handleUpdateSettings({ max_attempts: v }) }}
+                className="input-field w-full text-sm">
+                <option value={0}>Ilimitado</option>
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+                <option value={5}>5</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              {isDraft && (
+                <button onClick={handleDelete} className="text-red-500 hover:text-red-700 text-xs flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Remover avaliação
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Questions */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-700">{quiz.questions?.length || 0} perguntas</p>
+            {quiz.questions?.map((q, i) => (
+              <div key={q.id} className="bg-white rounded-xl p-4 border border-gray-100">
+                {editingQuestion === q.id ? (
+                  <QuestionForm initial={tqToFormData(q)} onSave={(d) => handleUpdateQuestion(q.id, d)} onCancel={() => setEditingQuestion(null)} index={i} />
+                ) : (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800">{i + 1}. {q.text}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {q.type === 'multiple_choice' ? 'Múltipla escolha' : q.type === 'true_false' ? 'V/F' : 'Dissertativa'}
+                        {q.correct_answer && ` · Resp: ${q.correct_answer}`}
+                      </p>
+                    </div>
+                    {isDraft && (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setEditingQuestion(q.id)} className="p-1 text-gray-400 hover:text-indigo-600"><Pencil className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => handleDeleteQuestion(q.id)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Add question */}
+          {isDraft && (
+            addingQuestion ? (
+              <QuestionForm initial={emptyQuestion} onSave={handleAddQuestion} onCancel={() => setAddingQuestion(false)} index={(quiz.questions?.length || 0)} />
+            ) : (
+              <div className="flex gap-2">
+                <button onClick={() => setAddingQuestion(true)} className="btn-secondary text-xs px-3 py-1 flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Adicionar pergunta
+                </button>
+                <button onClick={() => setShowAiModal(true)} disabled={generatingQuiz}
+                  className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-violet-600 bg-violet-100 hover:bg-violet-200 rounded-lg transition-colors">
+                  {generatingQuiz ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                  Gerar com IA
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      {/* AI Generation Modal */}
+      {showAiModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 p-6 animate-slide-up">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-violet-500" /> Gerar Avaliação Final com IA
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">A IA considerará o conteúdo de todos os módulos.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantas perguntas?</label>
+                <input type="number" min={3} max={20} value={aiNumQuestions} onChange={e => setAiNumQuestions(Number(e.target.value))}
+                  className="input-field w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nível de dificuldade</label>
+                <select value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)} className="input-field w-full">
+                  <option value="facil">Fácil</option>
+                  <option value="intermediario">Intermediário</option>
+                  <option value="dificil">Difícil</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Orientação para a IA</label>
+                <textarea value={aiOrientation} onChange={e => setAiOrientation(e.target.value)}
+                  placeholder="Descreva o foco das perguntas ou cole perguntas que deseja melhorar..."
+                  rows={4} className="input-field w-full resize-none" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => setShowAiModal(false)} className="btn-secondary text-sm px-4 py-2">Cancelar</button>
+              <button onClick={handleGenerate} className="btn-primary text-sm px-4 py-2 flex items-center gap-1">
+                <Sparkles className="w-4 h-4" /> Gerar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function tqToFormData(q: TrainingQuizQuestion): QuestionFormData {
+  let options: { text: string }[]
+  if (q.options && q.options.length > 0) {
+    options = q.options.map(o => ({ text: o.text }))
+  } else if (q.type === 'true_false') {
+    options = [{ text: 'Verdadeiro' }, { text: 'Falso' }]
+  } else {
+    options = [{ text: '' }, { text: '' }, { text: '' }, { text: '' }]
+  }
+  return { text: q.text, type: q.type, options, correct_answer: q.correct_answer || '', explanation: q.explanation || '', weight: q.weight }
+}
+
 // ── Helpers ──
 function questionToFormData(q: QuizQuestion): QuestionFormData {
+  let options: { text: string }[]
+  if (q.options && q.options.length > 0) {
+    options = q.options.map(o => ({ text: o.text }))
+  } else if (q.type === 'true_false') {
+    options = [{ text: 'Verdadeiro' }, { text: 'Falso' }]
+  } else {
+    options = [{ text: '' }, { text: '' }, { text: '' }, { text: '' }]
+  }
   return {
     text: q.text,
     type: q.type,
-    options: q.type === 'multiple_choice' && q.options ? q.options.map(o => ({ text: o.text })) : [{ text: '' }, { text: '' }],
+    options,
     correct_answer: q.correct_answer || '',
     explanation: q.explanation || '',
     weight: q.weight,

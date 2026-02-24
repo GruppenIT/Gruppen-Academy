@@ -601,7 +601,13 @@ def build_scorm_from_ai_content(
     sections_html_parts: list[str] = []
     for sec in sections:
         heading = _escape_html(sec.get("heading", ""))
-        body = _markdown_to_html(sec.get("content", ""))
+        raw_content = sec.get("content", "")
+        # If content is already HTML (from manual editor), use it directly;
+        # otherwise convert from markdown.
+        if raw_content.strip().startswith("<"):
+            body = raw_content
+        else:
+            body = _markdown_to_html(raw_content)
         vs = sec.get("video_suggestions", [])
 
         video_html = ""

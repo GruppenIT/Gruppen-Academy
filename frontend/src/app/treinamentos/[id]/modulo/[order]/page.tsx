@@ -56,6 +56,8 @@ export default function ModuleContentPage() {
         if (mod?.has_quiz) {
           const q = await api.getModuleQuiz(trainingId, trainModule.id)
           setQuiz(q)
+        } else {
+          setQuiz(null)
         }
       }
     } catch {
@@ -66,6 +68,19 @@ export default function ModuleContentPage() {
   }, [trainingId, moduleOrder])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Reset quiz-related state when navigating between modules
+  useEffect(() => {
+    setAnswers({})
+    setAttemptResult(null)
+    setShowQuiz(false)
+    setSubmitting(false)
+    setQuizError('')
+    setMarkingView(false)
+    setLoading(true)
+    setModuleDetail(null)
+    setQuiz(null)
+  }, [moduleOrder])
 
   // SCORM postMessage listener: capture lesson_status and score from SCORM iframe
   useEffect(() => {
@@ -118,22 +133,21 @@ export default function ModuleContentPage() {
     }
   }
 
+  const [quizError, setQuizError] = useState('')
+
   const handleSubmitQuiz = async () => {
-    if (!currentModule) return
+    if (!currentModule || !moduleDetail) return
     setSubmitting(true)
+    setQuizError('')
     try {
-      const trainingDetail = await api.getTraining(trainingId)
-      const trainModule = trainingDetail.modules?.find(m => m.order === moduleOrder)
-      if (trainModule) {
-        const result = await api.submitQuizAttempt(trainingId, trainModule.id, answers)
-        setAttemptResult(result)
-        // Reload progress after attempt
-        const prog = await api.getTrainingProgress(trainingId)
-        setProgress(prog)
-        setCurrentModule(prog.modules.find(m => m.order === moduleOrder) || null)
-      }
-    } catch {
-      // handle error silently
+      const result = await api.submitQuizAttempt(trainingId, moduleDetail.id, answers)
+      setAttemptResult(result)
+      // Reload progress after attempt
+      const prog = await api.getTrainingProgress(trainingId)
+      setProgress(prog)
+      setCurrentModule(prog.modules.find(m => m.order === moduleOrder) || null)
+    } catch (err) {
+      setQuizError(err instanceof Error ? err.message : 'Erro ao enviar respostas. Tente novamente.')
     } finally {
       setSubmitting(false)
     }
@@ -350,6 +364,13 @@ export default function ModuleContentPage() {
             )}
           </div>
 
+          {/* Quiz error */}
+          {quizError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {quizError}
+            </div>
+          )}
+
           {/* Show quiz result or quiz form */}
           {attemptResult ? (
             <QuizResult
@@ -440,8 +461,8 @@ function QuizForm({
             <h4 className="font-medium text-gray-900 mb-3">
               {idx + 1}. {q.text}
             </h4>
-            {q.type === 'multiple_choice' && q.options && (
-              <div className="space-y-2">
+            {(q.type === 'multiple_choice' || q.type === 'true_false') && q.options && (
+              <div className={q.type === 'true_false' ? 'flex gap-3' : 'space-y-2'}>
                 {q.options.map((opt, i) => {
                   const val = String.fromCharCode(65 + i) // A, B, C, D...
                   return (
@@ -449,6 +470,7 @@ function QuizForm({
                       key={i}
                       className={clsx(
                         'flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-all',
+                        q.type === 'true_false' && 'flex-1 justify-center',
                         answers[q.id] === val
                           ? 'border-brand-300 bg-brand-50'
                           : 'border-gray-200 hover:border-gray-300'
@@ -463,38 +485,12 @@ function QuizForm({
                         className="accent-brand-600"
                       />
                       <span className="text-sm text-gray-700">
-                        <span className="font-medium mr-1">{val}.</span> {opt.text}
+                        {q.type === 'multiple_choice' && <span className="font-medium mr-1">{val}.</span>}
+                        {opt.text}
                       </span>
                     </label>
                   )
                 })}
-              </div>
-            )}
-            {q.type === 'true_false' && (
-              <div className="flex gap-3">
-                {['true', 'false'].map(val => (
-                  <label
-                    key={val}
-                    className={clsx(
-                      'flex-1 flex items-center justify-center gap-2 p-3 rounded-lg border cursor-pointer transition-all',
-                      answers[q.id] === val
-                        ? 'border-brand-300 bg-brand-50'
-                        : 'border-gray-200 hover:border-gray-300'
-                    )}
-                  >
-                    <input
-                      type="radio"
-                      name={q.id}
-                      value={val}
-                      checked={answers[q.id] === val}
-                      onChange={() => onChange({ ...answers, [q.id]: val })}
-                      className="accent-brand-600"
-                    />
-                    <span className="text-sm font-medium text-gray-700">
-                      {val === 'true' ? 'Verdadeiro' : 'Falso'}
-                    </span>
-                  </label>
-                ))}
               </div>
             )}
             {q.type === 'essay' && (

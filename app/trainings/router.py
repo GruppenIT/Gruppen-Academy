@@ -2,7 +2,7 @@ import logging
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
@@ -15,6 +15,8 @@ from app.trainings.models import ModuleContentType, TrainingStatus
 logger = logging.getLogger(__name__)
 from app.trainings.schemas import (
     EnrollmentDetailOut,
+    FinalQuizProgress,
+    GenerateQuizRequest,
     ModuleCreate,
     ModuleDetailOut,
     ModuleOut,
@@ -31,21 +33,33 @@ from app.trainings.schemas import (
     QuizQuestionOut,
     QuizQuestionUpdate,
     ScormStatusUpdate,
+    UserEnrollmentSummary,
     TrainingCreate,
     TrainingDetailOut,
     TrainingOut,
     TrainingProgressModule,
     TrainingProgressOut,
+    TrainingQuizAttemptOut,
+    TrainingQuizAttemptSubmit,
+    TrainingQuizCreate,
+    TrainingQuizOut,
+    TrainingQuizQuestionCreate,
+    TrainingQuizQuestionOut,
+    TrainingQuizQuestionUpdate,
+    TrainingQuizUpdate,
     TrainingUpdate,
 )
 from app.trainings.service import (
     add_module,
     add_quiz_question,
+    add_training_quiz_question,
     archive_training,
     create_or_update_quiz,
+    create_or_update_training_quiz,
     create_training,
     delete_module,
     delete_quiz_question,
+    delete_training_quiz_question,
     get_enrollment_for_user,
     get_module,
     get_module_progress_for_enrollment,
@@ -57,6 +71,9 @@ from app.trainings.service import (
     get_quiz_question,
     get_training,
     get_training_enrollments,
+    get_training_quiz,
+    get_training_quiz_attempts,
+    get_training_quiz_question,
     hard_delete_training,
     import_scorm_training,
     list_modules,
@@ -64,9 +81,14 @@ from app.trainings.service import (
     mark_content_viewed,
     publish_training,
     submit_quiz_attempt,
+    submit_training_quiz_attempt,
+    get_user_enrollments_for_manager,
+    reset_enrollment,
+    unlock_quiz_retry,
     update_module,
     update_quiz_question,
     update_training,
+    update_training_quiz_question,
 )
 from app.users.models import User, UserRole
 
@@ -187,7 +209,6 @@ async def import_scorm_endpoint(
     participant_level: str = Form("intermediario"),
     estimated_duration_minutes: int = Form(60),
     xp_reward: int = Form(100),
-    module_xp_reward: int = Form(20),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(
         require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)
@@ -267,7 +288,6 @@ async def import_scorm_endpoint(
         estimated_duration_minutes=estimated_duration_minutes,
         xp_reward=xp_reward,
         scorm_items=items,
-        module_xp_reward=module_xp_reward,
     )
 
     # Rename upload dir to match actual training ID
@@ -616,6 +636,96 @@ async def upload_module_file(
     await db.commit()
     await db.refresh(module)
     return module
+
+
+def _extract_text_from_reference(raw_bytes: bytes, filename: str) -> str | None:
+    """Extract text content from a reference file based on its type.
+
+    Supports .txt, .md (UTF-8 decode), .pdf (pdfplumber), and .docx (ZIP/XML).
+    Returns up to 15 000 characters of extracted text, or None on failure.
+    """
+    MAX_CHARS = 15_000
+
+    if filename.endswith((".txt", ".md")):
+        text = raw_bytes.decode("utf-8", errors="replace")
+        return text[:MAX_CHARS] if text.strip() else None
+
+    if filename.endswith(".pdf"):
+        import io
+        import tempfile
+
+        # pdfplumber needs a file path or file-like object
+        try:
+            import pdfplumber
+
+            with pdfplumber.open(io.BytesIO(raw_bytes)) as pdf:
+                parts: list[str] = []
+                total = 0
+                for page in pdf.pages:
+                    page_text = page.extract_text() or ""
+                    parts.append(page_text)
+                    total += len(page_text)
+                    if total >= MAX_CHARS:
+                        break
+            text = "\n".join(parts)
+            return text[:MAX_CHARS] if text.strip() else None
+        except Exception:
+            # Fallback: try OCR if pdfplumber gets no text (scanned PDF)
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp.write(raw_bytes)
+                    tmp_path = tmp.name
+                from pdf2image import convert_from_path
+                import pytesseract
+
+                images = convert_from_path(tmp_path, dpi=200)
+                parts = []
+                total = 0
+                for img in images:
+                    page_text = pytesseract.image_to_string(img, lang="por")
+                    parts.append(page_text)
+                    total += len(page_text)
+                    if total >= MAX_CHARS:
+                        break
+                text = "\n".join(parts)
+                return text[:MAX_CHARS] if text.strip() else None
+            except Exception:
+                return None
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+
+    if filename.endswith(".docx"):
+        import io
+        import zipfile as zf
+        import xml.etree.ElementTree as ET
+
+        try:
+            with zf.ZipFile(io.BytesIO(raw_bytes)) as docx_zip:
+                xml_content = docx_zip.read("word/document.xml")
+            tree = ET.fromstring(xml_content)
+            ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            parts = []
+            for paragraph in tree.iter(f"{{{ns}}}p"):
+                p_texts = []
+                for t_elem in paragraph.iter(f"{{{ns}}}t"):
+                    if t_elem.text:
+                        p_texts.append(t_elem.text)
+                if p_texts:
+                    parts.append("".join(p_texts))
+            text = "\n".join(parts)
+            return text[:MAX_CHARS] if text.strip() else None
+        except Exception:
+            return None
+
+    # Unknown file type — try plain text as last resort
+    try:
+        text = raw_bytes.decode("utf-8", errors="replace")
+        return text[:MAX_CHARS] if text.strip() else None
+    except Exception:
+        return None
 
 
 def _extract_scorm_package(zip_path: str, upload_dir: str, module_id: str) -> dict:
@@ -1102,8 +1212,21 @@ async def list_enrollments_endpoint(
     if not training:
         raise HTTPException(status_code=404, detail="Treinamento não encontrado")
     enrollments = await get_training_enrollments(db, training_id)
+    final_quiz = training.final_quiz if training else None
     result = []
     for e in enrollments:
+        attempts_used = len(e.training_quiz_attempts) if e.training_quiz_attempts else 0
+        passed = any(a.passed for a in (e.training_quiz_attempts or []))
+        quiz_blocked = (
+            bool(final_quiz)
+            and final_quiz.max_attempts > 0
+            and attempts_used >= final_quiz.max_attempts
+            and not passed
+            and not (
+                e.quiz_unlocked_at
+                and (not e.training_quiz_attempts or e.quiz_unlocked_at > e.training_quiz_attempts[0].completed_at)
+            )
+        )
         result.append(
             EnrollmentDetailOut(
                 id=e.id,
@@ -1116,6 +1239,8 @@ async def list_enrollments_endpoint(
                 user_name=e.user.full_name if e.user else None,
                 user_email=e.user.email if e.user else None,
                 training_title=training.title,
+                quiz_blocked=quiz_blocked,
+                quiz_attempts_used=attempts_used,
             )
         )
     return result
@@ -1173,8 +1298,10 @@ async def generate_module_content_endpoint(
     if reference_file:
         try:
             raw_bytes = await reference_file.read()
-            reference_text = raw_bytes.decode("utf-8", errors="replace")[:15000]
+            filename = (reference_file.filename or "").lower()
+            reference_text = _extract_text_from_reference(raw_bytes, filename)
         except Exception:
+            logger.warning("Failed to extract text from reference file: %s", reference_file.filename)
             reference_text = None
 
     try:
@@ -1218,15 +1345,158 @@ async def generate_module_content_endpoint(
     return result
 
 
+@router.post("/{training_id}/modules/{module_id}/update-content")
+async def update_module_content_endpoint(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Save manually edited content and rebuild the SCORM package."""
+    from app.trainings.scorm_builder import build_scorm_from_ai_content
+
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível editar conteúdo em rascunho.")
+
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    # Merge updated fields with existing content_data
+    current = dict(module.content_data or {})
+    if "title" in body:
+        current["title"] = body["title"]
+    if "sections" in body:
+        current["sections"] = body["sections"]
+    if "summary" in body:
+        current["summary"] = body["summary"]
+    if "key_concepts" in body:
+        current["key_concepts"] = body["key_concepts"]
+
+    # Rebuild SCORM package
+    upload_dir = os.path.join(settings.upload_dir, "trainings", str(training_id))
+    os.makedirs(upload_dir, exist_ok=True)
+
+    scorm_content_data = build_scorm_from_ai_content(
+        content=current,
+        output_dir=upload_dir,
+        module_id=str(module_id),
+        training_title=training.title,
+        module_title=module.title,
+    )
+
+    # Preserve videos if present
+    if current.get("videos"):
+        scorm_content_data["videos"] = current["videos"]
+
+    await update_module(
+        db,
+        module,
+        ModuleUpdate(
+            content_type=ModuleContentType.SCORM,
+            content_data=scorm_content_data,
+        ),
+    )
+
+    return scorm_content_data
+
+
+@router.post("/{training_id}/modules/{module_id}/edit-content-ai")
+async def edit_module_content_ai_endpoint(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Edit module content using AI based on admin instructions."""
+    from app.llm.client import edit_training_content
+    from app.trainings.scorm_builder import build_scorm_from_ai_content
+
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível editar conteúdo em rascunho.")
+
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    if not module.content_data:
+        raise HTTPException(status_code=400, detail="O módulo não possui conteúdo para editar.")
+
+    edit_prompt = body.get("prompt", "").strip()
+    if not edit_prompt:
+        raise HTTPException(status_code=400, detail="Informe as instruções de edição.")
+
+    # Build current content dict for the LLM
+    current = {
+        "title": module.content_data.get("title", module.title),
+        "sections": module.content_data.get("sections", []),
+        "summary": module.content_data.get("summary", ""),
+        "key_concepts": module.content_data.get("key_concepts", []),
+        "estimated_reading_minutes": module.content_data.get("estimated_reading_minutes", 5),
+    }
+
+    try:
+        result = await edit_training_content(
+            current_content=current,
+            edit_prompt=edit_prompt,
+            training_title=training.title,
+            module_title=module.title,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Erro na edição de conteúdo via IA: %s", e)
+        raise HTTPException(status_code=502, detail="Erro ao comunicar com o serviço de IA.")
+
+    # Rebuild SCORM package
+    upload_dir = os.path.join(settings.upload_dir, "trainings", str(training_id))
+    os.makedirs(upload_dir, exist_ok=True)
+
+    scorm_content_data = build_scorm_from_ai_content(
+        content=result,
+        output_dir=upload_dir,
+        module_id=str(module_id),
+        training_title=training.title,
+        module_title=module.title,
+    )
+
+    # Preserve videos
+    if module.content_data.get("videos"):
+        scorm_content_data["videos"] = module.content_data["videos"]
+
+    await update_module(
+        db,
+        module,
+        ModuleUpdate(
+            content_type=ModuleContentType.SCORM,
+            content_data=scorm_content_data,
+        ),
+    )
+
+    return result
+
+
 @router.post("/{training_id}/modules/{module_id}/generate-quiz")
 async def generate_module_quiz_endpoint(
     training_id: uuid.UUID,
     module_id: uuid.UUID,
+    body: GenerateQuizRequest | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
     """Generate quiz questions based on module content using AI."""
     from app.llm.client import generate_training_quiz
+
+    if body is None:
+        body = GenerateQuizRequest()
 
     training = await get_training(db, training_id)
     if not training:
@@ -1239,14 +1509,7 @@ async def generate_module_quiz_endpoint(
         raise HTTPException(status_code=404, detail="Módulo não encontrado")
 
     # Collect content text for the LLM
-    content_text = ""
-    if module.content_data:
-        # AI-generated or rich text content
-        sections = module.content_data.get("sections", [])
-        for sec in sections:
-            content_text += f"## {sec.get('heading', '')}\n{sec.get('content', '')}\n\n"
-        if not content_text:
-            content_text = str(module.content_data)
+    content_text = _extract_module_content_text(module)
 
     if not content_text.strip():
         raise HTTPException(
@@ -1259,6 +1522,9 @@ async def generate_module_quiz_endpoint(
             module_title=module.title,
             content_text=content_text[:10000],
             participant_level=training.participant_level,
+            num_questions=body.num_questions,
+            difficulty=body.difficulty,
+            orientation=body.orientation,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -1297,6 +1563,322 @@ async def generate_module_quiz_endpoint(
     return {"quiz_id": str(quiz.id), "questions_count": len(saved), "questions": saved}
 
 
+def _extract_module_content_text(module) -> str:
+    """Extract text content from a module for AI processing."""
+    content_text = ""
+    if module.content_data:
+        sections = module.content_data.get("sections", [])
+        for sec in sections:
+            content_text += f"## {sec.get('heading', '')}\n{sec.get('content', '')}\n\n"
+        if not content_text:
+            content_text = str(module.content_data)
+    return content_text
+
+
+# ──────────────────────────────────────────────
+# Training Final Quiz (Admin)
+# ──────────────────────────────────────────────
+
+
+@router.post("/{training_id}/quiz", response_model=TrainingQuizOut, status_code=status.HTTP_201_CREATED)
+async def create_training_quiz_endpoint(
+    training_id: uuid.UUID,
+    data: TrainingQuizCreate = Body(default=TrainingQuizCreate()),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível editar quiz em rascunho.")
+    quiz = await create_or_update_training_quiz(db, training_id, data)
+    return quiz
+
+
+@router.get("/{training_id}/quiz", response_model=TrainingQuizOut | None)
+async def get_training_quiz_endpoint(
+    training_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    quiz = await get_training_quiz(db, training_id)
+    return quiz
+
+
+@router.put("/{training_id}/quiz", response_model=TrainingQuizOut)
+async def update_training_quiz_endpoint(
+    training_id: uuid.UUID,
+    data: TrainingQuizUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível editar quiz em rascunho.")
+    quiz = await get_training_quiz(db, training_id)
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Avaliação final não encontrada")
+    if data.title is not None:
+        quiz.title = data.title
+    if data.passing_score is not None:
+        quiz.passing_score = data.passing_score
+    if data.max_attempts is not None:
+        quiz.max_attempts = data.max_attempts
+    await db.commit()
+    await db.refresh(quiz)
+    return quiz
+
+
+@router.delete("/{training_id}/quiz", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_training_quiz_endpoint(
+    training_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível editar quiz em rascunho.")
+    quiz = await get_training_quiz(db, training_id)
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Avaliação final não encontrada")
+    await db.delete(quiz)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{training_id}/quiz/questions", response_model=TrainingQuizQuestionOut, status_code=status.HTTP_201_CREATED)
+async def add_training_quiz_question_endpoint(
+    training_id: uuid.UUID,
+    data: TrainingQuizQuestionCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível editar quiz em rascunho.")
+    quiz = await get_training_quiz(db, training_id)
+    if not quiz:
+        raise HTTPException(status_code=404, detail="Crie a avaliação final antes de adicionar perguntas.")
+    question = await add_training_quiz_question(db, quiz.id, data)
+    return question
+
+
+@router.put("/{training_id}/quiz/questions/{question_id}", response_model=TrainingQuizQuestionOut)
+async def update_training_quiz_question_endpoint(
+    training_id: uuid.UUID,
+    question_id: uuid.UUID,
+    data: TrainingQuizQuestionUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível editar quiz em rascunho.")
+    question = await get_training_quiz_question(db, question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="Pergunta não encontrada")
+    question = await update_training_quiz_question(db, question, data)
+    return question
+
+
+@router.delete("/{training_id}/quiz/questions/{question_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_training_quiz_question_endpoint(
+    training_id: uuid.UUID,
+    question_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível editar quiz em rascunho.")
+    question = await get_training_quiz_question(db, question_id)
+    if not question:
+        raise HTTPException(status_code=404, detail="Pergunta não encontrada")
+    await delete_training_quiz_question(db, question)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{training_id}/quiz/generate")
+async def generate_training_quiz_endpoint(
+    training_id: uuid.UUID,
+    body: GenerateQuizRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Generate final quiz questions based on ALL modules content using AI."""
+    from app.llm.client import generate_training_quiz as llm_generate
+
+    if body is None:
+        body = GenerateQuizRequest()
+
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível gerar quiz em rascunho.")
+
+    # Collect content from ALL modules
+    modules = await list_modules(db, training_id)
+    all_content = ""
+    for mod in modules:
+        mod_full = await get_module(db, mod.id)
+        if mod_full:
+            text = _extract_module_content_text(mod_full)
+            if text.strip():
+                all_content += f"\n# {mod_full.title}\n{text}\n"
+
+    if not all_content.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="Os módulos precisam ter conteúdo para gerar a avaliação final.",
+        )
+
+    try:
+        raw_questions = await llm_generate(
+            module_title=f"Avaliação Final - {training.title}",
+            content_text=all_content[:20000],
+            participant_level=training.participant_level,
+            num_questions=body.num_questions,
+            difficulty=body.difficulty,
+            orientation=body.orientation,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Erro na geração de quiz final via IA: %s", e)
+        raise HTTPException(status_code=502, detail="Erro ao comunicar com o serviço de IA.")
+
+    # Create or update final quiz
+    quiz = await create_or_update_training_quiz(
+        db, training_id, TrainingQuizCreate(title="Avaliação Final", passing_score=0.7),
+    )
+
+    # Add generated questions
+    saved = []
+    for i, q in enumerate(raw_questions):
+        question = await add_training_quiz_question(
+            db,
+            quiz.id,
+            TrainingQuizQuestionCreate(
+                text=q.get("text", ""),
+                type=q.get("type", "multiple_choice"),
+                options=q.get("options"),
+                correct_answer=q.get("correct_answer"),
+                explanation=q.get("explanation"),
+                weight=q.get("weight", 1.0),
+                order=i + 1,
+            ),
+        )
+        saved.append(TrainingQuizQuestionOut.model_validate(question))
+
+    return {"quiz_id": str(quiz.id), "questions_count": len(saved), "questions": saved}
+
+
+# ──────────────────────────────────────────────
+# Manager: Unlock Quiz Retry
+# ──────────────────────────────────────────────
+
+
+@router.post("/{training_id}/enrollments/{enrollment_id}/unlock-quiz", response_model=EnrollmentDetailOut)
+async def unlock_quiz_endpoint(
+    training_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.MANAGER)),
+):
+    """Manager unlocks a new final quiz attempt for an enrolled user."""
+    try:
+        enrollment = await unlock_quiz_retry(db, enrollment_id, current_user.id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return EnrollmentDetailOut(
+        id=enrollment.id,
+        training_id=enrollment.training_id,
+        user_id=enrollment.user_id,
+        status=enrollment.status,
+        current_module_order=enrollment.current_module_order,
+        enrolled_at=enrollment.enrolled_at,
+        completed_at=enrollment.completed_at,
+    )
+
+
+# ──────────────────────────────────────────────
+# Manager: User Training History
+# ──────────────────────────────────────────────
+
+
+@router.get("/manager/users/{user_id}/enrollments", response_model=list[UserEnrollmentSummary])
+async def get_user_enrollments_endpoint(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.MANAGER)),
+):
+    """Manager views a specific user's training enrollment history."""
+    enrollments = await get_user_enrollments_for_manager(db, user_id)
+    result = []
+    for e in enrollments:
+        training = e.training
+        modules = training.modules if training else []
+        completed_ids = {
+            p.module_id for p in (e.module_progress or []) if p.completed_at
+        }
+        result.append(
+            UserEnrollmentSummary(
+                enrollment_id=e.id,
+                training_id=e.training_id,
+                training_title=training.title if training else "",
+                domain=training.domain if training else "",
+                status=e.status,
+                total_modules=len(modules),
+                completed_modules=len(completed_ids),
+                enrolled_at=e.enrolled_at,
+                completed_at=e.completed_at,
+            )
+        )
+    return result
+
+
+@router.post(
+    "/{training_id}/enrollments/{enrollment_id}/reset",
+    response_model=EnrollmentDetailOut,
+)
+async def reset_enrollment_endpoint(
+    training_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.MANAGER)),
+):
+    """Manager resets an enrollment so the user can redo the training."""
+    try:
+        enrollment = await reset_enrollment(db, enrollment_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if enrollment.training_id != training_id:
+        raise HTTPException(status_code=400, detail="Enrollment does not belong to this training")
+
+    return EnrollmentDetailOut(
+        id=enrollment.id,
+        training_id=enrollment.training_id,
+        user_id=enrollment.user_id,
+        status=enrollment.status,
+        current_module_order=enrollment.current_module_order,
+        enrolled_at=enrollment.enrolled_at,
+        completed_at=enrollment.completed_at,
+    )
+
+
 # ──────────────────────────────────────────────
 # Professional: My Trainings
 # ──────────────────────────────────────────────
@@ -1315,6 +1897,7 @@ async def my_trainings_endpoint(
         completed_ids = {
             p.module_id for p in (e.module_progress or []) if p.completed_at
         }
+        has_final_quiz = bool(training and training.final_quiz and training.final_quiz.questions)
         result.append(
             MyTrainingSummary(
                 enrollment_id=e.id,
@@ -1329,6 +1912,7 @@ async def my_trainings_endpoint(
                 completed_modules=len(completed_ids),
                 enrolled_at=e.enrolled_at,
                 completed_at=e.completed_at,
+                has_final_quiz=has_final_quiz,
             )
         )
     return result
@@ -1414,7 +1998,6 @@ async def training_progress_endpoint(
                 mime_type=mod.mime_type,
                 has_quiz=mod.has_quiz,
                 quiz_required_to_advance=mod.quiz_required_to_advance,
-                xp_reward=mod.xp_reward,
                 allow_download=mod.allow_download,
                 content_viewed=content_viewed,
                 quiz_passed=quiz_passed,
@@ -1422,6 +2005,37 @@ async def training_progress_endpoint(
                 completed=completed,
                 locked=locked,
             )
+        )
+
+    # Build final quiz progress
+    final_quiz_progress = FinalQuizProgress()
+    final_quiz = await get_training_quiz(db, training_id)
+    all_modules_done = all(m.id in completed_ids for m in modules) if modules else True
+    if final_quiz and final_quiz.questions:
+        quiz_attempts = await get_training_quiz_attempts(db, enrollment.id)
+        attempts_used = len(quiz_attempts)
+        best_score = max((a.score for a in quiz_attempts), default=None)
+        passed = any(a.passed for a in quiz_attempts)
+        blocked = (
+            final_quiz.max_attempts > 0
+            and attempts_used >= final_quiz.max_attempts
+            and not passed
+            and not (
+                enrollment.quiz_unlocked_at
+                and (not quiz_attempts or enrollment.quiz_unlocked_at > quiz_attempts[0].completed_at)
+            )
+        )
+        final_quiz_progress = FinalQuizProgress(
+            has_quiz=True,
+            unlocked=all_modules_done,
+            passing_score=final_quiz.passing_score,
+            max_attempts=final_quiz.max_attempts,
+            attempts_used=attempts_used,
+            best_score=best_score,
+            passed=passed,
+            blocked=blocked,
+            quiz_id=final_quiz.id,
+            questions_count=len(final_quiz.questions),
         )
 
     return TrainingProgressOut(
@@ -1433,6 +2047,7 @@ async def training_progress_endpoint(
         completed_modules=len(completed_ids),
         xp_reward=training.xp_reward,
         modules=module_items,
+        final_quiz=final_quiz_progress,
     )
 
 
@@ -1484,6 +2099,13 @@ async def submit_quiz_attempt_endpoint(
         attempt = await submit_quiz_attempt(db, enrollment, module, data.answers)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        logger.exception("Error submitting quiz attempt for training=%s module=%s user=%s",
+                         training_id, module_id, current_user.id)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno ao processar tentativa de quiz: {type(exc).__name__}: {exc}",
+        )
     return attempt
 
 
@@ -1554,3 +2176,52 @@ async def update_scorm_status(
         await db.commit()
         await db.refresh(progress)
     return progress
+
+
+# ──────────────────────────────────────────────
+# Professional: Training Final Quiz
+# ──────────────────────────────────────────────
+
+
+@router.post(
+    "/my/trainings/{training_id}/quiz/attempt",
+    response_model=TrainingQuizAttemptOut,
+)
+async def submit_training_quiz_attempt_endpoint(
+    training_id: uuid.UUID,
+    data: TrainingQuizAttemptSubmit,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    enrollment = await get_enrollment_for_user(db, training_id, current_user.id)
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Inscrição não encontrada")
+
+    try:
+        attempt = await submit_training_quiz_attempt(db, enrollment, data.answers)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as exc:
+        logger.exception("Error submitting training quiz attempt for training=%s user=%s",
+                         training_id, current_user.id)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno ao processar tentativa: {type(exc).__name__}: {exc}",
+        )
+    return attempt
+
+
+@router.get(
+    "/my/trainings/{training_id}/quiz/attempts",
+    response_model=list[TrainingQuizAttemptOut],
+)
+async def list_training_quiz_attempts_endpoint(
+    training_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    enrollment = await get_enrollment_for_user(db, training_id, current_user.id)
+    if not enrollment:
+        raise HTTPException(status_code=404, detail="Inscrição não encontrada")
+    attempts = await get_training_quiz_attempts(db, enrollment.id)
+    return attempts

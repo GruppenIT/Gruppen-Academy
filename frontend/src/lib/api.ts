@@ -470,7 +470,7 @@ class ApiClient {
   }
   async importScormTraining(
     file: File,
-    opts?: { title?: string; description?: string; domain?: string; participant_level?: string; estimated_duration_minutes?: number; xp_reward?: number; module_xp_reward?: number }
+    opts?: { title?: string; description?: string; domain?: string; participant_level?: string; estimated_duration_minutes?: number; xp_reward?: number }
   ): Promise<import('@/types').Training> {
     const formData = new FormData()
     formData.append('file', file)
@@ -480,7 +480,6 @@ class ApiClient {
     if (opts?.participant_level) formData.append('participant_level', opts.participant_level)
     if (opts?.estimated_duration_minutes !== undefined) formData.append('estimated_duration_minutes', String(opts.estimated_duration_minutes))
     if (opts?.xp_reward !== undefined) formData.append('xp_reward', String(opts.xp_reward))
-    if (opts?.module_xp_reward !== undefined) formData.append('module_xp_reward', String(opts.module_xp_reward))
     const res = await fetch(`${API_BASE}/api/trainings/import-scorm`, {
       method: 'POST',
       body: formData,

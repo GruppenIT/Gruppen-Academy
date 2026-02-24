@@ -206,7 +206,6 @@ async def import_scorm_endpoint(
     participant_level: str = Form("intermediario"),
     estimated_duration_minutes: int = Form(60),
     xp_reward: int = Form(100),
-    module_xp_reward: int = Form(20),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(
         require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)
@@ -286,7 +285,6 @@ async def import_scorm_endpoint(
         estimated_duration_minutes=estimated_duration_minutes,
         xp_reward=xp_reward,
         scorm_items=items,
-        module_xp_reward=module_xp_reward,
     )
 
     # Rename upload dir to match actual training ID

@@ -14,30 +14,54 @@ branch_labels = None
 depends_on = None
 
 
+def _table_exists(name: str) -> bool:
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text("SELECT 1 FROM information_schema.tables WHERE table_name = :t"),
+        {"t": name},
+    )
+    return result.scalar() is not None
+
+
+def _column_exists(table: str, column: str) -> bool:
+    conn = op.get_bind()
+    result = conn.execute(
+        sa.text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = :t AND column_name = :c"
+        ),
+        {"t": table, "c": column},
+    )
+    return result.scalar() is not None
+
+
 def upgrade() -> None:
     # Enum for item type
     pathitemtype = postgresql.ENUM("training", "journey", name="pathitemtype", create_type=False)
     pathitemtype.create(op.get_bind(), checkfirst=True)
 
-    op.create_table(
-        "learning_path_items",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
-        sa.Column("path_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("learning_paths.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("item_type", pathitemtype, nullable=False),
-        sa.Column("item_id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("order", sa.Integer, nullable=False, server_default="0"),
-        sa.Column("added_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
-        sa.UniqueConstraint("path_id", "item_type", "item_id", name="uq_path_item"),
-    )
+    if not _table_exists("learning_path_items"):
+        op.create_table(
+            "learning_path_items",
+            sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, server_default=sa.text("gen_random_uuid()")),
+            sa.Column("path_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("learning_paths.id", ondelete="CASCADE"), nullable=False),
+            sa.Column("item_type", pathitemtype, nullable=False),
+            sa.Column("item_id", postgresql.UUID(as_uuid=True), nullable=False),
+            sa.Column("order", sa.Integer, nullable=False, server_default="0"),
+            sa.Column("added_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+            sa.UniqueConstraint("path_id", "item_type", "item_id", name="uq_path_item"),
+        )
 
-    op.create_table(
-        "learning_path_badges",
-        sa.Column("path_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("learning_paths.id", ondelete="CASCADE"), primary_key=True),
-        sa.Column("badge_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("badges.id", ondelete="CASCADE"), primary_key=True),
-    )
+    if not _table_exists("learning_path_badges"):
+        op.create_table(
+            "learning_path_badges",
+            sa.Column("path_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("learning_paths.id", ondelete="CASCADE"), primary_key=True),
+            sa.Column("badge_id", postgresql.UUID(as_uuid=True), sa.ForeignKey("badges.id", ondelete="CASCADE"), primary_key=True),
+        )
 
     # Add created_by to learning_paths
-    op.add_column("learning_paths", sa.Column("created_by", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True))
+    if not _column_exists("learning_paths", "created_by"):
+        op.add_column("learning_paths", sa.Column("created_by", postgresql.UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=True))
 
 
 def downgrade() -> None:

@@ -7,7 +7,7 @@ import type { Training, TrainingModule, Team, ModuleQuiz, QuizQuestion, QuizQues
 import {
   ArrowLeft, Plus, Trash2, Upload, Loader2, Save, Send,
   GripVertical, FileText, CheckCircle2, X, ChevronDown, ChevronUp,
-  ClipboardCheck, Pencil, Star, Sparkles, Wand2, Video, Download,
+  ClipboardCheck, Pencil, Star, Sparkles, Wand2, Video, Download, Box,
 } from 'lucide-react'
 import Link from 'next/link'
 import { clsx } from 'clsx'
@@ -318,7 +318,9 @@ export default function AdminTrainingDetailPage() {
                   {mod.content_type
                     ? mod.content_type === 'document'
                       ? `Documento: ${mod.original_filename || 'Enviado'}`
-                      : mod.content_type === 'scorm' ? 'SCORM' : mod.content_type === 'ai_generated' ? 'Conteudo IA' : 'Texto rico'
+                      : mod.content_type === 'scorm'
+                        ? (mod.content_data?.generated_as_scorm ? 'Conteudo IA (SCORM)' : 'SCORM')
+                        : mod.content_type === 'ai_generated' ? 'Conteudo IA' : 'Texto rico'
                     : 'Sem conteudo'}
                   {mod.has_quiz && ` · Quiz (${mod.quiz?.questions?.length || 0} perguntas)${mod.quiz_required_to_advance ? ' obrigatorio' : ''}`}
                   {` · ${mod.xp_reward} XP`}
@@ -574,11 +576,17 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
   }
 
   // Render AI-generated content preview
+  const isScormAI = mod.content_type === 'scorm' && !!mod.content_data?.generated_as_scorm
   const renderAiContent = () => {
     if (!mod.content_data) return null
     const data = mod.content_data as { title?: string; sections?: { heading: string; content: string; video_suggestions?: string[] }[]; summary?: string; key_concepts?: string[] }
     return (
       <div className="p-4 bg-gradient-to-br from-violet-50/50 to-indigo-50/50 rounded-xl border border-violet-100 space-y-3">
+        {isScormAI && (
+          <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">
+            <Box className="w-3 h-3" /> SCORM interativo
+          </span>
+        )}
         {data.title && <h4 className="font-semibold text-gray-900 text-sm">{data.title}</h4>}
         {data.summary && <p className="text-xs text-gray-500 italic">{data.summary}</p>}
         {data.sections && (
@@ -645,7 +653,7 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
             <p className="text-xs text-amber-600 ml-1">Download desabilitado para profissionais.</p>
           )}
         </div>
-      ) : mod.content_type === 'ai_generated' && mod.content_data ? (
+      ) : (mod.content_type === 'ai_generated' || (mod.content_type === 'scorm' && mod.content_data?.generated_as_scorm)) && mod.content_data ? (
         renderAiContent()
       ) : mod.content_type === 'rich_text' ? (
         <div className="p-3 bg-gray-50 rounded-xl text-sm text-gray-600">

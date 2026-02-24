@@ -1135,8 +1135,15 @@ async def generate_module_content_endpoint(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
-    """Generate AI content for a training module, optionally from a reference file."""
+    """Generate AI content for a training module as a SCORM package.
+
+    The AI generates structured educational content which is then rendered into
+    a self-contained HTML page with the Gruppen Academy brand colours and
+    wrapped in a SCORM 1.2 package so it can be played in the platform's SCORM
+    launcher.
+    """
     from app.llm.client import generate_training_content
+    from app.trainings.scorm_builder import build_scorm_from_ai_content
 
     training = await get_training(db, training_id)
     if not training:
@@ -1172,13 +1179,25 @@ async def generate_module_content_endpoint(
         logger.error("Erro na geração de conteúdo via IA: %s", e)
         raise HTTPException(status_code=502, detail="Erro ao comunicar com o serviço de IA.")
 
-    # Save generated content to module
+    # Build SCORM package from the AI-generated content
+    upload_dir = os.path.join(settings.upload_dir, "trainings", str(training_id))
+    os.makedirs(upload_dir, exist_ok=True)
+
+    scorm_content_data = build_scorm_from_ai_content(
+        content=result,
+        output_dir=upload_dir,
+        module_id=str(module_id),
+        training_title=training.title,
+        module_title=module.title,
+    )
+
+    # Save as SCORM module so it uses the iframe player
     await update_module(
         db,
         module,
         ModuleUpdate(
-            content_type=ModuleContentType.AI_GENERATED,
-            content_data=result,
+            content_type=ModuleContentType.SCORM,
+            content_data=scorm_content_data,
         ),
     )
 

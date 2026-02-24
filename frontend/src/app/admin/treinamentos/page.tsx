@@ -5,9 +5,10 @@ import { api } from '@/lib/api'
 import type { Training } from '@/types'
 import {
   Plus, Search, Loader2, LibraryBig, Archive, Eye,
-  Upload, ChevronDown, X, FileArchive,
+  Upload, ChevronDown, X, FileArchive, Wand2,
 } from 'lucide-react'
 import Link from 'next/link'
+import TrainingWizard from '@/components/training/TrainingWizard'
 
 const STATUS_LABELS: Record<string, string> = {
   draft: 'Rascunho',
@@ -28,9 +29,10 @@ export default function AdminTrainingsPage() {
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
 
-  // Dropdown + SCORM import
+  // Dropdown + SCORM import + Wizard
   const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [showScormModal, setShowScormModal] = useState(false)
+  const [showWizard, setShowWizard] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -104,7 +106,20 @@ export default function AdminTrainingsPage() {
           </button>
 
           {showCreateMenu && (
-            <div className="absolute right-0 top-full mt-1.5 w-64 bg-white rounded-xl shadow-lg border border-gray-100 z-20 overflow-hidden animate-slide-up">
+            <div className="absolute right-0 top-full mt-1.5 w-72 bg-white rounded-xl shadow-lg border border-gray-100 z-20 overflow-hidden animate-slide-up">
+              <button
+                onClick={() => { setShowCreateMenu(false); setShowWizard(true) }}
+                className="w-full text-left px-4 py-3 hover:bg-violet-50/50 transition-colors flex items-center gap-3"
+              >
+                <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shrink-0">
+                  <Wand2 className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-gray-900">Magic Wizard</p>
+                  <p className="text-xs text-gray-500">Criação guiada passo a passo</p>
+                </div>
+              </button>
+              <div className="border-t border-gray-100" />
               <button
                 onClick={handleCreate}
                 className="w-full text-left px-4 py-3 hover:bg-gray-50 transition-colors flex items-center gap-3"
@@ -221,6 +236,11 @@ export default function AdminTrainingsPage() {
           onClose={() => setShowScormModal(false)}
           onError={setError}
         />
+      )}
+
+      {/* Magic Wizard */}
+      {showWizard && (
+        <TrainingWizard onClose={() => setShowWizard(false)} />
       )}
     </div>
   )

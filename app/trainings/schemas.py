@@ -441,3 +441,26 @@ class ScormStatusUpdate(BaseModel):
     lesson_status: str  # "completed", "passed", "failed", "incomplete", "not attempted"
     score_raw: float | None = None
     score_max: float | None = None
+
+
+# --- Wizard ---
+class WizardChapter(BaseModel):
+    title: str
+    description: str | None = None
+
+
+class WizardCreateRequest(BaseModel):
+    title: str
+    description: str | None = None
+    domain: str = "vendas"
+    participant_level: str = "intermediario"
+    estimated_duration_minutes: int = 60
+    xp_reward: int = 100
+    chapters: list[WizardChapter]
+
+    @field_validator("domain", mode="before")
+    @classmethod
+    def normalize_domain(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return v.lower()
+        return v

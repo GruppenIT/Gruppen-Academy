@@ -18,6 +18,7 @@ from app.llm.prompts import (
     TRAINING_CONTENT_SYSTEM_PROMPT,
     TRAINING_QUIZ_SYSTEM_PROMPT,
     TUTOR_SUMMARY_SYSTEM_PROMPT,
+    WIZARD_STRUCTURE_SYSTEM_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -461,3 +462,40 @@ Conteúdo:
 
     result = _parse_json_response(response)
     return result.get("questions", [result]) if isinstance(result, dict) else result
+
+
+async def suggest_training_structure(
+    title: str | None,
+    description: str | None,
+    domain: str,
+    participant_level: str,
+    orientation: str | None = None,
+    reference_text: str | None = None,
+) -> dict:
+    """Suggest a chapter structure for a new training using AI."""
+    client = _get_client()
+
+    user_content = "Sugira a estrutura de capítulos para o seguinte treinamento:\n\n"
+    if title:
+        user_content += f"Título: {_sanitize_user_input(title)}\n"
+    if description:
+        user_content += f"Descrição: {_sanitize_user_input(description)}\n"
+    user_content += f"Domínio/Público: {domain}\n"
+    user_content += f"Nível dos participantes: {participant_level}\n"
+
+    if orientation:
+        user_content += f"\nOrientações do administrador:\n{_sanitize_user_input(orientation)}\n"
+    if reference_text:
+        user_content += f"\nMaterial de referência:\n{_sanitize_user_input(reference_text)}\n"
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=4096,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": WIZARD_STRUCTURE_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    return _parse_json_response(response)

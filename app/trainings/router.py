@@ -34,6 +34,7 @@ from app.trainings.schemas import (
     QuizQuestionUpdate,
     ScormStatusUpdate,
     UserEnrollmentSummary,
+    WizardCreateRequest,
     TrainingCreate,
     TrainingDetailOut,
     TrainingOut,
@@ -310,6 +311,98 @@ async def import_scorm_endpoint(
                     "extract_dir": new_extract_dir,
                 }
         await db.commit()
+
+    # Reload with full relations
+    training = await get_training(db, training.id)
+    return training
+
+
+# ──────────────────────────────────────────────
+# Wizard (Admin)
+# ──────────────────────────────────────────────
+
+
+@router.post("/wizard/suggest-structure")
+async def wizard_suggest_structure(
+    orientation: str = Form(""),
+    title: str = Form(""),
+    description: str = Form(""),
+    domain: str = Form("vendas"),
+    participant_level: str = Form("intermediario"),
+    reference_file: UploadFile | None = File(None),
+    current_user: User = Depends(
+        require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+    ),
+):
+    """Use AI to suggest a chapter structure for a new training."""
+    from app.llm.client import suggest_training_structure
+
+    reference_text = None
+    if reference_file:
+        raw_bytes = await reference_file.read()
+        max_bytes = settings.max_upload_size_mb * 1024 * 1024
+        if len(raw_bytes) > max_bytes:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Arquivo excede o limite de {settings.max_upload_size_mb}MB.",
+            )
+        try:
+            reference_text = _extract_text_from_reference(raw_bytes, reference_file.filename or "file")
+        except Exception:
+            logger.warning("Failed to extract text from wizard reference file: %s", reference_file.filename)
+
+    try:
+        result = await suggest_training_structure(
+            title=title.strip() or None,
+            description=description.strip() or None,
+            domain=domain,
+            participant_level=participant_level,
+            orientation=orientation.strip() or None,
+            reference_text=reference_text,
+        )
+        return result
+    except Exception as exc:
+        logger.exception("Wizard suggest structure failed")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post("/wizard", response_model=TrainingDetailOut, status_code=status.HTTP_201_CREATED)
+async def wizard_create_training(
+    data: WizardCreateRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(
+        require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+    ),
+):
+    """Create a training with multiple modules from wizard data."""
+    # Create the training
+    training_data = TrainingCreate(
+        title=data.title,
+        description=data.description,
+        domain=data.domain,
+        participant_level=data.participant_level,
+        estimated_duration_minutes=data.estimated_duration_minutes,
+        xp_reward=data.xp_reward,
+    )
+    training = await create_training(db, training_data, current_user.id)
+
+    # The first module is created automatically by create_training.
+    # Rename it to the first chapter title and create additional modules.
+    modules = await list_modules(db, training.id)
+    if modules and data.chapters:
+        first_module = modules[0]
+        await update_module(db, first_module.id, ModuleUpdate(
+            title=data.chapters[0].title,
+            description=data.chapters[0].description,
+        ))
+
+        # Create remaining chapters as modules
+        for i, chapter in enumerate(data.chapters[1:], start=2):
+            await add_module(db, training.id, ModuleCreate(
+                title=chapter.title,
+                description=chapter.description,
+                order=i,
+            ))
 
     # Reload with full relations
     training = await get_training(db, training.id)

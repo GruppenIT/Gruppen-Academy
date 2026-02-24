@@ -610,6 +610,44 @@ class ApiClient {
     )
   }
 
+  // Wizard
+  async wizardSuggestStructure(data: {
+    title?: string; description?: string; domain: string;
+    participant_level: string; orientation?: string; reference_file?: File
+  }): Promise<{
+    suggested_title?: string;
+    chapters: { title: string; description: string; estimated_duration_minutes: number }[];
+    total_estimated_duration_minutes: number;
+    rationale: string;
+  }> {
+    const formData = new FormData()
+    if (data.title) formData.append('title', data.title)
+    if (data.description) formData.append('description', data.description)
+    formData.append('domain', data.domain)
+    formData.append('participant_level', data.participant_level)
+    if (data.orientation) formData.append('orientation', data.orientation)
+    if (data.reference_file) formData.append('reference_file', data.reference_file)
+    const res = await fetch(`${API_BASE}/api/trainings/wizard/suggest-structure`, {
+      method: 'POST',
+      body: formData,
+      credentials: 'include',
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || `Erro ${res.status}`)
+    }
+    return res.json()
+  }
+  wizardCreateTraining(data: {
+    title: string; description?: string; domain: string;
+    participant_level: string; estimated_duration_minutes: number;
+    xp_reward: number; chapters: { title: string; description?: string }[]
+  }) {
+    return this.request<import('@/types').Training>('/api/trainings/wizard', {
+      method: 'POST', body: JSON.stringify(data),
+    })
+  }
+
   // Training Final Quiz (Admin)
   createTrainingQuiz(trainingId: string, data?: { title?: string; passing_score?: number; max_attempts?: number }) {
     return this.request<import('@/types').TrainingQuiz>(`/api/trainings/${trainingId}/quiz`, {

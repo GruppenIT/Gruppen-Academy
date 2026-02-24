@@ -110,13 +110,12 @@ async def upload_signature_image(
     return await update_signature_image_path(db, filepath)
 
 
-# ── Admin: Serve uploaded files ──────────────────────────────────────
+# ── Public: Serve uploaded files (used by certificate viewer) ────────
 
 
 @router.get("/settings/logo-file")
 async def serve_logo(
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
     settings = await get_or_create_settings(db)
     if not settings.logo_path or not os.path.isfile(settings.logo_path):
@@ -127,7 +126,6 @@ async def serve_logo(
 @router.get("/settings/signature-file")
 async def serve_signature(
     db: AsyncSession = Depends(get_db),
-    _=Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
     settings = await get_or_create_settings(db)
     if not settings.signature_image_path or not os.path.isfile(

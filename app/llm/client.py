@@ -1,0 +1,421 @@
+import json
+import logging
+
+from openai import AsyncOpenAI
+
+from app.config import settings
+from app.evaluations.schemas import EvaluationResult
+from app.llm.prompts import (
+    COMPETENCY_SUGGESTION_SYSTEM_PROMPT,
+    CONTENT_LENGTH_INSTRUCTIONS,
+    EVALUATION_SYSTEM_PROMPT,
+    GUIDELINE_SUGGESTION_SYSTEM_PROMPT,
+    OCR_CLEANUP_SYSTEM_PROMPT,
+    QUESTION_GENERATION_SYSTEM_PROMPT,
+    REPORT_MANAGER_SYSTEM_PROMPT,
+    REPORT_PROFESSIONAL_SYSTEM_PROMPT,
+    TRAINING_CONTENT_SYSTEM_PROMPT,
+    TRAINING_QUIZ_SYSTEM_PROMPT,
+    TUTOR_SUMMARY_SYSTEM_PROMPT,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class LLMResponseError(Exception):
+    """Raised when the LLM returns an invalid or empty response."""
+
+
+def _parse_json_response(response) -> dict | list:
+    """Safely extract and parse JSON from an OpenAI chat completion response."""
+    content = response.choices[0].message.content
+    if not content:
+        logger.error("LLM returned empty content")
+        raise LLMResponseError("A IA retornou uma resposta vazia. Tente novamente.")
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError as exc:
+        logger.error("Failed to parse LLM JSON response: %s", content[:500])
+        raise LLMResponseError(
+            "A IA retornou uma resposta em formato inválido. Tente novamente."
+        ) from exc
+
+
+def _get_client() -> AsyncOpenAI:
+    if not settings.openai_api_key:
+        raise ValueError("OPENAI_API_KEY não configurada. Verifique o arquivo .env.")
+    return AsyncOpenAI(api_key=settings.openai_api_key, timeout=120.0)
+
+
+def _sanitize_user_input(text: str) -> str:
+    """Wrap user-provided text with clear boundaries to mitigate prompt injection."""
+    return f"<user_input>{text}</user_input>"
+
+
+async def evaluate_response(
+    question_text: str,
+    answer_text: str,
+    rubric: dict | None = None,
+    guidelines: list[dict] | None = None,
+) -> EvaluationResult:
+    client = _get_client()
+
+    user_content = f"""Pergunta: {_sanitize_user_input(question_text)}
+
+Resposta do profissional: {_sanitize_user_input(answer_text)}
+"""
+    if rubric:
+        user_content += f"\nRubrica de avaliação: {json.dumps(rubric, ensure_ascii=False)}"
+    if guidelines:
+        corporate = [g for g in guidelines if g.get("is_corporate")]
+        product_specific = [g for g in guidelines if not g.get("is_corporate")]
+        if corporate:
+            user_content += f"\n\nOrientações Corporativas (valem para todos os produtos — use como referência na avaliação):\n{json.dumps(corporate, ensure_ascii=False, indent=2)}"
+        if product_specific:
+            user_content += f"\n\nOrientações Master do Produto:\n{json.dumps(product_specific, ensure_ascii=False, indent=2)}"
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=2048,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": EVALUATION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    result_json = _parse_json_response(response)
+    return EvaluationResult(**result_json)
+
+
+async def generate_questions(
+    products: list[dict],
+    competencies: list[dict],
+    session_duration_minutes: int,
+    participant_level: str,
+    domain: str,
+    num_questions: int | None = None,
+    guidelines: list[dict] | None = None,
+    admin_instructions: str | None = None,
+) -> list[dict]:
+    client = _get_client()
+
+    user_content = f"""Gere perguntas de avaliação com os seguintes parâmetros:
+
+Domínio: {domain}
+Nível dos participantes: {participant_level}
+Tempo total da sessão: {session_duration_minutes} minutos
+
+Produtos/Soluções:
+{json.dumps(products, ensure_ascii=False, indent=2)}
+
+Competências alvo:
+{json.dumps(competencies, ensure_ascii=False, indent=2)}
+"""
+    if guidelines:
+        corporate = [g for g in guidelines if g.get("is_corporate")]
+        product_specific = [g for g in guidelines if not g.get("is_corporate")]
+        if corporate:
+            user_content += f"""
+Orientações Corporativas (valem para TODOS os produtos — devem ser consideradas em todas as perguntas):
+{json.dumps(corporate, ensure_ascii=False, indent=2)}
+"""
+        if product_specific:
+            user_content += f"""
+Orientações Master por Produto:
+{json.dumps(product_specific, ensure_ascii=False, indent=2)}
+"""
+    if num_questions:
+        user_content += f"\nNúmero desejado de perguntas: {num_questions}"
+
+    if admin_instructions:
+        user_content += f"""
+Orientações do Admin (instruções específicas do administrador para esta jornada — podem conter \
+perguntas prontas a serem melhoradas, direcionamentos de tema, restrições ou qualquer outra instrução):
+{admin_instructions}
+"""
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=4096,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": QUESTION_GENERATION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    result = _parse_json_response(response)
+    return result if isinstance(result, list) else result.get("questions", [result])
+
+
+async def generate_report(evaluations: list, report_type: str) -> dict:
+    client = _get_client()
+
+    system_prompt = (
+        REPORT_MANAGER_SYSTEM_PROMPT if report_type == "manager"
+        else REPORT_PROFESSIONAL_SYSTEM_PROMPT
+    )
+
+    evaluations_data = []
+    for ev in evaluations:
+        evaluations_data.append({
+            "score_global": ev.score_global,
+            "criteria": ev.criteria,
+            "general_comment": ev.general_comment,
+            "recommendations": ev.recommendations,
+            "mapped_competencies": ev.mapped_competencies,
+        })
+
+    user_content = f"""Gere um relatório analítico baseado nas seguintes avaliações:
+
+{json.dumps(evaluations_data, ensure_ascii=False, indent=2)}
+"""
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=4096,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    return _parse_json_response(response)
+
+
+async def suggest_competencies(
+    products: list[dict],
+    existing_competencies: list[dict],
+) -> list[dict]:
+    client = _get_client()
+
+    user_content = f"""Analise os produtos/soluções da Gruppen e as competências já cadastradas.
+Sugira NOVAS competências que complementem as existentes.
+
+Produtos/Soluções cadastrados:
+{json.dumps(products, ensure_ascii=False, indent=2)}
+
+Competências já existentes:
+{json.dumps(existing_competencies, ensure_ascii=False, indent=2)}
+"""
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=4096,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": COMPETENCY_SUGGESTION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    result = _parse_json_response(response)
+    return result.get("suggestions", [])
+
+
+async def suggest_guidelines(
+    products: list[dict],
+    existing_guidelines: list[dict],
+) -> list[dict]:
+    client = _get_client()
+
+    user_content = f"""Analise os produtos/soluções da Gruppen e as orientações master já cadastradas.
+Sugira NOVAS orientações estratégicas.
+
+Produtos/Soluções:
+{json.dumps(products, ensure_ascii=False, indent=2)}
+
+Orientações já existentes:
+{json.dumps(existing_guidelines, ensure_ascii=False, indent=2)}
+"""
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=4096,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": GUIDELINE_SUGGESTION_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    result = _parse_json_response(response)
+    return result.get("suggestions", [])
+
+
+async def generate_tutor_summary(
+    messages: list[dict],
+    topic: str,
+) -> dict:
+    """Generate a structured summary for a tutor session."""
+    client = _get_client()
+
+    conversation_text = "\n".join(
+        f"{'Profissional' if m['role'] == 'user' else 'Tutor'}: {m['content']}"
+        for m in messages
+        if m["role"] in ("user", "assistant")
+    )
+
+    user_content = f"""Sessão de prática sobre: {topic}
+
+Conversa:
+{conversation_text}"""
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=2048,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": TUTOR_SUMMARY_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    return _parse_json_response(response)
+
+
+async def cleanup_ocr_text(raw_text: str) -> str:
+    """Clean up OCR-extracted text using the LLM to fix transcription errors.
+
+    Returns the cleaned text, or the original text if LLM is unavailable.
+    """
+    if not raw_text or not raw_text.strip():
+        return raw_text
+
+    try:
+        client = _get_client()
+    except ValueError:
+        logger.warning("OpenAI API key not configured, skipping OCR cleanup")
+        return raw_text
+
+    try:
+        response = await client.chat.completions.create(
+            model=settings.openai_model,
+            max_tokens=2048,
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": OCR_CLEANUP_SYSTEM_PROMPT},
+                {"role": "user", "content": _sanitize_user_input(raw_text)},
+            ],
+        )
+        result = _parse_json_response(response)
+        cleaned = result.get("cleaned_text", raw_text)
+        if cleaned:
+            logger.info(
+                "OCR cleanup: %d -> %d chars",
+                len(raw_text), len(cleaned),
+            )
+            return cleaned
+        return raw_text
+    except Exception as e:
+        logger.warning("OCR cleanup failed, using raw text: %s", e)
+        return raw_text
+
+
+async def tutor_chat(
+    messages: list[dict],
+    system_context: str,
+) -> str:
+    client = _get_client()
+
+    api_messages = [{"role": "system", "content": system_context}, *messages]
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=2048,
+        messages=api_messages,
+    )
+
+    content = response.choices[0].message.content
+    if not content:
+        raise LLMResponseError("A IA retornou uma resposta vazia. Tente novamente.")
+    return content
+
+
+async def generate_training_content(
+    module_title: str,
+    training_title: str,
+    domain: str,
+    participant_level: str,
+    orientation: str | None = None,
+    reference_text: str | None = None,
+    content_length: str = "normal",
+) -> dict:
+    """Generate structured educational content for a training module.
+
+    Parameters
+    ----------
+    content_length : str
+        One of "curto", "normal", "extendido".  Controls the depth, number of
+        sections, and max_tokens sent to the model.
+    """
+    client = _get_client()
+
+    # Determine max_tokens based on content length
+    length_key = content_length.lower() if content_length else "normal"
+    max_tokens_map = {"curto": 4096, "normal": 8192, "extendido": 16384}
+    max_tokens = max_tokens_map.get(length_key, 8192)
+
+    # Build system prompt with length instructions
+    length_instruction = CONTENT_LENGTH_INSTRUCTIONS.get(length_key, "")
+    system_prompt = TRAINING_CONTENT_SYSTEM_PROMPT + length_instruction
+
+    user_content = f"""Gere conteúdo educacional para o seguinte módulo de treinamento:
+
+Treinamento: {training_title}
+Módulo: {module_title}
+Domínio: {domain}
+Nível dos participantes: {participant_level}
+"""
+    if orientation:
+        user_content += f"\nOrientações do administrador:\n{_sanitize_user_input(orientation)}\n"
+    if reference_text:
+        user_content += f"\nMaterial de referência (base para o conteúdo):\n{_sanitize_user_input(reference_text)}\n"
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=max_tokens,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    return _parse_json_response(response)
+
+
+async def generate_training_quiz(
+    module_title: str,
+    content_text: str,
+    participant_level: str,
+    num_questions: int | None = None,
+) -> list[dict]:
+    """Generate quiz questions based on training module content."""
+    client = _get_client()
+
+    user_content = f"""Gere perguntas de quiz para verificar a compreensão do seguinte conteúdo:
+
+Módulo: {module_title}
+Nível dos participantes: {participant_level}
+
+Conteúdo do módulo:
+{_sanitize_user_input(content_text)}
+"""
+    if num_questions:
+        user_content += f"\nNúmero desejado de perguntas: {num_questions}"
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=4096,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": TRAINING_QUIZ_SYSTEM_PROMPT},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    result = _parse_json_response(response)
+    return result.get("questions", [result]) if isinstance(result, dict) else result

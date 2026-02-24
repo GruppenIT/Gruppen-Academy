@@ -24,6 +24,14 @@ learning_path_badge = Table(
     Column("badge_id", UUID(as_uuid=True), ForeignKey("badges.id", ondelete="CASCADE"), primary_key=True),
 )
 
+# Many-to-many: LearningPath <-> Team
+learning_path_team = Table(
+    "learning_path_teams",
+    Base.metadata,
+    Column("path_id", UUID(as_uuid=True), ForeignKey("learning_paths.id", ondelete="CASCADE"), primary_key=True),
+    Column("team_id", UUID(as_uuid=True), ForeignKey("teams.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class ActivityType(str, enum.Enum):
     QUIZ = "quiz"
@@ -60,6 +68,7 @@ class LearningPath(Base):
         back_populates="path", cascade="all, delete-orphan", order_by="LearningPathItem.order"
     )
     badges = relationship("Badge", secondary=learning_path_badge)
+    teams = relationship("Team", secondary=learning_path_team, back_populates="learning_paths")
 
 
 class LearningPathItem(Base):

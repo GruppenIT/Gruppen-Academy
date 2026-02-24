@@ -146,6 +146,11 @@ export interface PathCompletionItem {
   completed: boolean
 }
 
+export interface PathTeam {
+  id: string
+  name: string
+}
+
 export interface LearningPath {
   id: string
   title: string
@@ -155,6 +160,7 @@ export interface LearningPath {
   is_active: boolean
   items?: PathItem[]
   badges?: PathBadge[]
+  teams?: PathTeam[]
   activities?: LearningActivity[]
 }
 

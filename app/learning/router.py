@@ -20,6 +20,7 @@ from app.learning.schemas import (
     PathItemOut,
     PathItemReorder,
     PathProgressOut,
+    PathTeamUpdate,
     SuggestedPathOut,
     TutorMessageRequest,
     TutorSessionCreate,
@@ -42,6 +43,7 @@ from app.learning.service import (
     get_tutor_session,
     list_activities,
     list_learning_paths,
+    list_my_learning_paths,
     list_tutor_sessions,
     remove_path_item,
     reorder_path_items,
@@ -50,6 +52,7 @@ from app.learning.service import (
     update_activity,
     update_learning_path,
     update_path_badges,
+    update_path_teams,
 )
 from app.learning.models import LearningPathItem
 from app.users.models import User, UserRole
@@ -81,7 +84,16 @@ async def list_all_paths(
     return await list_learning_paths(db, domain, skip, limit, active_only=active_only)
 
 
-# NOTE: /paths/suggested-for-me MUST be before /paths/{path_id} to avoid UUID matching
+# NOTE: literal path segments MUST be before /paths/{path_id} to avoid UUID matching
+@router.get("/paths/my", response_model=list[LearningPathOut])
+async def get_my_paths(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """List learning paths assigned to teams the current user belongs to."""
+    return await list_my_learning_paths(db, current_user.id)
+
+
 @router.get("/paths/suggested-for-me", response_model=list[SuggestedPathOut])
 async def get_suggested_paths(
     db: AsyncSession = Depends(get_db),
@@ -210,6 +222,24 @@ async def set_path_badges(
     if not path:
         raise HTTPException(status_code=404, detail="Trilha não encontrada")
     await update_path_badges(db, path_id, data.badge_ids)
+    return {"ok": True}
+
+
+# --- Path Teams ---
+
+
+@router.put("/paths/{path_id}/teams")
+async def set_path_teams(
+    path_id: uuid.UUID,
+    data: PathTeamUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Assign teams to a learning path. Users in these teams will see this path."""
+    path = await get_learning_path(db, path_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Trilha não encontrada")
+    await update_path_teams(db, path_id, data.team_ids)
     return {"ok": True}
 
 

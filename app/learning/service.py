@@ -13,6 +13,7 @@ from app.learning.models import (
     PathItemType,
     TutorSession,
     learning_path_badge,
+    learning_path_team,
     path_competency,
 )
 from app.learning.schemas import (
@@ -59,6 +60,7 @@ async def list_learning_paths(
     query = select(LearningPath).options(
         selectinload(LearningPath.items),
         selectinload(LearningPath.badges),
+        selectinload(LearningPath.teams),
     )
     if active_only:
         query = query.where(LearningPath.is_active)
@@ -76,6 +78,7 @@ async def get_learning_path(db: AsyncSession, path_id: uuid.UUID) -> LearningPat
             selectinload(LearningPath.activities),
             selectinload(LearningPath.items),
             selectinload(LearningPath.badges),
+            selectinload(LearningPath.teams),
         )
     )
     return result.scalar_one_or_none()
@@ -512,6 +515,67 @@ async def update_path_badges(
 
     # Re-evaluate badge awards for this path
     await _check_and_award_path_badges(db, path_id)
+
+
+# --- Path Teams ---
+
+
+async def update_path_teams(
+    db: AsyncSession, path_id: uuid.UUID, team_ids: list[uuid.UUID]
+) -> None:
+    """Set the teams linked to a learning path."""
+    from app.teams.models import Team
+
+    # Clear existing
+    await db.execute(
+        sa_delete(learning_path_team).where(learning_path_team.c.path_id == path_id)
+    )
+
+    if team_ids:
+        teams_result = await db.execute(
+            select(Team).where(Team.id.in_(team_ids))
+        )
+        teams = list(teams_result.scalars().all())
+
+        path = await get_learning_path(db, path_id)
+        if path:
+            path.teams = teams
+
+    await db.commit()
+
+
+async def list_my_learning_paths(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[LearningPath]:
+    """List learning paths assigned to teams the user belongs to."""
+    from app.teams.models import team_member
+
+    # Get user's team IDs
+    team_ids_result = await db.execute(
+        select(team_member.c.team_id).where(team_member.c.user_id == user_id)
+    )
+    user_team_ids = [row[0] for row in team_ids_result.all()]
+
+    if not user_team_ids:
+        return []
+
+    # Get active paths assigned to any of the user's teams
+    query = (
+        select(LearningPath)
+        .join(learning_path_team, LearningPath.id == learning_path_team.c.path_id)
+        .where(
+            learning_path_team.c.team_id.in_(user_team_ids),
+            LearningPath.is_active,
+        )
+        .options(
+            selectinload(LearningPath.items),
+            selectinload(LearningPath.badges),
+            selectinload(LearningPath.teams),
+        )
+        .distinct()
+    )
+    result = await db.execute(query)
+    return list(result.scalars().unique().all())
 
 
 async def get_path_items_enriched(

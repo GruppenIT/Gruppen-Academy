@@ -2,13 +2,13 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { api } from '@/lib/api'
-import type { LearningPath, PathItem, Badge, Training, Journey, PathBadge } from '@/types'
+import type { LearningPath, PathItem, Badge, Training, Journey, PathBadge, Team, PathTeam } from '@/types'
 import {
   Plus, Search, Pencil, X, Loader2, BookOpen, ChevronDown, ChevronUp,
-  Trash2, GraduationCap, Route, Award, CheckCircle2,
+  Trash2, GraduationCap, Route, Award, CheckCircle2, Users,
 } from 'lucide-react'
 
-type ModalMode = 'create-path' | 'edit-path' | 'add-items' | 'manage-badges' | null
+type ModalMode = 'create-path' | 'edit-path' | 'add-items' | 'manage-badges' | 'manage-teams' | null
 
 export default function AdminTrilhasPage() {
   const [paths, setPaths] = useState<LearningPath[]>([])
@@ -24,6 +24,7 @@ export default function AdminTrilhasPage() {
   const [allTrainings, setAllTrainings] = useState<Training[]>([])
   const [allJourneys, setAllJourneys] = useState<Journey[]>([])
   const [allBadges, setAllBadges] = useState<Badge[]>([])
+  const [allTeams, setAllTeams] = useState<Team[]>([])
 
   // Path form
   const [pId, setPId] = useState('')
@@ -40,6 +41,10 @@ export default function AdminTrilhasPage() {
   // Badge form
   const [badgesPathId, setBadgesPathId] = useState('')
   const [selectedBadgeIds, setSelectedBadgeIds] = useState<string[]>([])
+
+  // Team form
+  const [teamsPathId, setTeamsPathId] = useState('')
+  const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([])
 
   const load = useCallback(async () => {
     try { setPaths(await api.getLearningPaths(undefined, false)) } catch {} finally { setLoading(false) }
@@ -61,14 +66,16 @@ export default function AdminTrilhasPage() {
   // Loaders for selectors
   const loadSelectorsData = async () => {
     try {
-      const [trainings, journeys, badges] = await Promise.all([
+      const [trainings, journeys, badges, teams] = await Promise.all([
         api.getTrainings(0, 200),
         api.getJourneys(0, 200),
         api.getBadges(),
+        api.getTeams(),
       ])
       setAllTrainings(trainings)
       setAllJourneys(journeys)
       setAllBadges(badges)
+      setAllTeams(teams)
     } catch {}
   }
 
@@ -131,6 +138,19 @@ export default function AdminTrilhasPage() {
     setSelectedBadgeIds(prev => prev.includes(id) ? prev.filter(b => b !== id) : [...prev, id])
   }
 
+  // Teams
+  const openManageTeams = async (p: LearningPath) => {
+    setTeamsPathId(p.id)
+    setSelectedTeamIds(p.teams?.map(t => t.id) || [])
+    setError('')
+    await loadSelectorsData()
+    setModalMode('manage-teams')
+  }
+
+  const toggleTeam = (id: string) => {
+    setSelectedTeamIds(prev => prev.includes(id) ? prev.filter(t => t !== id) : [...prev, id])
+  }
+
   const handleRemoveItem = async (pathId: string, itemId: string) => {
     if (!confirm('Remover este item da trilha?')) return
     try {
@@ -167,6 +187,8 @@ export default function AdminTrilhasPage() {
         loadPathItems(addItemsPathId)
       } else if (modalMode === 'manage-badges') {
         await api.setPathBadges(badgesPathId, selectedBadgeIds)
+      } else if (modalMode === 'manage-teams') {
+        await api.setPathTeams(teamsPathId, selectedTeamIds)
       }
       closeModal(); load()
     } catch (err: unknown) { setError(err instanceof Error ? err.message : 'Erro ao salvar') } finally { setSaving(false) }
@@ -220,6 +242,7 @@ export default function AdminTrilhasPage() {
           {filtered.map((p) => {
             const items = pathItems[p.id]
             const badges = p.badges || []
+            const teams = p.teams || []
             return (
               <div key={p.id} className="card overflow-hidden">
                 <div className="p-5 flex items-center gap-4">
@@ -235,6 +258,15 @@ export default function AdminTrilhasPage() {
                       )}
                     </p>
                   </div>
+                  {teams.length > 0 && (
+                    <div className="flex items-center gap-1 flex-wrap">
+                      {teams.map((t: PathTeam) => (
+                        <span key={t.id} className="badge-pill bg-blue-50 text-blue-600 text-xs flex items-center gap-1" title={t.name}>
+                          <Users className="w-3 h-3" /> {t.name}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                   {badges.length > 0 && (
                     <div className="flex items-center gap-1">
                       {badges.map((b: PathBadge) => (
@@ -248,6 +280,9 @@ export default function AdminTrilhasPage() {
                     {p.is_active ? 'Ativa' : 'Inativa'}
                   </span>
                   <div className="flex items-center gap-1">
+                    <button onClick={() => openManageTeams(p)} className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50" title="Gerenciar equipes">
+                      <Users className="w-4 h-4" />
+                    </button>
                     <button onClick={() => openManageBadges(p)} className="p-2 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50" title="Gerenciar badges">
                       <Award className="w-4 h-4" />
                     </button>
@@ -322,6 +357,7 @@ export default function AdminTrilhasPage() {
                 {modalMode === 'create-path' ? 'Nova Trilha' :
                  modalMode === 'edit-path' ? 'Editar Trilha' :
                  modalMode === 'add-items' ? 'Adicionar Treinamentos / Jornadas' :
+                 modalMode === 'manage-teams' ? 'Gerenciar Equipes' :
                  'Gerenciar Badges'}
               </h3>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
@@ -462,6 +498,36 @@ export default function AdminTrilhasPage() {
                   )}
                 </>
               )}
+
+              {modalMode === 'manage-teams' && (
+                <>
+                  <p className="text-sm text-gray-500">
+                    Selecione as equipes que terao acesso a esta trilha. Somente usuarios das equipes vinculadas verao esta trilha e seus treinamentos/jornadas, mesmo que estes nao estejam atribuidos diretamente a equipe.
+                  </p>
+                  {allTeams.length === 0 ? (
+                    <p className="text-sm text-gray-400 text-center py-4">Nenhuma equipe cadastrada. Crie equipes na aba Equipes.</p>
+                  ) : (
+                    <div className="space-y-1">
+                      {allTeams.map(t => (
+                        <label key={t.id} className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          selectedTeamIds.includes(t.id) ? 'border-blue-300 bg-blue-50' : 'border-gray-100 hover:bg-gray-50'
+                        }`}>
+                          <input type="checkbox" checked={selectedTeamIds.includes(t.id)} onChange={() => toggleTeam(t.id)} className="rounded text-blue-600" />
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <Users className={`w-5 h-5 shrink-0 ${selectedTeamIds.includes(t.id) ? 'text-blue-500' : 'text-gray-300'}`} />
+                            <div>
+                              <p className="text-sm font-medium text-gray-900">{t.name}</p>
+                              {t.description && <p className="text-xs text-gray-500">{t.description}</p>}
+                              <p className="text-xs text-gray-400">{t.members?.length || 0} membro(s)</p>
+                            </div>
+                          </div>
+                          {selectedTeamIds.includes(t.id) && <CheckCircle2 className="w-4 h-4 text-blue-500 shrink-0" />}
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
             <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-100 shrink-0">
               <button onClick={closeModal} className="btn-secondary px-4 py-2">Cancelar</button>
@@ -469,6 +535,7 @@ export default function AdminTrilhasPage() {
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {modalMode === 'add-items' ? 'Adicionar Selecionados' :
                  modalMode === 'manage-badges' ? 'Salvar Badges' :
+                 modalMode === 'manage-teams' ? 'Salvar Equipes' :
                  (modalMode === 'edit-path' ? 'Atualizar' : 'Criar')}
               </button>
             </div>

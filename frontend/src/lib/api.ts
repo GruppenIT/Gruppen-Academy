@@ -357,6 +357,13 @@ class ApiClient {
   setPathBadges(pathId: string, badgeIds: string[]) {
     return this.request<{ ok: boolean }>(`/api/learning/paths/${pathId}/badges`, { method: 'PUT', body: JSON.stringify({ badge_ids: badgeIds }) })
   }
+  // Path Teams
+  setPathTeams(pathId: string, teamIds: string[]) {
+    return this.request<{ ok: boolean }>(`/api/learning/paths/${pathId}/teams`, { method: 'PUT', body: JSON.stringify({ team_ids: teamIds }) })
+  }
+  getMyLearningPaths() {
+    return this.request<import('@/types').LearningPath[]>('/api/learning/paths/my')
+  }
   // Path Completion
   getPathCompletion(pathId: string) {
     return this.request<import('@/types').PathCompletion>(`/api/learning/paths/${pathId}/completion`)

@@ -46,6 +46,13 @@ class BadgeOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PathTeamOut(BaseModel):
+    id: uuid.UUID
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
 class LearningPathOut(BaseModel):
     id: uuid.UUID
     title: str
@@ -56,6 +63,7 @@ class LearningPathOut(BaseModel):
     created_at: datetime
     items: list[PathItemOut] = []
     badges: list[BadgeOut] = []
+    teams: list[PathTeamOut] = []
 
     model_config = {"from_attributes": True}
 
@@ -74,6 +82,11 @@ class PathItemReorder(BaseModel):
 # --- Path Badges ---
 class PathBadgeUpdate(BaseModel):
     badge_ids: list[uuid.UUID]
+
+
+# --- Path Teams ---
+class PathTeamUpdate(BaseModel):
+    team_ids: list[uuid.UUID]
 
 
 # --- Path Completion (for user) ---

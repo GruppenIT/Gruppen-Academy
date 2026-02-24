@@ -56,6 +56,8 @@ export default function ModuleContentPage() {
         if (mod?.has_quiz) {
           const q = await api.getModuleQuiz(trainingId, trainModule.id)
           setQuiz(q)
+        } else {
+          setQuiz(null)
         }
       }
     } catch {
@@ -66,6 +68,19 @@ export default function ModuleContentPage() {
   }, [trainingId, moduleOrder])
 
   useEffect(() => { loadData() }, [loadData])
+
+  // Reset quiz-related state when navigating between modules
+  useEffect(() => {
+    setAnswers({})
+    setAttemptResult(null)
+    setShowQuiz(false)
+    setSubmitting(false)
+    setQuizError('')
+    setMarkingView(false)
+    setLoading(true)
+    setModuleDetail(null)
+    setQuiz(null)
+  }, [moduleOrder])
 
   // SCORM postMessage listener: capture lesson_status and score from SCORM iframe
   useEffect(() => {
@@ -118,22 +133,21 @@ export default function ModuleContentPage() {
     }
   }
 
+  const [quizError, setQuizError] = useState('')
+
   const handleSubmitQuiz = async () => {
-    if (!currentModule) return
+    if (!currentModule || !moduleDetail) return
     setSubmitting(true)
+    setQuizError('')
     try {
-      const trainingDetail = await api.getTraining(trainingId)
-      const trainModule = trainingDetail.modules?.find(m => m.order === moduleOrder)
-      if (trainModule) {
-        const result = await api.submitQuizAttempt(trainingId, trainModule.id, answers)
-        setAttemptResult(result)
-        // Reload progress after attempt
-        const prog = await api.getTrainingProgress(trainingId)
-        setProgress(prog)
-        setCurrentModule(prog.modules.find(m => m.order === moduleOrder) || null)
-      }
-    } catch {
-      // handle error silently
+      const result = await api.submitQuizAttempt(trainingId, moduleDetail.id, answers)
+      setAttemptResult(result)
+      // Reload progress after attempt
+      const prog = await api.getTrainingProgress(trainingId)
+      setProgress(prog)
+      setCurrentModule(prog.modules.find(m => m.order === moduleOrder) || null)
+    } catch (err) {
+      setQuizError(err instanceof Error ? err.message : 'Erro ao enviar respostas. Tente novamente.')
     } finally {
       setSubmitting(false)
     }
@@ -349,6 +363,13 @@ export default function ModuleContentPage() {
               <span className="badge-pill bg-emerald-50 text-emerald-600 text-xs">Aprovado</span>
             )}
           </div>
+
+          {/* Quiz error */}
+          {quizError && (
+            <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+              {quizError}
+            </div>
+          )}
 
           {/* Show quiz result or quiz form */}
           {attemptResult ? (

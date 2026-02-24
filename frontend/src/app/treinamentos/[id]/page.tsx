@@ -29,35 +29,6 @@ export default function TrainingProgressPage() {
       .finally(() => setLoading(false))
   }, [trainingId])
 
-  if (loading) {
-    return (
-      <AppShell>
-        <div className="animate-pulse space-y-4">
-          <div className="h-6 bg-gray-200 rounded w-1/3" />
-          <div className="h-4 bg-gray-100 rounded w-1/2" />
-          <div className="space-y-3 mt-8">
-            {[1, 2, 3].map(i => <div key={i} className="h-20 bg-gray-100 rounded-xl" />)}
-          </div>
-        </div>
-      </AppShell>
-    )
-  }
-
-  if (error || !progress) {
-    return (
-      <AppShell>
-        <div className="text-center py-16">
-          <LibraryBig className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-          <h3 className="font-semibold text-gray-600 mb-1">Treinamento não encontrado</h3>
-          <p className="text-sm text-gray-400 mb-4">{error || 'Inscrição não encontrada.'}</p>
-          <button onClick={() => router.push('/treinamentos')} className="btn-secondary text-sm">
-            Voltar
-          </button>
-        </div>
-      </AppShell>
-    )
-  }
-
   // Check for existing certificate when completed
   useEffect(() => {
     if (progress?.status === 'completed' && progress.enrollment_id) {
@@ -85,6 +56,35 @@ export default function TrainingProgressPage() {
     if (certificate) {
       window.open(`/certificado/${certificate.id}`, '_blank')
     }
+  }
+
+  if (loading) {
+    return (
+      <AppShell>
+        <div className="animate-pulse space-y-4">
+          <div className="h-6 bg-gray-200 rounded w-1/3" />
+          <div className="h-4 bg-gray-100 rounded w-1/2" />
+          <div className="space-y-3 mt-8">
+            {[1, 2, 3].map(i => <div key={i} className="h-20 bg-gray-100 rounded-xl" />)}
+          </div>
+        </div>
+      </AppShell>
+    )
+  }
+
+  if (error || !progress) {
+    return (
+      <AppShell>
+        <div className="text-center py-16">
+          <LibraryBig className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          <h3 className="font-semibold text-gray-600 mb-1">Treinamento não encontrado</h3>
+          <p className="text-sm text-gray-400 mb-4">{error || 'Inscrição não encontrada.'}</p>
+          <button onClick={() => router.push('/treinamentos')} className="btn-secondary text-sm">
+            Voltar
+          </button>
+        </div>
+      </AppShell>
+    )
   }
 
   const pct = progress.total_modules > 0

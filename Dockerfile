@@ -24,7 +24,7 @@ COPY entrypoint.sh .
 
 # Run as non-root user for security
 RUN addgroup --system appuser && adduser --system --home /home/appuser --ingroup appuser appuser
-RUN mkdir -p /tmp/gruppen-academy-uploads && chown appuser:appuser /tmp/gruppen-academy-uploads
+RUN mkdir -p /data/uploads && chown appuser:appuser /data/uploads
 USER appuser
 
 EXPOSE 8000

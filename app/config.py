@@ -28,7 +28,7 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["https://academy.gruppen.com.br", "http://localhost:3000"]
 
-    upload_dir: str = "/tmp/gruppen-academy-uploads"
+    upload_dir: str = "/data/uploads"
     max_upload_size_mb: int = 50
 
     # Cookie settings for JWT HttpOnly cookie

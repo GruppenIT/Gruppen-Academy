@@ -426,8 +426,9 @@ async def get_module_quiz(
         select(ModuleQuiz)
         .where(ModuleQuiz.module_id == module_id)
         .options(selectinload(ModuleQuiz.questions))
+        .limit(1)
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def create_or_update_quiz(
@@ -606,8 +607,9 @@ async def get_enrollment_for_user(
         .options(
             selectinload(TrainingEnrollment.module_progress),
         )
+        .limit(1)
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def get_or_create_module_progress(
@@ -618,8 +620,9 @@ async def get_or_create_module_progress(
             ModuleProgress.enrollment_id == enrollment_id,
             ModuleProgress.module_id == module_id,
         )
+        .limit(1)
     )
-    progress = result.scalar_one_or_none()
+    progress = result.scalars().first()
     if not progress:
         progress = ModuleProgress(
             enrollment_id=enrollment_id,

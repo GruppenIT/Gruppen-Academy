@@ -1362,7 +1362,7 @@ function QuestionCard({ question: q, index, isDraft, onEdit, onDelete }: {
               <span className="text-xs text-emerald-600">Resp: {q.correct_answer}</span>
             )}
           </div>
-          {q.type === 'multiple_choice' && q.options && (
+          {(q.type === 'multiple_choice' || q.type === 'true_false') && q.options && (
             <div className="mt-2 space-y-1">
               {q.options.map((opt, i) => {
                 const letter = String.fromCharCode(65 + i)
@@ -1435,7 +1435,11 @@ function QuestionForm({ initial, onSave, onCancel, index }: {
               update({
                 type,
                 correct_answer: '',
-                options: type === 'multiple_choice' ? [{ text: '' }, { text: '' }, { text: '' }, { text: '' }] : [],
+                options: type === 'multiple_choice'
+                  ? [{ text: '' }, { text: '' }, { text: '' }, { text: '' }]
+                  : type === 'true_false'
+                    ? [{ text: 'Verdadeiro' }, { text: 'Falso' }]
+                    : [],
               })
             }}>
             <option value="multiple_choice">Multipla escolha</option>
@@ -1454,8 +1458,8 @@ function QuestionForm({ initial, onSave, onCancel, index }: {
             <select className="input-field w-full text-sm" value={form.correct_answer}
               onChange={(e) => update({ correct_answer: e.target.value })}>
               <option value="">Selecionar...</option>
-              <option value="true">Verdadeiro</option>
-              <option value="false">Falso</option>
+              <option value="A">Verdadeiro</option>
+              <option value="B">Falso</option>
             </select>
           </div>
         )}
@@ -1534,10 +1538,18 @@ function QuestionForm({ initial, onSave, onCancel, index }: {
 
 // ── Helpers ──
 function questionToFormData(q: QuizQuestion): QuestionFormData {
+  let options: { text: string }[]
+  if (q.options && q.options.length > 0) {
+    options = q.options.map(o => ({ text: o.text }))
+  } else if (q.type === 'true_false') {
+    options = [{ text: 'Verdadeiro' }, { text: 'Falso' }]
+  } else {
+    options = [{ text: '' }, { text: '' }, { text: '' }, { text: '' }]
+  }
   return {
     text: q.text,
     type: q.type,
-    options: q.type === 'multiple_choice' && q.options ? q.options.map(o => ({ text: o.text })) : [{ text: '' }, { text: '' }],
+    options,
     correct_answer: q.correct_answer || '',
     explanation: q.explanation || '',
     weight: q.weight,

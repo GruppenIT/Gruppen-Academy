@@ -57,7 +57,7 @@ class TrainingOut(BaseModel):
 
 
 class TrainingDetailOut(TrainingOut):
-    modules: list["ModuleOut"] = []
+    modules: list["ModuleDetailOut"] = []
 
 
 # --- Training Module ---

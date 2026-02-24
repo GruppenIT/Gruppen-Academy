@@ -618,6 +618,96 @@ async def upload_module_file(
     return module
 
 
+def _extract_text_from_reference(raw_bytes: bytes, filename: str) -> str | None:
+    """Extract text content from a reference file based on its type.
+
+    Supports .txt, .md (UTF-8 decode), .pdf (pdfplumber), and .docx (ZIP/XML).
+    Returns up to 15 000 characters of extracted text, or None on failure.
+    """
+    MAX_CHARS = 15_000
+
+    if filename.endswith((".txt", ".md")):
+        text = raw_bytes.decode("utf-8", errors="replace")
+        return text[:MAX_CHARS] if text.strip() else None
+
+    if filename.endswith(".pdf"):
+        import io
+        import tempfile
+
+        # pdfplumber needs a file path or file-like object
+        try:
+            import pdfplumber
+
+            with pdfplumber.open(io.BytesIO(raw_bytes)) as pdf:
+                parts: list[str] = []
+                total = 0
+                for page in pdf.pages:
+                    page_text = page.extract_text() or ""
+                    parts.append(page_text)
+                    total += len(page_text)
+                    if total >= MAX_CHARS:
+                        break
+            text = "\n".join(parts)
+            return text[:MAX_CHARS] if text.strip() else None
+        except Exception:
+            # Fallback: try OCR if pdfplumber gets no text (scanned PDF)
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp.write(raw_bytes)
+                    tmp_path = tmp.name
+                from pdf2image import convert_from_path
+                import pytesseract
+
+                images = convert_from_path(tmp_path, dpi=200)
+                parts = []
+                total = 0
+                for img in images:
+                    page_text = pytesseract.image_to_string(img, lang="por")
+                    parts.append(page_text)
+                    total += len(page_text)
+                    if total >= MAX_CHARS:
+                        break
+                text = "\n".join(parts)
+                return text[:MAX_CHARS] if text.strip() else None
+            except Exception:
+                return None
+            finally:
+                try:
+                    os.unlink(tmp_path)
+                except Exception:
+                    pass
+
+    if filename.endswith(".docx"):
+        import io
+        import zipfile as zf
+        import xml.etree.ElementTree as ET
+
+        try:
+            with zf.ZipFile(io.BytesIO(raw_bytes)) as docx_zip:
+                xml_content = docx_zip.read("word/document.xml")
+            tree = ET.fromstring(xml_content)
+            ns = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+            parts = []
+            for paragraph in tree.iter(f"{{{ns}}}p"):
+                p_texts = []
+                for t_elem in paragraph.iter(f"{{{ns}}}t"):
+                    if t_elem.text:
+                        p_texts.append(t_elem.text)
+                if p_texts:
+                    parts.append("".join(p_texts))
+            text = "\n".join(parts)
+            return text[:MAX_CHARS] if text.strip() else None
+        except Exception:
+            return None
+
+    # Unknown file type — try plain text as last resort
+    try:
+        text = raw_bytes.decode("utf-8", errors="replace")
+        return text[:MAX_CHARS] if text.strip() else None
+    except Exception:
+        return None
+
+
 def _extract_scorm_package(zip_path: str, upload_dir: str, module_id: str) -> dict:
     """Extract a SCORM .zip and detect the entry point from imsmanifest.xml."""
     import shutil
@@ -1173,8 +1263,10 @@ async def generate_module_content_endpoint(
     if reference_file:
         try:
             raw_bytes = await reference_file.read()
-            reference_text = raw_bytes.decode("utf-8", errors="replace")[:15000]
+            filename = (reference_file.filename or "").lower()
+            reference_text = _extract_text_from_reference(raw_bytes, filename)
         except Exception:
+            logger.warning("Failed to extract text from reference file: %s", reference_file.filename)
             reference_text = None
 
     try:

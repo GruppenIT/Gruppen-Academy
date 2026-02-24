@@ -273,7 +273,9 @@ O conteúdo deve:
 - Incluir seções com títulos, subtítulos, listas e destaques para facilitar a leitura.
 - Cobrir conceitos-chave, boas práticas e aplicações no dia a dia.
 - Evitar jargão excessivo quando o público não for técnico.
-- Se houver material de referência anexado, basear-se nele como fonte primária.
+- Se houver material de referência anexado, basear-se nele como fonte primária de informação. \
+O conteúdo gerado deve refletir fielmente os conceitos, dados e orientações presentes no material, \
+complementando com estrutura didática e exemplos práticos.
 - Quando fizer sentido, sugira vídeos complementares em cada seção usando o campo \
 "video_suggestions". Indique o tema/título do vídeo que seria útil — o admin vai \
 substituir pela URL real depois. Não invente URLs.

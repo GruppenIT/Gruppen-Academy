@@ -944,6 +944,75 @@ async def unlock_quiz_retry(
     return enrollment
 
 
+async def get_user_enrollments_for_manager(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list[TrainingEnrollment]:
+    """Return all enrollments for a user, with training and progress eagerly loaded."""
+    result = await db.execute(
+        select(TrainingEnrollment)
+        .where(TrainingEnrollment.user_id == user_id)
+        .options(
+            selectinload(TrainingEnrollment.training).selectinload(Training.modules),
+            selectinload(TrainingEnrollment.module_progress),
+        )
+        .order_by(TrainingEnrollment.enrolled_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def reset_enrollment(
+    db: AsyncSession, enrollment_id: uuid.UUID
+) -> TrainingEnrollment:
+    """Reset an enrollment so the user can redo the training from scratch.
+
+    Deletes all module progress, quiz attempts, training quiz attempts,
+    reverses XP, and resets enrollment status to PENDING.
+    """
+    from app.gamification.models import Score
+
+    result = await db.execute(
+        select(TrainingEnrollment)
+        .where(TrainingEnrollment.id == enrollment_id)
+        .options(
+            selectinload(TrainingEnrollment.module_progress).selectinload(ModuleProgress.quiz_attempts),
+            selectinload(TrainingEnrollment.training_quiz_attempts),
+        )
+    )
+    enrollment = result.scalar_one_or_none()
+    if not enrollment:
+        raise ValueError("Inscrição não encontrada.")
+
+    # 1. Reverse XP for this specific enrollment (source=training, source_id=training_id, user_id)
+    await db.execute(
+        sa_delete(Score).where(
+            Score.source == "training",
+            Score.source_id == enrollment.training_id,
+            Score.user_id == enrollment.user_id,
+        )
+    )
+
+    # 2. Delete training quiz attempts
+    for tqa in (enrollment.training_quiz_attempts or []):
+        await db.delete(tqa)
+
+    # 3. Delete module progress (cascades to quiz attempts)
+    for mp in (enrollment.module_progress or []):
+        await db.delete(mp)
+
+    await db.flush()
+
+    # 4. Reset enrollment fields
+    enrollment.status = EnrollmentStatus.PENDING
+    enrollment.current_module_order = 1
+    enrollment.completed_at = None
+    enrollment.quiz_unlocked_at = None
+    enrollment.quiz_unlocked_by = None
+
+    await db.commit()
+    await db.refresh(enrollment)
+    return enrollment
+
+
 async def _check_training_completion(
     db: AsyncSession, enrollment: TrainingEnrollment
 ) -> None:

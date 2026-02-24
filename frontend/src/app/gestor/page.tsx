@@ -351,14 +351,24 @@ export default function GestorPage() {
                                     )}
                                   </td>
                                   <td className="px-4 py-3">
-                                    {(member.participations > 0 || member.training_enrollments > 0) && (
-                                      <button
-                                        onClick={() => router.push(`/admin/avaliacoes`)}
-                                        className="text-xs text-brand-600 hover:text-brand-800 flex items-center gap-1"
-                                      >
-                                        Ver detalhes <ChevronRight className="w-3 h-3" />
-                                      </button>
-                                    )}
+                                    <div className="flex flex-col gap-1">
+                                      {member.training_enrollments > 0 && (
+                                        <button
+                                          onClick={() => router.push(`/gestor/colaborador/${member.user_id}/treinamentos`)}
+                                          className="text-xs text-purple-600 hover:text-purple-800 flex items-center gap-1"
+                                        >
+                                          <BookOpen className="w-3 h-3" /> Treinamentos <ChevronRight className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                      {member.participations > 0 && (
+                                        <button
+                                          onClick={() => router.push(`/admin/avaliacoes`)}
+                                          className="text-xs text-brand-600 hover:text-brand-800 flex items-center gap-1"
+                                        >
+                                          Ver avaliacoes <ChevronRight className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
                                   </td>
                                 </tr>
                               ))}

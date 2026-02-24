@@ -534,6 +534,18 @@ export interface TrainingEnrollment {
   quiz_attempts_used?: number
 }
 
+export interface UserEnrollmentSummary {
+  enrollment_id: string
+  training_id: string
+  training_title: string
+  domain: string
+  status: EnrollmentStatus
+  total_modules: number
+  completed_modules: number
+  enrolled_at: string
+  completed_at: string | null
+}
+
 export interface MyTrainingSummary {
   enrollment_id: string
   training_id: string

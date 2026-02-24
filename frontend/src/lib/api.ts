@@ -654,6 +654,16 @@ class ApiClient {
     })
   }
 
+  // Trainings — Manager
+  getUserEnrollments(userId: string) {
+    return this.request<import('@/types').UserEnrollmentSummary[]>(`/api/trainings/manager/users/${userId}/enrollments`)
+  }
+  resetEnrollment(trainingId: string, enrollmentId: string) {
+    return this.request<import('@/types').TrainingEnrollment>(`/api/trainings/${trainingId}/enrollments/${enrollmentId}/reset`, {
+      method: 'POST',
+    })
+  }
+
   // Trainings — Professional
   getMyTrainings() {
     return this.request<import('@/types').MyTrainingSummary[]>('/api/trainings/my/trainings')

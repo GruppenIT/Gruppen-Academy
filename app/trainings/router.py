@@ -33,6 +33,7 @@ from app.trainings.schemas import (
     QuizQuestionOut,
     QuizQuestionUpdate,
     ScormStatusUpdate,
+    UserEnrollmentSummary,
     TrainingCreate,
     TrainingDetailOut,
     TrainingOut,
@@ -81,6 +82,8 @@ from app.trainings.service import (
     publish_training,
     submit_quiz_attempt,
     submit_training_quiz_attempt,
+    get_user_enrollments_for_manager,
+    reset_enrollment,
     unlock_quiz_retry,
     update_module,
     update_quiz_question,
@@ -1799,6 +1802,72 @@ async def unlock_quiz_endpoint(
         enrollment = await unlock_quiz_retry(db, enrollment_id, current_user.id)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    return EnrollmentDetailOut(
+        id=enrollment.id,
+        training_id=enrollment.training_id,
+        user_id=enrollment.user_id,
+        status=enrollment.status,
+        current_module_order=enrollment.current_module_order,
+        enrolled_at=enrollment.enrolled_at,
+        completed_at=enrollment.completed_at,
+    )
+
+
+# ──────────────────────────────────────────────
+# Manager: User Training History
+# ──────────────────────────────────────────────
+
+
+@router.get("/manager/users/{user_id}/enrollments", response_model=list[UserEnrollmentSummary])
+async def get_user_enrollments_endpoint(
+    user_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.MANAGER)),
+):
+    """Manager views a specific user's training enrollment history."""
+    enrollments = await get_user_enrollments_for_manager(db, user_id)
+    result = []
+    for e in enrollments:
+        training = e.training
+        modules = training.modules if training else []
+        completed_ids = {
+            p.module_id for p in (e.module_progress or []) if p.completed_at
+        }
+        result.append(
+            UserEnrollmentSummary(
+                enrollment_id=e.id,
+                training_id=e.training_id,
+                training_title=training.title if training else "",
+                domain=training.domain if training else "",
+                status=e.status,
+                total_modules=len(modules),
+                completed_modules=len(completed_ids),
+                enrolled_at=e.enrolled_at,
+                completed_at=e.completed_at,
+            )
+        )
+    return result
+
+
+@router.post(
+    "/{training_id}/enrollments/{enrollment_id}/reset",
+    response_model=EnrollmentDetailOut,
+)
+async def reset_enrollment_endpoint(
+    training_id: uuid.UUID,
+    enrollment_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.MANAGER)),
+):
+    """Manager resets an enrollment so the user can redo the training."""
+    try:
+        enrollment = await reset_enrollment(db, enrollment_id)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if enrollment.training_id != training_id:
+        raise HTTPException(status_code=400, detail="Enrollment does not belong to this training")
+
     return EnrollmentDetailOut(
         id=enrollment.id,
         training_id=enrollment.training_id,

@@ -425,6 +425,18 @@ class PendingItem(BaseModel):
     detail: str
 
 
+class UserEnrollmentSummary(BaseModel):
+    enrollment_id: uuid.UUID
+    training_id: uuid.UUID
+    training_title: str
+    domain: str
+    status: EnrollmentStatus
+    total_modules: int
+    completed_modules: int
+    enrolled_at: datetime
+    completed_at: datetime | None
+
+
 class ScormStatusUpdate(BaseModel):
     lesson_status: str  # "completed", "passed", "failed", "incomplete", "not attempted"
     score_raw: float | None = None

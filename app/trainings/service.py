@@ -673,16 +673,20 @@ async def submit_quiz_attempt(
     module: TrainingModule,
     answers: dict,
 ) -> QuizAttempt:
+    logger.info("submit_quiz_attempt: start enrollment=%s module=%s", enrollment.id, module.id)
+
     # Update enrollment status to IN_PROGRESS if PENDING
     if enrollment.status == EnrollmentStatus.PENDING:
         enrollment.status = EnrollmentStatus.IN_PROGRESS
 
     progress = await get_or_create_module_progress(db, enrollment.id, module.id)
+    logger.info("submit_quiz_attempt: progress=%s", progress.id)
 
     # Get quiz with questions
     quiz = await get_module_quiz(db, module.id)
     if not quiz or not quiz.questions:
         raise ValueError("Este módulo não possui quiz.")
+    logger.info("submit_quiz_attempt: quiz=%s questions=%d", quiz.id, len(quiz.questions))
 
     # Grade the quiz
     total_weight = 0.0
@@ -713,6 +717,7 @@ async def submit_quiz_attempt(
 
     score = earned_weight / total_weight if total_weight > 0 else 0.0
     passed = score >= quiz.passing_score
+    logger.info("submit_quiz_attempt: score=%.2f passed=%s", score, passed)
 
     attempt = QuizAttempt(
         module_progress_id=progress.id,
@@ -740,12 +745,21 @@ async def submit_quiz_attempt(
                 ),
                 commit=False,
             )
+            logger.info("submit_quiz_attempt: module XP score added")
 
+    logger.info("submit_quiz_attempt: flushing")
     await db.flush()
+
+    logger.info("submit_quiz_attempt: checking training completion")
     await _check_training_completion(db, enrollment)
 
+    logger.info("submit_quiz_attempt: committing")
     await db.commit()
+
+    logger.info("submit_quiz_attempt: refreshing attempt")
     await db.refresh(attempt)
+
+    logger.info("submit_quiz_attempt: done attempt=%s", attempt.id)
     return attempt
 
 
@@ -772,6 +786,9 @@ async def _check_training_completion(
     completed_module_ids = {p.module_id for p in completed_progress}
 
     all_completed = all(m.id in completed_module_ids for m in modules)
+    logger.info("_check_training_completion: modules=%d completed=%d all_completed=%s enrollment_status=%s",
+                len(modules), len(completed_module_ids), all_completed, enrollment.status.value)
+
     if all_completed and enrollment.status != EnrollmentStatus.COMPLETED:
         enrollment.status = EnrollmentStatus.COMPLETED
         enrollment.completed_at = datetime.now(timezone.utc)
@@ -782,6 +799,7 @@ async def _check_training_completion(
         )
         training = training_result.scalar_one_or_none()
         if training and training.xp_reward > 0:
+            logger.info("_check_training_completion: awarding training XP=%d", training.xp_reward)
             await add_score(
                 db,
                 ScoreCreate(
@@ -794,7 +812,9 @@ async def _check_training_completion(
                 commit=False,
             )
         # Check badge criteria (no commit – caller manages transaction)
+        logger.info("_check_training_completion: checking badges")
         await check_and_award_badges(db, enrollment.user_id, commit=False)
+        logger.info("_check_training_completion: badges done")
 
     # Update current_module_order
     enrollment.current_module_order = len(completed_module_ids) + 1

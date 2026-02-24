@@ -1715,10 +1715,13 @@ async def submit_quiz_attempt_endpoint(
         attempt = await submit_quiz_attempt(db, enrollment, module, data.answers)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
-    except Exception:
+    except Exception as exc:
         logger.exception("Error submitting quiz attempt for training=%s module=%s user=%s",
                          training_id, module_id, current_user.id)
-        raise HTTPException(status_code=500, detail="Erro interno ao processar tentativa de quiz.")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Erro interno ao processar tentativa de quiz: {type(exc).__name__}: {exc}",
+        )
     return attempt
 
 

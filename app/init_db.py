@@ -19,7 +19,7 @@ from app.gamification.models import Badge, Score, UserBadge  # noqa: F401
 from app.journeys.models import Journey, JourneyParticipation, OCRUpload, Question, QuestionResponse  # noqa: F401
 from app.learning.models import ActivityCompletion, LearningActivity, LearningPath, TutorSession  # noqa: F401
 from app.teams.models import Team  # noqa: F401
-from app.trainings.models import Training, TrainingModule, ModuleQuiz, QuizQuestion, TrainingEnrollment, ModuleProgress, QuizAttempt  # noqa: F401
+from app.trainings.models import Training, TrainingModule, ModuleQuiz, QuizQuestion, TrainingEnrollment, ModuleProgress, QuizAttempt, TrainingQuiz, TrainingQuizQuestion, TrainingQuizAttempt  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +66,16 @@ async def init_db():
         ))
         await conn.execute(text(
             "ALTER TABLE ocr_uploads ADD COLUMN IF NOT EXISTS import_report JSONB"
+        ))
+        # Lote 9: Training final quiz — new columns on enrollments + drop module xp
+        await conn.execute(text(
+            "ALTER TABLE training_enrollments ADD COLUMN IF NOT EXISTS quiz_unlocked_by UUID REFERENCES users(id)"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE training_enrollments ADD COLUMN IF NOT EXISTS quiz_unlocked_at TIMESTAMP WITH TIME ZONE"
+        ))
+        await conn.execute(text(
+            "ALTER TABLE training_modules DROP COLUMN IF EXISTS xp_reward"
         ))
 
     logger.info("Database tables created/verified.")

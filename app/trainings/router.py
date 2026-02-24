@@ -391,7 +391,7 @@ async def wizard_create_training(
     modules = await list_modules(db, training.id)
     if modules and data.chapters:
         first_module = modules[0]
-        await update_module(db, first_module.id, ModuleUpdate(
+        await update_module(db, first_module, ModuleUpdate(
             title=data.chapters[0].title,
             description=data.chapters[0].description,
         ))

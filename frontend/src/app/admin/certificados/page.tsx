@@ -41,6 +41,7 @@ export default function CertificadosAdminPage() {
         setSettings(s)
         setLogoHeight(s.logo_height ?? 56)
         setCompanyName(s.company_name)
+        setSignerName(s.signer_name)
         setSignerTitle(s.signer_title)
         setSignatureStyle(s.signature_style)
         setExtraText(s.extra_text || '')

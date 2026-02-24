@@ -149,7 +149,7 @@ export default function CertificateViewPage() {
               <div className="cert-cell cert-cell-top">
                 <div className="text-center">
                   {cert.logo_url && (
-                    <div className="flex justify-center mb-3">
+                    <div className="flex justify-center mb-5">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={api.getCertificateFileUrl('logo', cert.id)}
@@ -161,18 +161,18 @@ export default function CertificateViewPage() {
                     </div>
                   )}
                   <p
-                    className="text-xs uppercase tracking-[0.3em] font-medium"
+                    className="text-xs uppercase tracking-[0.3em] font-medium mb-4"
                     style={{ color: cert.secondary_color }}
                   >
                     {cert.company_name}
                   </p>
                   <h1
-                    className="text-3xl font-bold tracking-wide mt-2"
+                    className="text-3xl font-bold tracking-wide"
                     style={{ color: cert.primary_color }}
                   >
                     CERTIFICADO DE CONCLUSÃO
                   </h1>
-                  <div className="w-20 h-0.5 mx-auto mt-3" style={{ background: cert.primary_color }} />
+                  <div className="w-20 h-0.5 mx-auto mt-4" style={{ background: cert.primary_color }} />
                 </div>
               </div>
             </div>

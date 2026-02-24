@@ -16,6 +16,14 @@ path_competency = Table(
     Column("competency_id", UUID(as_uuid=True), ForeignKey("competencies.id", ondelete="CASCADE")),
 )
 
+# Many-to-many: LearningPath <-> Badge
+learning_path_badge = Table(
+    "learning_path_badges",
+    Base.metadata,
+    Column("path_id", UUID(as_uuid=True), ForeignKey("learning_paths.id", ondelete="CASCADE"), primary_key=True),
+    Column("badge_id", UUID(as_uuid=True), ForeignKey("badges.id", ondelete="CASCADE"), primary_key=True),
+)
+
 
 class ActivityType(str, enum.Enum):
     QUIZ = "quiz"
@@ -23,6 +31,11 @@ class ActivityType(str, enum.Enum):
     CASE_STUDY = "case_study"
     GUIDED_CHAT = "guided_chat"
     MICROLESSON = "microlesson"
+
+
+class PathItemType(str, enum.Enum):
+    TRAINING = "training"
+    JOURNEY = "journey"
 
 
 class LearningPath(Base):
@@ -34,12 +47,37 @@ class LearningPath(Base):
     domain: Mapped[str] = mapped_column(String(100), nullable=False, default="vendas")
     target_role: Mapped[str] = mapped_column(String(100), nullable=False, default="vendedor")
     is_active: Mapped[bool] = mapped_column(default=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     competencies = relationship("Competency", secondary=path_competency)
     activities: Mapped[list["LearningActivity"]] = relationship(
         back_populates="path", cascade="all, delete-orphan"
     )
+    items: Mapped[list["LearningPathItem"]] = relationship(
+        back_populates="path", cascade="all, delete-orphan", order_by="LearningPathItem.order"
+    )
+    badges = relationship("Badge", secondary=learning_path_badge)
+
+
+class LearningPathItem(Base):
+    __tablename__ = "learning_path_items"
+    __table_args__ = (
+        UniqueConstraint("path_id", "item_type", "item_id", name="uq_path_item"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    path_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("learning_paths.id", ondelete="CASCADE"), nullable=False
+    )
+    item_type: Mapped[PathItemType] = mapped_column(Enum(PathItemType, name="pathitemtype", create_constraint=False), nullable=False)
+    item_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    path: Mapped["LearningPath"] = relationship(back_populates="items")
 
 
 class LearningActivity(Base):

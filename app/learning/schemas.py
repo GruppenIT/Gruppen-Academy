@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel
 
-from app.learning.models import ActivityType
+from app.learning.models import ActivityType, PathItemType
 
 
 # --- Learning Path ---
@@ -15,6 +15,37 @@ class LearningPathCreate(BaseModel):
     competency_ids: list[uuid.UUID] = []
 
 
+class LearningPathUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    domain: str | None = None
+    target_role: str | None = None
+    is_active: bool | None = None
+
+
+class PathItemOut(BaseModel):
+    id: uuid.UUID
+    path_id: uuid.UUID
+    item_type: PathItemType
+    item_id: uuid.UUID
+    order: int
+    added_at: datetime
+    # Populated by service
+    item_title: str | None = None
+    item_status: str | None = None
+
+    model_config = {"from_attributes": True}
+
+
+class BadgeOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str
+    icon: str | None
+
+    model_config = {"from_attributes": True}
+
+
 class LearningPathOut(BaseModel):
     id: uuid.UUID
     title: str
@@ -23,8 +54,45 @@ class LearningPathOut(BaseModel):
     target_role: str
     is_active: bool
     created_at: datetime
+    items: list[PathItemOut] = []
+    badges: list[BadgeOut] = []
 
     model_config = {"from_attributes": True}
+
+
+# --- Path Item CRUD ---
+class PathItemCreate(BaseModel):
+    item_type: PathItemType
+    item_id: uuid.UUID
+    order: int = 0
+
+
+class PathItemReorder(BaseModel):
+    item_ids: list[uuid.UUID]
+
+
+# --- Path Badges ---
+class PathBadgeUpdate(BaseModel):
+    badge_ids: list[uuid.UUID]
+
+
+# --- Path Completion (for user) ---
+class PathItemCompletionStatus(BaseModel):
+    item_id: uuid.UUID
+    item_type: PathItemType
+    item_title: str | None = None
+    completed: bool
+
+
+class PathCompletionOut(BaseModel):
+    path_id: uuid.UUID
+    path_title: str
+    total_items: int
+    completed_items: int
+    progress_percent: int
+    completed: bool
+    items: list[PathItemCompletionStatus]
+    badges_earned: list[BadgeOut] = []
 
 
 # --- Learning Activity ---
@@ -35,6 +103,15 @@ class LearningActivityCreate(BaseModel):
     content: dict | None = None
     order: int = 0
     points_reward: int = 10
+
+
+class LearningActivityUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    type: ActivityType | None = None
+    content: dict | None = None
+    order: int | None = None
+    points_reward: int | None = None
 
 
 class LearningActivityOut(BaseModel):
@@ -61,7 +138,7 @@ class ActivityCompletionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-# --- Path Progress ---
+# --- Path Progress (old activities-based) ---
 class ActivityProgressItem(BaseModel):
     activity_id: uuid.UUID
     title: str
@@ -79,25 +156,6 @@ class PathProgressOut(BaseModel):
     activities: list[ActivityProgressItem]
 
 
-# --- Tutor Session ---
-# --- Update schemas ---
-class LearningPathUpdate(BaseModel):
-    title: str | None = None
-    description: str | None = None
-    domain: str | None = None
-    target_role: str | None = None
-    is_active: bool | None = None
-
-
-class LearningActivityUpdate(BaseModel):
-    title: str | None = None
-    description: str | None = None
-    type: ActivityType | None = None
-    content: dict | None = None
-    order: int | None = None
-    points_reward: int | None = None
-
-
 # --- Gap Suggestion ---
 class SuggestedPathOut(BaseModel):
     path_id: uuid.UUID
@@ -109,6 +167,7 @@ class SuggestedPathOut(BaseModel):
     matching_competencies: list[str]
 
 
+# --- Tutor Session ---
 class TutorSessionCreate(BaseModel):
     topic: str
     activity_id: uuid.UUID | None = None

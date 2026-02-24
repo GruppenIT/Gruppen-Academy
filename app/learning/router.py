@@ -14,6 +14,11 @@ from app.learning.schemas import (
     LearningPathCreate,
     LearningPathOut,
     LearningPathUpdate,
+    PathBadgeUpdate,
+    PathCompletionOut,
+    PathItemCreate,
+    PathItemOut,
+    PathItemReorder,
     PathProgressOut,
     SuggestedPathOut,
     TutorMessageRequest,
@@ -22,6 +27,7 @@ from app.learning.schemas import (
 )
 from app.learning.service import (
     add_activity,
+    add_path_item,
     complete_activity,
     create_learning_path,
     create_tutor_session,
@@ -30,16 +36,22 @@ from app.learning.service import (
     generate_session_summary,
     get_activity,
     get_learning_path,
+    get_path_completion,
+    get_path_items_enriched,
     get_path_progress,
     get_tutor_session,
     list_activities,
     list_learning_paths,
     list_tutor_sessions,
+    remove_path_item,
+    reorder_path_items,
     send_tutor_message,
     suggest_paths_by_gaps,
     update_activity,
     update_learning_path,
+    update_path_badges,
 )
+from app.learning.models import LearningPathItem
 from app.users.models import User, UserRole
 
 router = APIRouter()
@@ -52,20 +64,21 @@ router = APIRouter()
 async def create_new_path(
     data: LearningPathCreate,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
 ):
-    return await create_learning_path(db, data)
+    return await create_learning_path(db, data, created_by=current_user.id)
 
 
 @router.get("/paths", response_model=list[LearningPathOut])
 async def list_all_paths(
     domain: str | None = None,
+    active_only: bool = True,
     skip: int = 0,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(get_current_user),
 ):
-    return await list_learning_paths(db, domain, skip, limit)
+    return await list_learning_paths(db, domain, skip, limit, active_only=active_only)
 
 
 # NOTE: /paths/suggested-for-me MUST be before /paths/{path_id} to avoid UUID matching
@@ -115,13 +128,114 @@ async def delete_existing_path(
     await delete_learning_path(db, path)
 
 
+# --- Path Items (Training/Journey grouping) ---
+
+
+@router.get("/paths/{path_id}/items", response_model=list[PathItemOut])
+async def list_path_items(
+    path_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_user),
+):
+    """List items (trainings/journeys) in a learning path with enriched info."""
+    return await get_path_items_enriched(db, path_id)
+
+
+@router.post("/paths/{path_id}/items", response_model=PathItemOut, status_code=status.HTTP_201_CREATED)
+async def add_item_to_path(
+    path_id: uuid.UUID,
+    data: PathItemCreate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    path = await get_learning_path(db, path_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Trilha não encontrada")
+    try:
+        item = await add_path_item(db, path_id, data)
+    except Exception as e:
+        if "uq_path_item" in str(e):
+            raise HTTPException(status_code=409, detail="Este item já faz parte da trilha")
+        raise
+    # Return enriched
+    items = await get_path_items_enriched(db, path_id)
+    for i in items:
+        if i["id"] == item.id:
+            return i
+    return item
+
+
+@router.delete("/paths/{path_id}/items/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_item_from_path(
+    path_id: uuid.UUID,
+    item_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    from sqlalchemy import select
+    result = await db.execute(
+        select(LearningPathItem).where(
+            LearningPathItem.id == item_id,
+            LearningPathItem.path_id == path_id,
+        )
+    )
+    item = result.scalar_one_or_none()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item não encontrado nesta trilha")
+    await remove_path_item(db, item)
+
+
+@router.put("/paths/{path_id}/items/reorder", response_model=list[PathItemOut])
+async def reorder_items(
+    path_id: uuid.UUID,
+    data: PathItemReorder,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    await reorder_path_items(db, path_id, data.item_ids)
+    return await get_path_items_enriched(db, path_id)
+
+
+# --- Path Badges ---
+
+
+@router.put("/paths/{path_id}/badges")
+async def set_path_badges(
+    path_id: uuid.UUID,
+    data: PathBadgeUpdate,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    path = await get_learning_path(db, path_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="Trilha não encontrada")
+    await update_path_badges(db, path_id, data.badge_ids)
+    return {"ok": True}
+
+
+# --- Path Completion (for current user) ---
+
+
+@router.get("/paths/{path_id}/completion", response_model=PathCompletionOut)
+async def get_my_path_completion(
+    path_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get current user's completion status on a learning path (items-based)."""
+    return await get_path_completion(db, current_user.id, path_id)
+
+
+# --- Legacy: Activities-based progress ---
+
+
 @router.get("/paths/{path_id}/progress", response_model=PathProgressOut)
 async def get_my_path_progress(
     path_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Get current user's progress on a learning path."""
+    """Get current user's progress on a learning path (activities-based, legacy)."""
     return await get_path_progress(db, current_user.id, path_id)
 
 

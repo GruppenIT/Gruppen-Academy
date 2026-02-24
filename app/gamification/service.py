@@ -254,5 +254,10 @@ async def _check_criteria(
         )
         return result.scalar_one() >= threshold
 
+    if criteria.startswith("trilha:"):
+        # Badge awarded via learning path completion — managed by learning service
+        # _check_criteria is not the right place; handled by check_path_badges_for_user
+        return False
+
     # Unknown criteria — don't auto-award
     return False

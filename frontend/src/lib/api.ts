@@ -319,8 +319,11 @@ class ApiClient {
   }
 
   // Learning
-  getLearningPaths(domain?: string) {
-    const q = domain ? `?domain=${domain}` : ''
+  getLearningPaths(domain?: string, activeOnly = true) {
+    const params = new URLSearchParams()
+    if (domain) params.set('domain', domain)
+    if (!activeOnly) params.set('active_only', 'false')
+    const q = params.toString() ? `?${params}` : ''
     return this.request<import('@/types').LearningPath[]>(`/api/learning/paths${q}`)
   }
   getLearningPath(id: string) { return this.request<import('@/types').LearningPath>(`/api/learning/paths/${id}`) }
@@ -337,6 +340,28 @@ class ApiClient {
   getSuggestedPaths() {
     return this.request<import('@/types').SuggestedPath[]>('/api/learning/paths/suggested-for-me')
   }
+  // Path Items (trainings/journeys in a path)
+  getPathItems(pathId: string) {
+    return this.request<import('@/types').PathItem[]>(`/api/learning/paths/${pathId}/items`)
+  }
+  addPathItem(pathId: string, data: { item_type: string; item_id: string; order?: number }) {
+    return this.request<import('@/types').PathItem>(`/api/learning/paths/${pathId}/items`, { method: 'POST', body: JSON.stringify(data) })
+  }
+  removePathItem(pathId: string, itemId: string) {
+    return this.request<void>(`/api/learning/paths/${pathId}/items/${itemId}`, { method: 'DELETE' })
+  }
+  reorderPathItems(pathId: string, itemIds: string[]) {
+    return this.request<import('@/types').PathItem[]>(`/api/learning/paths/${pathId}/items/reorder`, { method: 'PUT', body: JSON.stringify({ item_ids: itemIds }) })
+  }
+  // Path Badges
+  setPathBadges(pathId: string, badgeIds: string[]) {
+    return this.request<{ ok: boolean }>(`/api/learning/paths/${pathId}/badges`, { method: 'PUT', body: JSON.stringify({ badge_ids: badgeIds }) })
+  }
+  // Path Completion
+  getPathCompletion(pathId: string) {
+    return this.request<import('@/types').PathCompletion>(`/api/learning/paths/${pathId}/completion`)
+  }
+  // Legacy activities
   createActivity(pathId: string, data: { title: string; description?: string; type: string; content?: Record<string, unknown>; order?: number; points_reward?: number }) {
     return this.request<import('@/types').LearningActivity>(`/api/learning/paths/${pathId}/activities`, { method: 'POST', body: JSON.stringify(data) })
   }

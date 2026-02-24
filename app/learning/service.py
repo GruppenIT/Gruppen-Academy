@@ -1,16 +1,26 @@
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import delete as sa_delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.catalog.models import Competency
-from app.learning.models import ActivityCompletion, LearningActivity, LearningPath, TutorSession, path_competency
+from app.learning.models import (
+    ActivityCompletion,
+    LearningActivity,
+    LearningPath,
+    LearningPathItem,
+    PathItemType,
+    TutorSession,
+    learning_path_badge,
+    path_competency,
+)
 from app.learning.schemas import (
     LearningActivityCreate,
     LearningActivityUpdate,
     LearningPathCreate,
     LearningPathUpdate,
+    PathItemCreate,
     TutorSessionCreate,
 )
 from app.llm.client import tutor_chat
@@ -18,12 +28,15 @@ from app.llm.prompts import TUTOR_SYSTEM_PROMPT
 
 
 # --- Learning Path ---
-async def create_learning_path(db: AsyncSession, data: LearningPathCreate) -> LearningPath:
+async def create_learning_path(
+    db: AsyncSession, data: LearningPathCreate, created_by: uuid.UUID | None = None
+) -> LearningPath:
     path = LearningPath(
         title=data.title,
         description=data.description,
         domain=data.domain,
         target_role=data.target_role,
+        created_by=created_by,
     )
     if data.competency_ids:
         result = await db.execute(
@@ -37,20 +50,33 @@ async def create_learning_path(db: AsyncSession, data: LearningPathCreate) -> Le
 
 
 async def list_learning_paths(
-    db: AsyncSession, domain: str | None = None, skip: int = 0, limit: int = 50
+    db: AsyncSession,
+    domain: str | None = None,
+    skip: int = 0,
+    limit: int = 50,
+    active_only: bool = True,
 ) -> list[LearningPath]:
-    query = select(LearningPath).where(LearningPath.is_active)
+    query = select(LearningPath).options(
+        selectinload(LearningPath.items),
+        selectinload(LearningPath.badges),
+    )
+    if active_only:
+        query = query.where(LearningPath.is_active)
     if domain:
         query = query.where(LearningPath.domain == domain)
     result = await db.execute(query.offset(skip).limit(limit))
-    return list(result.scalars().all())
+    return list(result.scalars().unique().all())
 
 
 async def get_learning_path(db: AsyncSession, path_id: uuid.UUID) -> LearningPath | None:
     result = await db.execute(
         select(LearningPath)
         .where(LearningPath.id == path_id)
-        .options(selectinload(LearningPath.activities))
+        .options(
+            selectinload(LearningPath.activities),
+            selectinload(LearningPath.items),
+            selectinload(LearningPath.badges),
+        )
     )
     return result.scalar_one_or_none()
 
@@ -407,6 +433,384 @@ async def generate_session_summary(
     await db.commit()
     await db.refresh(session)
     return session
+
+
+# --- Path Items (Training/Journey grouping) ---
+
+
+async def add_path_item(
+    db: AsyncSession, path_id: uuid.UUID, data: PathItemCreate
+) -> LearningPathItem:
+    item = LearningPathItem(
+        path_id=path_id,
+        item_type=data.item_type,
+        item_id=data.item_id,
+        order=data.order,
+    )
+    db.add(item)
+    await db.commit()
+    await db.refresh(item)
+
+    # Re-evaluate badges for all users who may have completed this path
+    await _revoke_path_badges_if_needed(db, path_id)
+
+    return item
+
+
+async def remove_path_item(db: AsyncSession, item: LearningPathItem) -> None:
+    path_id = item.path_id
+    await db.delete(item)
+    await db.commit()
+    # After removing an item, users might now qualify for the badge
+    await _check_and_award_path_badges(db, path_id)
+
+
+async def reorder_path_items(
+    db: AsyncSession, path_id: uuid.UUID, item_ids: list[uuid.UUID]
+) -> list[LearningPathItem]:
+    for idx, item_id in enumerate(item_ids):
+        result = await db.execute(
+            select(LearningPathItem).where(
+                LearningPathItem.id == item_id,
+                LearningPathItem.path_id == path_id,
+            )
+        )
+        item = result.scalar_one_or_none()
+        if item:
+            item.order = idx
+    await db.commit()
+    result = await db.execute(
+        select(LearningPathItem)
+        .where(LearningPathItem.path_id == path_id)
+        .order_by(LearningPathItem.order)
+    )
+    return list(result.scalars().all())
+
+
+async def update_path_badges(
+    db: AsyncSession, path_id: uuid.UUID, badge_ids: list[uuid.UUID]
+) -> None:
+    """Set the badges linked to a learning path."""
+    from app.gamification.models import Badge
+
+    # Clear existing
+    await db.execute(
+        sa_delete(learning_path_badge).where(learning_path_badge.c.path_id == path_id)
+    )
+
+    if badge_ids:
+        badges_result = await db.execute(
+            select(Badge).where(Badge.id.in_(badge_ids))
+        )
+        badges = list(badges_result.scalars().all())
+
+        path = await get_learning_path(db, path_id)
+        if path:
+            path.badges = badges
+
+    await db.commit()
+
+    # Re-evaluate badge awards for this path
+    await _check_and_award_path_badges(db, path_id)
+
+
+async def get_path_items_enriched(
+    db: AsyncSession, path_id: uuid.UUID
+) -> list[dict]:
+    """Get path items with title and status info resolved from trainings/journeys."""
+    result = await db.execute(
+        select(LearningPathItem)
+        .where(LearningPathItem.path_id == path_id)
+        .order_by(LearningPathItem.order)
+    )
+    items = list(result.scalars().all())
+
+    from app.journeys.models import Journey
+    from app.trainings.models import Training
+
+    enriched = []
+    for item in items:
+        title = None
+        status = None
+        if item.item_type == PathItemType.TRAINING:
+            t_result = await db.execute(
+                select(Training.title, Training.status).where(Training.id == item.item_id)
+            )
+            row = t_result.one_or_none()
+            if row:
+                title, status = row.title, row.status.value
+        elif item.item_type == PathItemType.JOURNEY:
+            j_result = await db.execute(
+                select(Journey.title, Journey.status).where(Journey.id == item.item_id)
+            )
+            row = j_result.one_or_none()
+            if row:
+                title, status = row.title, row.status.value
+
+        enriched.append({
+            "id": item.id,
+            "path_id": item.path_id,
+            "item_type": item.item_type,
+            "item_id": item.item_id,
+            "order": item.order,
+            "added_at": item.added_at,
+            "item_title": title,
+            "item_status": status,
+        })
+
+    return enriched
+
+
+# --- Path Completion ---
+
+
+async def get_path_completion(
+    db: AsyncSession, user_id: uuid.UUID, path_id: uuid.UUID
+) -> dict:
+    """Check user's completion of a learning path (items-based)."""
+    from app.journeys.models import JourneyParticipation
+    from app.trainings.models import EnrollmentStatus, TrainingEnrollment
+
+    path = await get_learning_path(db, path_id)
+    if not path:
+        return {"path_id": path_id, "path_title": "", "total_items": 0,
+                "completed_items": 0, "progress_percent": 0, "completed": False,
+                "items": [], "badges_earned": []}
+
+    items = path.items
+    if not items:
+        return {"path_id": path_id, "path_title": path.title, "total_items": 0,
+                "completed_items": 0, "progress_percent": 0, "completed": False,
+                "items": [], "badges_earned": []}
+
+    from app.journeys.models import Journey
+    from app.trainings.models import Training
+
+    item_statuses = []
+    completed_count = 0
+
+    for item in items:
+        completed = False
+        title = None
+
+        if item.item_type == PathItemType.TRAINING:
+            # Check TrainingEnrollment.status == COMPLETED
+            t_result = await db.execute(
+                select(Training.title).where(Training.id == item.item_id)
+            )
+            row = t_result.one_or_none()
+            title = row.title if row else None
+
+            enroll_result = await db.execute(
+                select(TrainingEnrollment).where(
+                    TrainingEnrollment.training_id == item.item_id,
+                    TrainingEnrollment.user_id == user_id,
+                    TrainingEnrollment.status == EnrollmentStatus.COMPLETED,
+                )
+            )
+            if enroll_result.scalar_one_or_none():
+                completed = True
+
+        elif item.item_type == PathItemType.JOURNEY:
+            j_result = await db.execute(
+                select(Journey.title).where(Journey.id == item.item_id)
+            )
+            row = j_result.one_or_none()
+            title = row.title if row else None
+
+            part_result = await db.execute(
+                select(JourneyParticipation).where(
+                    JourneyParticipation.journey_id == item.item_id,
+                    JourneyParticipation.user_id == user_id,
+                    JourneyParticipation.completed_at.isnot(None),
+                )
+            )
+            if part_result.scalar_one_or_none():
+                completed = True
+
+        if completed:
+            completed_count += 1
+
+        item_statuses.append({
+            "item_id": item.item_id,
+            "item_type": item.item_type,
+            "item_title": title,
+            "completed": completed,
+        })
+
+    total = len(items)
+    progress = round((completed_count / total) * 100) if total > 0 else 0
+    all_completed = completed_count == total
+
+    # Check which path badges the user has earned
+    badges_earned = []
+    if path.badges:
+        from app.gamification.models import UserBadge
+        for badge in path.badges:
+            ub_result = await db.execute(
+                select(UserBadge).where(
+                    UserBadge.user_id == user_id,
+                    UserBadge.badge_id == badge.id,
+                )
+            )
+            if ub_result.scalar_one_or_none():
+                badges_earned.append({
+                    "id": badge.id,
+                    "name": badge.name,
+                    "description": badge.description,
+                    "icon": badge.icon,
+                })
+
+    return {
+        "path_id": path_id,
+        "path_title": path.title,
+        "total_items": total,
+        "completed_items": completed_count,
+        "progress_percent": progress,
+        "completed": all_completed,
+        "items": item_statuses,
+        "badges_earned": badges_earned,
+    }
+
+
+# --- Badge Award/Revoke for Paths ---
+
+
+async def _get_all_users_with_path_items(
+    db: AsyncSession, path_id: uuid.UUID
+) -> set[uuid.UUID]:
+    """Get all users who have enrollment/participation in any item of this path."""
+    result = await db.execute(
+        select(LearningPathItem).where(LearningPathItem.path_id == path_id)
+    )
+    items = list(result.scalars().all())
+
+    user_ids: set[uuid.UUID] = set()
+
+    from app.journeys.models import JourneyParticipation
+    from app.trainings.models import TrainingEnrollment
+
+    for item in items:
+        if item.item_type == PathItemType.TRAINING:
+            enroll_result = await db.execute(
+                select(TrainingEnrollment.user_id).where(
+                    TrainingEnrollment.training_id == item.item_id,
+                )
+            )
+            user_ids.update(row[0] for row in enroll_result.all())
+        elif item.item_type == PathItemType.JOURNEY:
+            part_result = await db.execute(
+                select(JourneyParticipation.user_id).where(
+                    JourneyParticipation.journey_id == item.item_id,
+                )
+            )
+            user_ids.update(row[0] for row in part_result.all())
+
+    return user_ids
+
+
+async def _is_path_completed_by_user(
+    db: AsyncSession, user_id: uuid.UUID, path_id: uuid.UUID
+) -> bool:
+    """Check if a user has completed all items in a path."""
+    completion = await get_path_completion(db, user_id, path_id)
+    return completion["completed"]
+
+
+async def _check_and_award_path_badges(
+    db: AsyncSession, path_id: uuid.UUID
+) -> None:
+    """Check all relevant users and award badges for completed paths."""
+    from app.gamification.models import UserBadge
+
+    path = await get_learning_path(db, path_id)
+    if not path or not path.badges:
+        return
+
+    user_ids = await _get_all_users_with_path_items(db, path_id)
+
+    for uid in user_ids:
+        completed = await _is_path_completed_by_user(db, uid, path_id)
+        if completed:
+            for badge in path.badges:
+                existing = await db.execute(
+                    select(UserBadge).where(
+                        UserBadge.user_id == uid,
+                        UserBadge.badge_id == badge.id,
+                    )
+                )
+                if not existing.scalar_one_or_none():
+                    db.add(UserBadge(user_id=uid, badge_id=badge.id))
+
+    await db.commit()
+
+
+async def _revoke_path_badges_if_needed(
+    db: AsyncSession, path_id: uuid.UUID
+) -> None:
+    """When a new item is added, revoke badges from users who haven't completed it."""
+    from app.gamification.models import UserBadge
+
+    path = await get_learning_path(db, path_id)
+    if not path or not path.badges:
+        return
+
+    badge_ids = [b.id for b in path.badges]
+
+    # Find all users who have any of these badges
+    ub_result = await db.execute(
+        select(UserBadge).where(UserBadge.badge_id.in_(badge_ids))
+    )
+    user_badges = list(ub_result.scalars().all())
+
+    for ub in user_badges:
+        completed = await _is_path_completed_by_user(db, ub.user_id, path_id)
+        if not completed:
+            await db.delete(ub)
+
+    await db.commit()
+
+
+async def check_path_badges_for_user(
+    db: AsyncSession, user_id: uuid.UUID
+) -> list:
+    """Called after a user completes a training or journey.
+    Checks all active paths and awards/maintains badges.
+    """
+    from app.gamification.models import UserBadge
+
+    paths_result = await db.execute(
+        select(LearningPath)
+        .where(LearningPath.is_active)
+        .options(
+            selectinload(LearningPath.items),
+            selectinload(LearningPath.badges),
+        )
+    )
+    paths = list(paths_result.scalars().unique().all())
+
+    awarded = []
+    for path in paths:
+        if not path.badges or not path.items:
+            continue
+        completed = await _is_path_completed_by_user(db, user_id, path.id)
+        if completed:
+            for badge in path.badges:
+                existing = await db.execute(
+                    select(UserBadge).where(
+                        UserBadge.user_id == user_id,
+                        UserBadge.badge_id == badge.id,
+                    )
+                )
+                if not existing.scalar_one_or_none():
+                    ub = UserBadge(user_id=user_id, badge_id=badge.id)
+                    db.add(ub)
+                    awarded.append(ub)
+
+    if awarded:
+        await db.commit()
+
+    return awarded
 
 
 async def _build_tutor_context(db: AsyncSession, session: TutorSession) -> str:

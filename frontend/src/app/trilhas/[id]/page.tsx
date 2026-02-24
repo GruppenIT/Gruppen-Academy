@@ -4,70 +4,37 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import { api } from '@/lib/api'
-import type { LearningPath, PathProgress, PathProgressActivity } from '@/types'
-import PointsBadge from '@/components/gamification/PointsBadge'
-import { BookOpen, ArrowLeft, CheckCircle2, Circle, Play, Loader2, Brain, MessageSquare, FileQuestion, Lightbulb, Gamepad2, XCircle } from 'lucide-react'
+import type { LearningPath, PathCompletion } from '@/types'
+import { BookOpen, ArrowLeft, CheckCircle2, Circle, Loader2, Award, GraduationCap, Route, XCircle } from 'lucide-react'
 import Link from 'next/link'
 import { clsx } from 'clsx'
-
-const activityIcons: Record<string, React.ElementType> = {
-  quiz: Gamepad2,
-  simulation: Play,
-  case_study: FileQuestion,
-  guided_chat: MessageSquare,
-  microlesson: Lightbulb,
-}
-
-const activityLabels: Record<string, string> = {
-  quiz: 'Quiz',
-  simulation: 'Simulacao',
-  case_study: 'Estudo de Caso',
-  guided_chat: 'Chat Guiado',
-  microlesson: 'Microaula',
-}
 
 export default function TrilhaDetailPage() {
   const params = useParams()
   const [path, setPath] = useState<LearningPath | null>(null)
-  const [progress, setProgress] = useState<PathProgress | null>(null)
+  const [completion, setCompletion] = useState<PathCompletion | null>(null)
   const [loading, setLoading] = useState(true)
-  const [completingId, setCompletingId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const pathId = params.id as string
 
   useEffect(() => {
     loadData()
-  }, [pathId])
+  }, [pathId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadData() {
     setLoading(true)
     try {
-      const [p, prog] = await Promise.all([
+      const [p, c] = await Promise.all([
         api.getLearningPath(pathId),
-        api.getPathProgress(pathId),
+        api.getPathCompletion(pathId),
       ])
       setPath(p)
-      setProgress(prog)
+      setCompletion(c)
     } catch {
       setError('Erro ao carregar trilha')
     } finally {
       setLoading(false)
-    }
-  }
-
-  async function handleComplete(activityId: string) {
-    setCompletingId(activityId)
-    setError(null)
-    try {
-      await api.completeActivity(activityId)
-      // Reload progress
-      const prog = await api.getPathProgress(pathId)
-      setProgress(prog)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Erro ao completar atividade')
-    } finally {
-      setCompletingId(null)
     }
   }
 
@@ -79,10 +46,13 @@ export default function TrilhaDetailPage() {
     return <AppShell><div className="text-center py-20"><p className="text-gray-500">Trilha nao encontrada.</p></div></AppShell>
   }
 
-  const activities = progress?.activities || []
-  const totalPoints = activities.reduce((sum, a) => sum + a.points_reward, 0)
-  const completedCount = progress?.completed_activities ?? 0
-  const progressPercent = progress?.progress_percent ?? 0
+  const items = completion?.items || []
+  const totalItems = completion?.total_items || 0
+  const completedItems = completion?.completed_items || 0
+  const progressPercent = completion?.progress_percent || 0
+  const isComplete = completion?.completed || false
+  const badgesEarned = completion?.badges_earned || []
+  const pathBadges = path.badges || []
 
   return (
     <AppShell>
@@ -100,96 +70,127 @@ export default function TrilhaDetailPage() {
       {/* Path Header */}
       <div className="card p-6 mb-6">
         <div className="flex items-start gap-5">
-          <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center flex-shrink-0">
-            <BookOpen className="w-7 h-7 text-emerald-600" />
+          <div className={`w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 ${isComplete ? 'bg-emerald-100' : 'bg-emerald-50'}`}>
+            {isComplete ? <CheckCircle2 className="w-7 h-7 text-emerald-600" /> : <BookOpen className="w-7 h-7 text-emerald-600" />}
           </div>
           <div className="flex-1">
             <h1 className="text-2xl font-bold text-gray-900 mb-2">{path.title}</h1>
             {path.description && <p className="text-gray-500 mb-4">{path.description}</p>}
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               <span className="badge-pill bg-gray-100 text-gray-600">{path.domain}</span>
-              <span className="text-sm text-gray-500">{activities.length} atividades</span>
-              <PointsBadge points={totalPoints} label="XP totais" />
+              <span className="text-sm text-gray-500">{totalItems} item(ns)</span>
             </div>
           </div>
         </div>
 
         {/* Progress bar */}
-        <div className="mt-5">
-          <div className="flex items-center justify-between text-sm mb-2">
-            <span className="text-gray-500">Progresso</span>
-            <span className="font-medium text-gray-700">{completedCount} / {activities.length} concluidas</span>
+        {totalItems > 0 && (
+          <div className="mt-5">
+            <div className="flex items-center justify-between text-sm mb-2">
+              <span className="text-gray-500">Progresso</span>
+              <span className="font-medium text-gray-700">{completedItems} / {totalItems} concluidos</span>
+            </div>
+            <div className="progress-bar h-3">
+              <div
+                className={`progress-bar-fill transition-all duration-500 ${isComplete ? 'bg-gradient-to-r from-emerald-400 to-emerald-600' : 'bg-gradient-to-r from-brand-400 to-brand-600'}`}
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+            {isComplete && (
+              <p className="text-emerald-600 text-sm font-medium mt-2 flex items-center gap-1">
+                <CheckCircle2 className="w-4 h-4" /> Trilha concluida! Parabens!
+              </p>
+            )}
           </div>
-          <div className="progress-bar h-3">
-            <div
-              className="progress-bar-fill bg-gradient-to-r from-emerald-400 to-emerald-600 transition-all duration-500"
-              style={{ width: `${progressPercent}%` }}
-            />
+        )}
+
+        {/* Badges */}
+        {pathBadges.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-600 mb-2 flex items-center gap-1">
+              <Award className="w-4 h-4 text-amber-500" /> Badges desta trilha
+            </h3>
+            <div className="flex flex-wrap gap-2">
+              {pathBadges.map(b => {
+                const earned = badgesEarned.some(be => be.id === b.id)
+                return (
+                  <div key={b.id} className={`flex items-center gap-2 px-3 py-2 rounded-xl border ${
+                    earned ? 'bg-amber-50 border-amber-200' : 'bg-gray-50 border-gray-200 opacity-50'
+                  }`}>
+                    <Award className={`w-5 h-5 ${earned ? 'text-amber-500' : 'text-gray-300'}`} />
+                    <div>
+                      <p className={`text-sm font-medium ${earned ? 'text-amber-700' : 'text-gray-500'}`}>{b.name}</p>
+                      <p className="text-xs text-gray-400">{earned ? 'Conquistado!' : 'Complete a trilha para conquistar'}</p>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
-          {progressPercent === 100 && (
-            <p className="text-emerald-600 text-sm font-medium mt-2 flex items-center gap-1">
-              <CheckCircle2 className="w-4 h-4" /> Trilha concluida! Parabens!
-            </p>
-          )}
-        </div>
+        )}
       </div>
 
-      {/* Activities Timeline */}
+      {/* Items List */}
       <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-        <Brain className="w-5 h-5 text-violet-500" />
-        Atividades
+        <Route className="w-5 h-5 text-indigo-500" />
+        Treinamentos e Jornadas
       </h2>
 
-      <div className="space-y-3">
-        {activities.sort((a, b) => a.order - b.order).map((activity, idx) => {
-          const Icon = activityIcons[activity.type] || activityIcons[activity.type.toUpperCase()] || Circle
-          const completed = activity.completed
+      {items.length === 0 ? (
+        <div className="card p-8 text-center">
+          <p className="text-sm text-gray-400">Esta trilha ainda nao possui itens.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {items.map((item, idx) => {
+            const completed = item.completed
+            const isTraining = item.item_type === 'training'
+            const href = isTraining ? `/treinamentos/${item.item_id}` : `/jornadas/${item.item_id}`
 
-          return (
-            <div key={activity.activity_id}
-              className={clsx('card p-5 flex items-center gap-4 transition-all animate-slide-up', completed && 'bg-emerald-50/30')}
-              style={{ animationDelay: `${idx * 60}ms` }}
-            >
-              {/* Status */}
-              <div className={clsx(
-                'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0',
-                completed ? 'bg-emerald-100' : 'bg-gray-50'
-              )}>
-                {completed
-                  ? <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                  : <Icon className="w-5 h-5 text-gray-400" />
-                }
-              </div>
+            return (
+              <Link key={item.item_id} href={href}
+                className={clsx('card p-5 flex items-center gap-4 transition-all animate-slide-up hover:shadow-md', completed && 'bg-emerald-50/30')}
+                style={{ animationDelay: `${idx * 60}ms` }}
+              >
+                {/* Status */}
+                <div className={clsx(
+                  'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0',
+                  completed ? 'bg-emerald-100' : 'bg-gray-50'
+                )}>
+                  {completed
+                    ? <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                    : isTraining
+                      ? <GraduationCap className="w-5 h-5 text-indigo-400" />
+                      : <Route className="w-5 h-5 text-amber-400" />
+                  }
+                </div>
 
-              {/* Content */}
-              <div className="flex-1 min-w-0">
-                <h4 className={clsx('font-medium', completed ? 'text-gray-500 line-through' : 'text-gray-900')}>{activity.title}</h4>
-                {activity.description && <p className="text-sm text-gray-500 truncate">{activity.description}</p>}
-              </div>
+                {/* Number */}
+                <span className="w-6 h-6 rounded-full bg-indigo-50 text-indigo-700 text-xs font-bold flex items-center justify-center shrink-0">{idx + 1}</span>
 
-              {/* Meta */}
-              <span className="badge-pill bg-violet-50 text-violet-600">
-                {activityLabels[activity.type] || activityLabels[activity.type.toUpperCase()] || activity.type}
-              </span>
-              <PointsBadge points={activity.points_reward} size="sm" />
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <h4 className={clsx('font-medium', completed ? 'text-gray-500' : 'text-gray-900')}>
+                    {item.item_title || 'Item indisponivel'}
+                  </h4>
+                </div>
 
-              {/* Complete Button */}
-              {!completed && (
-                <button
-                  onClick={() => handleComplete(activity.activity_id)}
-                  disabled={completingId !== null}
-                  className="btn-primary text-xs flex items-center gap-1"
-                >
-                  {completingId === activity.activity_id
-                    ? <Loader2 className="w-3 h-3 animate-spin" />
-                    : <CheckCircle2 className="w-3 h-3" />}
-                  Concluir
-                </button>
-              )}
-            </div>
-          )
-        })}
-      </div>
+                {/* Type badge */}
+                <span className={`badge-pill text-xs ${isTraining ? 'bg-indigo-50 text-indigo-600' : 'bg-amber-50 text-amber-600'}`}>
+                  {isTraining ? 'Treinamento' : 'Jornada'}
+                </span>
+
+                {/* Status indicator */}
+                {completed ? (
+                  <span className="badge-pill bg-emerald-50 text-emerald-600 text-xs">Concluido</span>
+                ) : (
+                  <span className="badge-pill bg-gray-100 text-gray-500 text-xs">Pendente</span>
+                )}
+              </Link>
+            )
+          })}
+        </div>
+      )}
     </AppShell>
   )
 }

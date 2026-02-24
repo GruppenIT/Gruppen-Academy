@@ -108,6 +108,44 @@ export interface ParticipationStatus {
   started_at: string
 }
 
+export type PathItemType = 'training' | 'journey'
+
+export interface PathItem {
+  id: string
+  path_id: string
+  item_type: PathItemType
+  item_id: string
+  order: number
+  added_at: string
+  item_title: string | null
+  item_status: string | null
+}
+
+export interface PathBadge {
+  id: string
+  name: string
+  description: string
+  icon: string | null
+}
+
+export interface PathCompletion {
+  path_id: string
+  path_title: string
+  total_items: number
+  completed_items: number
+  progress_percent: number
+  completed: boolean
+  items: PathCompletionItem[]
+  badges_earned: PathBadge[]
+}
+
+export interface PathCompletionItem {
+  item_id: string
+  item_type: PathItemType
+  item_title: string | null
+  completed: boolean
+}
+
 export interface LearningPath {
   id: string
   title: string
@@ -115,6 +153,8 @@ export interface LearningPath {
   domain: string
   target_role: string
   is_active: boolean
+  items?: PathItem[]
+  badges?: PathBadge[]
   activities?: LearningActivity[]
 }
 

@@ -148,6 +148,14 @@ async def complete_participation(
     participation.completed_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(participation)
+
+    # Check learning path badges after journey completion
+    try:
+        from app.learning.service import check_path_badges_for_user
+        await check_path_badges_for_user(db, participation.user_id)
+    except Exception:
+        pass  # Non-critical
+
     return participation
 
 

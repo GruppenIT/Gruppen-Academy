@@ -910,6 +910,10 @@ async def submit_training_quiz_attempt(
             )
         await check_and_award_badges(db, enrollment.user_id, commit=False)
 
+        # Check learning path badges
+        from app.learning.service import check_path_badges_for_user
+        await check_path_badges_for_user(db, enrollment.user_id)
+
     await db.commit()
     await db.refresh(attempt)
     return attempt
@@ -1070,6 +1074,10 @@ async def _check_training_completion(
                     commit=False,
                 )
             await check_and_award_badges(db, enrollment.user_id, commit=False)
+
+            # Check learning path badges
+            from app.learning.service import check_path_badges_for_user
+            await check_path_badges_for_user(db, enrollment.user_id)
 
     # Update current_module_order
     enrollment.current_module_order = len(completed_module_ids) + 1

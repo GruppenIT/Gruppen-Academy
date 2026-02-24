@@ -33,7 +33,7 @@ export default function CertificateViewPage() {
       <div className="min-h-screen flex items-center justify-center bg-gray-100">
         <div className="text-center">
           <AlertTriangle className="w-12 h-12 text-red-400 mx-auto mb-3" />
-          <h2 className="text-lg font-semibold text-gray-700">Certificado nao encontrado</h2>
+          <h2 className="text-lg font-semibold text-gray-700">Certificado não encontrado</h2>
           <p className="text-sm text-gray-400 mt-1">{error}</p>
         </div>
       </div>
@@ -112,12 +112,13 @@ export default function CertificateViewPage() {
             style={{ borderColor: `${cert.primary_color}30` }}
           />
 
-          {/* Content */}
-          <div className="relative h-full flex flex-col items-center justify-between py-10 px-16">
-            {/* Header */}
-            <div className="text-center space-y-2">
+          {/* Content — three vertical sections evenly spaced */}
+          <div className="relative h-full flex flex-col justify-between py-12 px-16">
+
+            {/* Top: Logo + title */}
+            <div className="text-center">
               {cert.logo_url && (
-                <div className="flex justify-center mb-1">
+                <div className="flex justify-center mb-3">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={api.getCertificateFileUrl('logo', cert.id)}
@@ -135,16 +136,16 @@ export default function CertificateViewPage() {
                 {cert.company_name}
               </p>
               <h1
-                className="text-3xl font-bold tracking-wide"
+                className="text-3xl font-bold tracking-wide mt-2"
                 style={{ color: cert.primary_color }}
               >
-                CERTIFICADO DE CONCLUSAO
+                CERTIFICADO DE CONCLUSÃO
               </h1>
-              <div className="w-20 h-0.5 mx-auto mt-2" style={{ background: cert.primary_color }} />
+              <div className="w-20 h-0.5 mx-auto mt-3" style={{ background: cert.primary_color }} />
             </div>
 
-            {/* Body */}
-            <div className="text-center max-w-2xl space-y-4 flex-1 flex flex-col justify-center">
+            {/* Middle: Body text */}
+            <div className="text-center max-w-2xl mx-auto space-y-3">
               <p className="text-sm text-gray-500">Certificamos que</p>
               <p className="text-2xl font-bold text-gray-900">{cert.user_name}</p>
               <p className="text-sm text-gray-500 leading-relaxed">
@@ -157,8 +158,8 @@ export default function CertificateViewPage() {
                 {cert.training_title}
               </p>
               <p className="text-sm text-gray-500 leading-relaxed">
-                com carga horaria de <span className="font-semibold text-gray-700">{durationText}</span>,
-                na area de <span className="font-semibold text-gray-700 capitalize">{cert.training_domain}</span>,
+                com carga horária de <span className="font-semibold text-gray-700">{durationText}</span>,
+                na área de <span className="font-semibold text-gray-700 capitalize">{cert.training_domain}</span>,
                 finalizado em <span className="font-semibold text-gray-700">{completedDate}</span>.
               </p>
               {cert.extra_text && (
@@ -166,11 +167,11 @@ export default function CertificateViewPage() {
               )}
             </div>
 
-            {/* Footer: Signature + certificate number */}
+            {/* Bottom: Signature + certificate number */}
             <div className="w-full flex items-end justify-between">
               <div className="text-left">
                 <p className="text-[10px] text-gray-400">
-                  Certificado N.o {cert.certificate_number}
+                  Certificado N.&ordm; {cert.certificate_number}
                 </p>
                 <p className="text-[10px] text-gray-400">
                   Emitido em {issuedDate}

@@ -122,7 +122,7 @@ export default function CertificadosAdminPage() {
           Certificados
         </h2>
         <p className="text-sm text-gray-500 mt-1">
-          Personalize a aparencia dos certificados emitidos ao concluir treinamentos.
+          Personalize a aparência dos certificados emitidos ao concluir treinamentos.
         </p>
       </div>
 
@@ -191,7 +191,7 @@ export default function CertificadosAdminPage() {
       <section className="card p-5 space-y-4">
         <h3 className="font-semibold text-gray-800 flex items-center gap-2">
           <PenLine className="w-4 h-4 text-gray-500" />
-          Informacoes do certificado
+          Informações do certificado
         </h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
@@ -305,7 +305,7 @@ export default function CertificadosAdminPage() {
 
         {signatureStyle === 'typed' && signerName && (
           <div className="pt-2">
-            <p className="text-xs text-gray-400 mb-1">Pre-visualizacao:</p>
+            <p className="text-xs text-gray-400 mb-1">Pré-visualização:</p>
             <p className="text-2xl italic text-gray-700" style={{ fontFamily: 'Georgia, serif' }}>
               {signerName}
             </p>
@@ -321,7 +321,7 @@ export default function CertificadosAdminPage() {
         </h3>
         <div className="flex gap-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cor primaria</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cor primária</label>
             <div className="flex items-center gap-2">
               <input
                 type="color"
@@ -338,7 +338,7 @@ export default function CertificadosAdminPage() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cor secundaria</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Cor secundária</label>
             <div className="flex items-center gap-2">
               <input
                 type="color"
@@ -365,7 +365,7 @@ export default function CertificadosAdminPage() {
           className="btn-primary px-6 py-2.5 flex items-center gap-2"
         >
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-          Salvar configuracoes
+          Salvar configurações
         </button>
         {saved && (
           <span className="text-sm text-emerald-600 flex items-center gap-1">
@@ -376,7 +376,7 @@ export default function CertificadosAdminPage() {
 
       {/* Preview */}
       <section className="card p-5 space-y-4">
-        <h3 className="font-semibold text-gray-800">Pre-visualizacao</h3>
+        <h3 className="font-semibold text-gray-800">Pré-visualização</h3>
         <div
           className="border-2 rounded-xl p-8 bg-white relative overflow-hidden"
           style={{ borderColor: primaryColor }}
@@ -404,7 +404,7 @@ export default function CertificadosAdminPage() {
               {companyName || 'Gruppen'}
             </p>
             <h4 className="text-2xl font-bold" style={{ color: primaryColor }}>
-              Certificado de Conclusao
+              Certificado de Conclusão
             </h4>
             <p className="text-sm text-gray-500">
               Certificamos que <span className="font-semibold text-gray-800">Nome do Profissional</span> concluiu

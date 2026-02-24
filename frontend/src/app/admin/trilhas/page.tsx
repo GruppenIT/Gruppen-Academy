@@ -342,7 +342,13 @@ export default function AdminTrilhasPage() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm font-medium text-gray-700 block mb-1">Dominio</label>
-                      <input type="text" className="input-field w-full" value={pDomain} onChange={(e) => setPDomain(e.target.value)} />
+                      <select className="input-field w-full" value={pDomain} onChange={(e) => setPDomain(e.target.value)}>
+                        <option value="vendas">Vendas</option>
+                        <option value="suporte">Suporte</option>
+                        <option value="lideranca">Lideranca</option>
+                        <option value="cs">Customer Success</option>
+                        <option value="geral">Geral</option>
+                      </select>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700 block mb-1">Cargo-alvo</label>

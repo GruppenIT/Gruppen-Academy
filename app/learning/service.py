@@ -45,8 +45,8 @@ async def create_learning_path(
         path.competencies = list(result.scalars().all())
     db.add(path)
     await db.commit()
-    await db.refresh(path)
-    return path
+    # Re-query with eager loading so items/badges are available for serialization
+    return await get_learning_path(db, path.id)  # type: ignore[return-value]
 
 
 async def list_learning_paths(
@@ -199,8 +199,8 @@ async def update_learning_path(
     for field, value in data.model_dump(exclude_unset=True).items():
         setattr(path, field, value)
     await db.commit()
-    await db.refresh(path)
-    return path
+    # Re-query with eager loading so items/badges are available for serialization
+    return await get_learning_path(db, path.id)  # type: ignore[return-value]
 
 
 async def delete_learning_path(db: AsyncSession, path: LearningPath) -> None:

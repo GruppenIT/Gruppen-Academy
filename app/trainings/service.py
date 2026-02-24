@@ -642,7 +642,7 @@ async def get_my_enrollments(
         .where(TrainingEnrollment.user_id == user_id)
         .options(
             selectinload(TrainingEnrollment.training).selectinload(Training.modules),
-            selectinload(TrainingEnrollment.training).selectinload(Training.final_quiz),
+            selectinload(TrainingEnrollment.training).selectinload(Training.final_quiz).selectinload(TrainingQuiz.questions),
             selectinload(TrainingEnrollment.module_progress),
         )
         .order_by(TrainingEnrollment.enrolled_at.desc())

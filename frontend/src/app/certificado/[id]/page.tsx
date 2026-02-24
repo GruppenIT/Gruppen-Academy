@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { api, getApiBase } from '@/lib/api'
+import { api } from '@/lib/api'
 import type { CertificateView } from '@/types'
 import { Printer, Loader2, AlertTriangle } from 'lucide-react'
 
@@ -120,7 +120,7 @@ export default function CertificateViewPage() {
                 <div className="flex justify-center mb-1">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
-                    src={`${getApiBase()}${cert.logo_url}`}
+                    src={api.getCertificateFileUrl('logo', cert.id)}
                     alt="Logo"
                     className="h-14 object-contain"
                     crossOrigin="use-credentials"
@@ -181,7 +181,7 @@ export default function CertificateViewPage() {
                   <div className="flex justify-center mb-1">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={`${getApiBase()}${cert.signature_image_url}`}
+                      src={api.getCertificateFileUrl('signature', cert.id)}
                       alt="Assinatura"
                       className="h-12 object-contain"
                       crossOrigin="use-credentials"

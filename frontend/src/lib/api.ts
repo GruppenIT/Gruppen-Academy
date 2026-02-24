@@ -1,7 +1,5 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000'
 
-export function getApiBase() { return API_BASE }
-
 class ApiClient {
   /**
    * Whether the user has a valid session.

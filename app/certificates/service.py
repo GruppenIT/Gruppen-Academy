@@ -142,16 +142,16 @@ async def get_certificate_view(
     if not cert:
         return None
 
-    # Always use live settings so admin changes apply immediately
-    settings = await get_or_create_settings(db)
+    # Use snapshot settings (frozen at issuance time)
+    snap = cert.snapshot or {}
 
     logo_url = None
-    if settings.logo_path:
-        logo_url = "/api/certificates/settings/logo-file"
+    if snap.get("logo_path"):
+        logo_url = f"/api/certificates/files/logo/{cert.id}"
 
     sig_url = None
-    if settings.signature_image_path:
-        sig_url = "/api/certificates/settings/signature-file"
+    if snap.get("signature_image_path"):
+        sig_url = f"/api/certificates/files/signature/{cert.id}"
 
     return CertificateViewOut(
         id=cert.id,
@@ -164,15 +164,15 @@ async def get_certificate_view(
             cert.training.estimated_duration_minutes if cert.training else 0
         ),
         completed_at=cert.enrollment.completed_at if cert.enrollment else None,
-        company_name=settings.company_name,
-        signer_name=settings.signer_name,
-        signer_title=settings.signer_title,
-        signature_style=settings.signature_style,
+        company_name=snap.get("company_name", "Gruppen"),
+        signer_name=snap.get("signer_name", ""),
+        signer_title=snap.get("signer_title", ""),
+        signature_style=snap.get("signature_style", "line"),
         signature_image_url=sig_url,
         logo_url=logo_url,
-        extra_text=settings.extra_text,
-        primary_color=settings.primary_color,
-        secondary_color=settings.secondary_color,
+        extra_text=snap.get("extra_text"),
+        primary_color=snap.get("primary_color", "#1e40af"),
+        secondary_color=snap.get("secondary_color", "#1e3a5f"),
     )
 
 

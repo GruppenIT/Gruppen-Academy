@@ -64,6 +64,35 @@ export default function CertificateViewPage() {
           .certificate-page { box-shadow: none !important; margin: 0 !important; border-radius: 0 !important; }
           @page { size: landscape A4; margin: 0; }
         }
+        .cert-layout {
+          display: table;
+          width: 100%;
+          height: 100%;
+          table-layout: fixed;
+        }
+        .cert-row {
+          display: table-row;
+        }
+        .cert-cell {
+          display: table-cell;
+          vertical-align: middle;
+          padding-left: 4rem;
+          padding-right: 4rem;
+        }
+        .cert-cell-top {
+          height: 30%;
+          vertical-align: middle;
+          padding-top: 3rem;
+        }
+        .cert-cell-middle {
+          height: 40%;
+          vertical-align: middle;
+        }
+        .cert-cell-bottom {
+          height: 30%;
+          vertical-align: bottom;
+          padding-bottom: 3rem;
+        }
       `}</style>
 
       {/* Print button */}
@@ -112,104 +141,116 @@ export default function CertificateViewPage() {
             style={{ borderColor: `${cert.primary_color}30` }}
           />
 
-          {/* Content — three vertical sections evenly spaced */}
-          <div className="relative h-full flex flex-col justify-between py-12 px-16">
+          {/* Content — three vertical sections using table layout for print consistency */}
+          <div className="cert-layout relative">
 
             {/* Top: Logo + title */}
-            <div className="text-center">
-              {cert.logo_url && (
-                <div className="flex justify-center mb-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={api.getCertificateFileUrl('logo', cert.id)}
-                    alt="Logo"
-                    className="object-contain"
-                    style={{ height: `${cert.logo_height ?? 56}px` }}
-                    crossOrigin="use-credentials"
-                  />
+            <div className="cert-row">
+              <div className="cert-cell cert-cell-top">
+                <div className="text-center">
+                  {cert.logo_url && (
+                    <div className="flex justify-center mb-3">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={api.getCertificateFileUrl('logo', cert.id)}
+                        alt="Logo"
+                        className="object-contain"
+                        style={{ height: `${cert.logo_height ?? 56}px` }}
+                        crossOrigin="use-credentials"
+                      />
+                    </div>
+                  )}
+                  <p
+                    className="text-xs uppercase tracking-[0.3em] font-medium"
+                    style={{ color: cert.secondary_color }}
+                  >
+                    {cert.company_name}
+                  </p>
+                  <h1
+                    className="text-3xl font-bold tracking-wide mt-2"
+                    style={{ color: cert.primary_color }}
+                  >
+                    CERTIFICADO DE CONCLUSÃO
+                  </h1>
+                  <div className="w-20 h-0.5 mx-auto mt-3" style={{ background: cert.primary_color }} />
                 </div>
-              )}
-              <p
-                className="text-xs uppercase tracking-[0.3em] font-medium"
-                style={{ color: cert.secondary_color }}
-              >
-                {cert.company_name}
-              </p>
-              <h1
-                className="text-3xl font-bold tracking-wide mt-2"
-                style={{ color: cert.primary_color }}
-              >
-                CERTIFICADO DE CONCLUSÃO
-              </h1>
-              <div className="w-20 h-0.5 mx-auto mt-3" style={{ background: cert.primary_color }} />
+              </div>
             </div>
 
             {/* Middle: Body text */}
-            <div className="text-center max-w-2xl mx-auto space-y-3">
-              <p className="text-sm text-gray-500">Certificamos que</p>
-              <p className="text-2xl font-bold text-gray-900">{cert.user_name}</p>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                concluiu com sucesso o treinamento
-              </p>
-              <p
-                className="text-xl font-bold"
-                style={{ color: cert.primary_color }}
-              >
-                {cert.training_title}
-              </p>
-              <p className="text-sm text-gray-500 leading-relaxed">
-                com carga horária de <span className="font-semibold text-gray-700">{durationText}</span>,
-                na área de <span className="font-semibold text-gray-700 capitalize">{cert.training_domain}</span>,
-                finalizado em <span className="font-semibold text-gray-700">{completedDate}</span>.
-              </p>
-              {cert.extra_text && (
-                <p className="text-xs text-gray-400 italic pt-1">{cert.extra_text}</p>
-              )}
+            <div className="cert-row">
+              <div className="cert-cell cert-cell-middle">
+                <div className="text-center max-w-2xl mx-auto space-y-3">
+                  <p className="text-sm text-gray-500">Certificamos que</p>
+                  <p className="text-2xl font-bold text-gray-900">{cert.user_name}</p>
+                  <p className="text-sm text-gray-500 leading-relaxed">
+                    concluiu com sucesso o treinamento
+                  </p>
+                  <p
+                    className="text-xl font-bold"
+                    style={{ color: cert.primary_color }}
+                  >
+                    {cert.training_title}
+                  </p>
+                  <p className="text-sm text-gray-500 leading-relaxed">
+                    com carga horária de <span className="font-semibold text-gray-700">{durationText}</span>,
+                    na área de <span className="font-semibold text-gray-700 capitalize">{cert.training_domain}</span>,
+                    finalizado em <span className="font-semibold text-gray-700">{completedDate}</span>.
+                  </p>
+                  {cert.extra_text && (
+                    <p className="text-xs text-gray-400 italic pt-1">{cert.extra_text}</p>
+                  )}
+                </div>
+              </div>
             </div>
 
             {/* Bottom: Signature + certificate number */}
-            <div className="w-full flex items-end justify-between">
-              <div className="text-left">
-                <p className="text-[10px] text-gray-400">
-                  Certificado N.&ordm; {cert.certificate_number}
-                </p>
-                <p className="text-[10px] text-gray-400">
-                  Emitido em {issuedDate}
-                </p>
-              </div>
-
-              <div className="text-center">
-                {cert.signature_style === 'image' && cert.signature_image_url && (
-                  <div className="flex justify-center mb-1">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={api.getCertificateFileUrl('signature', cert.id)}
-                      alt="Assinatura"
-                      className="h-12 object-contain"
-                      crossOrigin="use-credentials"
-                    />
+            <div className="cert-row">
+              <div className="cert-cell cert-cell-bottom">
+                <div className="w-full flex items-end justify-between">
+                  <div className="text-left">
+                    <p className="text-[10px] text-gray-400">
+                      Certificado N.&ordm; {cert.certificate_number}
+                    </p>
+                    <p className="text-[10px] text-gray-400">
+                      Emitido em {issuedDate}
+                    </p>
                   </div>
-                )}
-                {cert.signature_style === 'typed' && cert.signer_name && (
-                  <p
-                    className="text-2xl italic mb-1"
-                    style={{ fontFamily: 'Georgia, "Times New Roman", serif', color: '#374151' }}
-                  >
-                    {cert.signer_name}
-                  </p>
-                )}
-                {cert.signature_style === 'line' && (
-                  <div className="w-56 border-b border-gray-400 mb-1" />
-                )}
-                {(cert.signature_style !== 'typed' || !cert.signer_name) && cert.signer_name && (
-                  <p className="text-sm font-medium text-gray-700">{cert.signer_name}</p>
-                )}
-                {cert.signer_title && (
-                  <p className="text-xs text-gray-400">{cert.signer_title}</p>
-                )}
-              </div>
 
-              <div className="w-24" /> {/* spacer for balance */}
+                  <div className="text-center">
+                    {cert.signature_style === 'image' && cert.signature_image_url && (
+                      <div className="flex justify-center mb-1">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={api.getCertificateFileUrl('signature', cert.id)}
+                          alt="Assinatura"
+                          className="h-12 object-contain"
+                          crossOrigin="use-credentials"
+                        />
+                      </div>
+                    )}
+                    {cert.signature_style === 'typed' && cert.signer_name && (
+                      <p
+                        className="text-2xl italic mb-1"
+                        style={{ fontFamily: 'Georgia, "Times New Roman", serif', color: '#374151' }}
+                      >
+                        {cert.signer_name}
+                      </p>
+                    )}
+                    {cert.signature_style === 'line' && (
+                      <div className="w-56 border-b border-gray-400 mb-1" />
+                    )}
+                    {(cert.signature_style !== 'typed' || !cert.signer_name) && cert.signer_name && (
+                      <p className="text-sm font-medium text-gray-700">{cert.signer_name}</p>
+                    )}
+                    {cert.signer_title && (
+                      <p className="text-xs text-gray-400">{cert.signer_title}</p>
+                    )}
+                  </div>
+
+                  <div className="w-24" /> {/* spacer for balance */}
+                </div>
+              </div>
             </div>
           </div>
         </div>

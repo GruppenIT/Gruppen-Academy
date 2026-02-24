@@ -2,7 +2,7 @@ import logging
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
+from fastapi import APIRouter, Body, Depends, File, Form, HTTPException, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.responses import Response
@@ -1298,6 +1298,145 @@ async def generate_module_content_endpoint(
     )
 
     # Save as SCORM module so it uses the iframe player
+    await update_module(
+        db,
+        module,
+        ModuleUpdate(
+            content_type=ModuleContentType.SCORM,
+            content_data=scorm_content_data,
+        ),
+    )
+
+    return result
+
+
+@router.post("/{training_id}/modules/{module_id}/update-content")
+async def update_module_content_endpoint(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Save manually edited content and rebuild the SCORM package."""
+    from app.trainings.scorm_builder import build_scorm_from_ai_content
+
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível editar conteúdo em rascunho.")
+
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    # Merge updated fields with existing content_data
+    current = dict(module.content_data or {})
+    if "title" in body:
+        current["title"] = body["title"]
+    if "sections" in body:
+        current["sections"] = body["sections"]
+    if "summary" in body:
+        current["summary"] = body["summary"]
+    if "key_concepts" in body:
+        current["key_concepts"] = body["key_concepts"]
+
+    # Rebuild SCORM package
+    upload_dir = os.path.join(settings.upload_dir, "trainings", str(training_id))
+    os.makedirs(upload_dir, exist_ok=True)
+
+    scorm_content_data = build_scorm_from_ai_content(
+        content=current,
+        output_dir=upload_dir,
+        module_id=str(module_id),
+        training_title=training.title,
+        module_title=module.title,
+    )
+
+    # Preserve videos if present
+    if current.get("videos"):
+        scorm_content_data["videos"] = current["videos"]
+
+    await update_module(
+        db,
+        module,
+        ModuleUpdate(
+            content_type=ModuleContentType.SCORM,
+            content_data=scorm_content_data,
+        ),
+    )
+
+    return scorm_content_data
+
+
+@router.post("/{training_id}/modules/{module_id}/edit-content-ai")
+async def edit_module_content_ai_endpoint(
+    training_id: uuid.UUID,
+    module_id: uuid.UUID,
+    body: dict = Body(...),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Edit module content using AI based on admin instructions."""
+    from app.llm.client import edit_training_content
+    from app.trainings.scorm_builder import build_scorm_from_ai_content
+
+    training = await get_training(db, training_id)
+    if not training:
+        raise HTTPException(status_code=404, detail="Treinamento não encontrado")
+    if training.status != TrainingStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Só é possível editar conteúdo em rascunho.")
+
+    module = await get_module(db, module_id)
+    if not module or module.training_id != training_id:
+        raise HTTPException(status_code=404, detail="Módulo não encontrado")
+
+    if not module.content_data:
+        raise HTTPException(status_code=400, detail="O módulo não possui conteúdo para editar.")
+
+    edit_prompt = body.get("prompt", "").strip()
+    if not edit_prompt:
+        raise HTTPException(status_code=400, detail="Informe as instruções de edição.")
+
+    # Build current content dict for the LLM
+    current = {
+        "title": module.content_data.get("title", module.title),
+        "sections": module.content_data.get("sections", []),
+        "summary": module.content_data.get("summary", ""),
+        "key_concepts": module.content_data.get("key_concepts", []),
+        "estimated_reading_minutes": module.content_data.get("estimated_reading_minutes", 5),
+    }
+
+    try:
+        result = await edit_training_content(
+            current_content=current,
+            edit_prompt=edit_prompt,
+            training_title=training.title,
+            module_title=module.title,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error("Erro na edição de conteúdo via IA: %s", e)
+        raise HTTPException(status_code=502, detail="Erro ao comunicar com o serviço de IA.")
+
+    # Rebuild SCORM package
+    upload_dir = os.path.join(settings.upload_dir, "trainings", str(training_id))
+    os.makedirs(upload_dir, exist_ok=True)
+
+    scorm_content_data = build_scorm_from_ai_content(
+        content=result,
+        output_dir=upload_dir,
+        module_id=str(module_id),
+        training_title=training.title,
+        module_title=module.title,
+    )
+
+    # Preserve videos
+    if module.content_data.get("videos"):
+        scorm_content_data["videos"] = module.content_data["videos"]
+
     await update_module(
         db,
         module,

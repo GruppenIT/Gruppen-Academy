@@ -592,6 +592,16 @@ class ApiClient {
     }
     return res.json()
   }
+  updateModuleContent(trainingId: string, moduleId: string, data: { title?: string; sections?: { heading: string; content: string }[]; summary?: string; key_concepts?: string[] }) {
+    return this.request<Record<string, unknown>>(`/api/trainings/${trainingId}/modules/${moduleId}/update-content`, {
+      method: 'POST', body: JSON.stringify(data),
+    })
+  }
+  editModuleContentAI(trainingId: string, moduleId: string, prompt: string) {
+    return this.request<Record<string, unknown>>(`/api/trainings/${trainingId}/modules/${moduleId}/edit-content-ai`, {
+      method: 'POST', body: JSON.stringify({ prompt }),
+    })
+  }
   generateModuleQuiz(trainingId: string, moduleId: string) {
     return this.request<{ quiz_id: string; questions_count: number; questions: import('@/types').QuizQuestion[] }>(
       `/api/trainings/${trainingId}/modules/${moduleId}/generate-quiz`, { method: 'POST' }

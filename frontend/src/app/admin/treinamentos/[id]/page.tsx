@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
 import type { Training, TrainingModule, Team, ModuleQuiz, QuizQuestion, QuizQuestionType } from '@/types'
@@ -509,6 +509,284 @@ function parseVideoEmbedUrl(url: string): string | null {
   return null
 }
 
+// ── Rich Text Section Editor ──
+function RichEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const editorRef = useRef<HTMLDivElement>(null)
+  const isInitialMount = useRef(true)
+
+  useEffect(() => {
+    if (editorRef.current && isInitialMount.current) {
+      editorRef.current.innerHTML = value
+      isInitialMount.current = false
+    }
+  }, [value])
+
+  const exec = (cmd: string, val?: string) => {
+    document.execCommand(cmd, false, val)
+    editorRef.current?.focus()
+    if (editorRef.current) onChange(editorRef.current.innerHTML)
+  }
+
+  return (
+    <div className="border border-gray-300 rounded-lg overflow-hidden">
+      <div className="flex items-center gap-0.5 px-2 py-1.5 bg-gray-50 border-b border-gray-200 flex-wrap">
+        <button type="button" onClick={() => exec('bold')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 font-bold text-sm" title="Negrito">B</button>
+        <button type="button" onClick={() => exec('italic')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 italic text-sm" title="Itálico">I</button>
+        <div className="w-px h-5 bg-gray-300 mx-1" />
+        <button type="button" onClick={() => exec('insertUnorderedList')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 text-xs" title="Lista">• Lista</button>
+        <button type="button" onClick={() => exec('insertOrderedList')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 text-xs" title="Lista numerada">1. Lista</button>
+        <div className="w-px h-5 bg-gray-300 mx-1" />
+        <button type="button" onClick={() => exec('formatBlock', 'h3')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 text-xs font-semibold" title="Subtítulo">H3</button>
+        <button type="button" onClick={() => exec('formatBlock', 'h4')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 text-xs font-semibold" title="Subtítulo menor">H4</button>
+        <button type="button" onClick={() => exec('formatBlock', 'p')} className="p-1.5 rounded hover:bg-gray-200 text-gray-700 text-xs" title="Parágrafo">¶</button>
+      </div>
+      <div
+        ref={editorRef}
+        contentEditable
+        className="p-3 min-h-[120px] max-h-[300px] overflow-y-auto text-sm text-gray-800 focus:outline-none prose prose-sm max-w-none"
+        onInput={() => {
+          if (editorRef.current) onChange(editorRef.current.innerHTML)
+        }}
+      />
+    </div>
+  )
+}
+
+// ── Manual Content Editor Modal ──
+function ManualEditorModal({ trainingId, mod, onClose, onSave }: {
+  trainingId: string
+  mod: TrainingModule
+  onClose: () => void
+  onSave: () => void
+}) {
+  const data = mod.content_data as {
+    title?: string
+    sections?: { heading: string; content: string }[]
+    summary?: string
+    key_concepts?: string[]
+  } | null
+
+  const [title, setTitle] = useState(data?.title || '')
+  const [sections, setSections] = useState<{ heading: string; content: string }[]>(
+    data?.sections?.map(s => ({ heading: s.heading, content: s.content })) || [{ heading: '', content: '' }]
+  )
+  const [summary, setSummary] = useState(data?.summary || '')
+  const [keyConcepts, setKeyConcepts] = useState(data?.key_concepts?.join(', ') || '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const updateSection = (i: number, field: 'heading' | 'content', val: string) => {
+    setSections(prev => prev.map((s, idx) => idx === i ? { ...s, [field]: val } : s))
+  }
+
+  const addSection = () => setSections(prev => [...prev, { heading: '', content: '' }])
+
+  const removeSection = (i: number) => {
+    if (sections.length <= 1) return
+    setSections(prev => prev.filter((_, idx) => idx !== i))
+  }
+
+  const moveSection = (i: number, dir: -1 | 1) => {
+    const j = i + dir
+    if (j < 0 || j >= sections.length) return
+    setSections(prev => {
+      const next = [...prev]
+      ;[next[i], next[j]] = [next[j], next[i]]
+      return next
+    })
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    setError('')
+    try {
+      await api.updateModuleContent(trainingId, mod.id, {
+        title,
+        sections,
+        summary,
+        key_concepts: keyConcepts.split(',').map(c => c.trim()).filter(Boolean),
+      })
+      onSave()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao salvar')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm overflow-y-auto p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl my-8">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <Pencil className="w-5 h-5 text-brand-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Editar conteudo manualmente</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-5 max-h-[70vh] overflow-y-auto">
+          {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          {/* Title */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Titulo do modulo</label>
+            <input type="text" className="input-field w-full" value={title} onChange={e => setTitle(e.target.value)} />
+          </div>
+
+          {/* Sections */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-gray-700">Secoes</label>
+              <button type="button" onClick={addSection} className="btn-secondary text-xs px-2.5 py-1 flex items-center gap-1">
+                <Plus className="w-3.5 h-3.5" /> Nova secao
+              </button>
+            </div>
+            {sections.map((sec, i) => (
+              <div key={i} className="p-4 border border-gray-200 rounded-xl bg-gray-50/50 space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 font-mono w-6 text-center">{i + 1}</span>
+                  <input type="text" className="input-field flex-1 text-sm font-medium" placeholder="Titulo da secao"
+                    value={sec.heading} onChange={e => updateSection(i, 'heading', e.target.value)} />
+                  <button type="button" onClick={() => moveSection(i, -1)} disabled={i === 0}
+                    className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"><ChevronUp className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => moveSection(i, 1)} disabled={i === sections.length - 1}
+                    className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30"><ChevronDown className="w-4 h-4" /></button>
+                  <button type="button" onClick={() => removeSection(i)} disabled={sections.length <= 1}
+                    className="p-1 text-gray-400 hover:text-red-500 disabled:opacity-30"><Trash2 className="w-4 h-4" /></button>
+                </div>
+                <RichEditor value={sec.content} onChange={v => updateSection(i, 'content', v)} />
+              </div>
+            ))}
+          </div>
+
+          {/* Summary */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Resumo</label>
+            <textarea className="input-field w-full text-sm" rows={2} value={summary} onChange={e => setSummary(e.target.value)} />
+          </div>
+
+          {/* Key Concepts */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1">Conceitos-chave <span className="font-normal text-gray-400">(separados por virgula)</span></label>
+            <input type="text" className="input-field w-full text-sm" value={keyConcepts} onChange={e => setKeyConcepts(e.target.value)}
+              placeholder="Ex: RTO, RPO, Backup automatizado" />
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+          <button onClick={onClose} className="btn-secondary px-4 py-2 text-sm">Cancelar</button>
+          <button onClick={handleSave} disabled={saving} className="btn-primary px-4 py-2 text-sm flex items-center gap-2">
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando...</> : <><Save className="w-4 h-4" /> Salvar conteudo</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── AI Content Editor Modal ──
+function AIEditorModal({ trainingId, mod, onClose, onSave }: {
+  trainingId: string
+  mod: TrainingModule
+  onClose: () => void
+  onSave: () => void
+}) {
+  const [prompt, setPrompt] = useState('')
+  const [editing, setEditing] = useState(false)
+  const [error, setError] = useState('')
+
+  const data = mod.content_data as {
+    title?: string
+    sections?: { heading: string; content: string }[]
+    summary?: string
+  } | null
+
+  const handleEdit = async () => {
+    if (!prompt.trim()) return
+    setEditing(true)
+    setError('')
+    try {
+      await api.editModuleContentAI(trainingId, mod.id, prompt)
+      onSave()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Erro ao editar com IA')
+    } finally {
+      setEditing(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 backdrop-blur-sm overflow-y-auto p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl my-8">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="flex items-center gap-2">
+            <Wand2 className="w-5 h-5 text-violet-600" />
+            <h2 className="text-lg font-semibold text-gray-900">Editar conteudo com IA</h2>
+          </div>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 space-y-4">
+          {error && <p className="text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</p>}
+
+          {/* Current content summary */}
+          {data && (
+            <div className="p-3 bg-gray-50 rounded-xl space-y-1.5">
+              <p className="text-xs font-medium text-gray-500">Conteudo atual</p>
+              {data.title && <p className="text-sm font-semibold text-gray-800">{data.title}</p>}
+              {data.sections && (
+                <div className="flex flex-wrap gap-1.5">
+                  {data.sections.map((sec, i) => (
+                    <span key={i} className="inline-flex items-center text-xs bg-white border border-gray-200 px-2 py-0.5 rounded-md text-gray-600">
+                      {i + 1}. {sec.heading}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Edit prompt */}
+          <div>
+            <label className="text-sm font-medium text-gray-700 block mb-1.5">
+              O que voce gostaria de alterar?
+            </label>
+            <textarea
+              className="input-field w-full text-sm"
+              rows={5}
+              placeholder="Ex: Adicione uma seção sobre recuperação de desastres. Simplifique a linguagem da seção 2. Inclua mais exemplos práticos em todas as seções..."
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+            />
+            <p className="text-xs text-gray-400 mt-1">A IA vai ajustar o conteudo existente com base nas suas instrucoes.</p>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-gray-200">
+          <button onClick={onClose} className="btn-secondary px-4 py-2 text-sm">Cancelar</button>
+          <button onClick={handleEdit} disabled={editing || !prompt.trim()}
+            className="btn-primary px-4 py-2 text-sm flex items-center gap-2 bg-violet-600 hover:bg-violet-700">
+            {editing ? <><Loader2 className="w-4 h-4 animate-spin" /> Editando...</> : <><Wand2 className="w-4 h-4" /> Aplicar com IA</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Content Panel ──
 function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onReload, onError, onUpdateModule }: {
   trainingId: string
@@ -526,6 +804,8 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
   const [aiContentLength, setAiContentLength] = useState<'curto' | 'normal' | 'extendido'>('normal')
   const [generating, setGenerating] = useState(false)
   const [allowDownload, setAllowDownload] = useState(mod.allow_download ?? true)
+  const [showManualEditor, setShowManualEditor] = useState(false)
+  const [showAiEditor, setShowAiEditor] = useState(false)
 
   // Video embeds state
   const videos = ((mod.content_data?.videos ?? []) as { url: string; title: string }[])
@@ -584,22 +864,38 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
     const data = mod.content_data as { title?: string; sections?: { heading: string; content: string; video_suggestions?: string[] }[]; summary?: string; key_concepts?: string[] }
     return (
       <div className="p-4 bg-gradient-to-br from-violet-50/50 to-indigo-50/50 rounded-xl border border-violet-100 space-y-3">
-        <div className="flex items-center justify-between">
-          {isScormAI && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">
-              <Box className="w-3 h-3" /> SCORM interativo
-            </span>
-          )}
-          {isScormAI && (
-            <a
-              href={api.getScormLaunchUrl(trainingId, mod.id)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 bg-white px-3 py-1.5 rounded-lg border border-gray-200 hover:border-brand-300 transition-colors"
-            >
-              <Eye className="w-3.5 h-3.5" /> Visualizar conteudo
-            </a>
-          )}
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            {isScormAI && (
+              <span className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">
+                <Box className="w-3 h-3" /> SCORM interativo
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1.5">
+            {isScormAI && (
+              <a
+                href={api.getScormLaunchUrl(trainingId, mod.id)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-600 hover:text-brand-700 bg-white px-3 py-1.5 rounded-lg border border-gray-200 hover:border-brand-300 transition-colors"
+              >
+                <Eye className="w-3.5 h-3.5" /> Visualizar
+              </a>
+            )}
+            {isDraft && (
+              <>
+                <button onClick={() => setShowManualEditor(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-800 bg-white px-3 py-1.5 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
+                  <Pencil className="w-3.5 h-3.5" /> Editar
+                </button>
+                <button onClick={() => setShowAiEditor(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-violet-600 hover:text-violet-700 bg-white px-3 py-1.5 rounded-lg border border-violet-200 hover:border-violet-300 transition-colors">
+                  <Wand2 className="w-3.5 h-3.5" /> Editar com IA
+                </button>
+              </>
+            )}
+          </div>
         </div>
         {data.title && <h4 className="font-semibold text-gray-900 text-sm">{data.title}</h4>}
         {data.summary && <p className="text-xs text-gray-500 italic">{data.summary}</p>}
@@ -804,6 +1100,14 @@ function ContentPanel({ trainingId, mod, isDraft, uploadingModule, onUpload, onR
             </button>
           </div>
         </div>
+      )}
+
+      {/* Edit Modals */}
+      {showManualEditor && (
+        <ManualEditorModal trainingId={trainingId} mod={mod} onClose={() => setShowManualEditor(false)} onSave={onReload} />
+      )}
+      {showAiEditor && (
+        <AIEditorModal trainingId={trainingId} mod={mod} onClose={() => setShowAiEditor(false)} onSave={onReload} />
       )}
     </div>
   )

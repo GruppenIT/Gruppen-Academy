@@ -14,6 +14,7 @@ from app.llm.prompts import (
     QUESTION_GENERATION_SYSTEM_PROMPT,
     REPORT_MANAGER_SYSTEM_PROMPT,
     REPORT_PROFESSIONAL_SYSTEM_PROMPT,
+    TRAINING_CONTENT_EDIT_PROMPT,
     TRAINING_CONTENT_SYSTEM_PROMPT,
     TRAINING_QUIZ_SYSTEM_PROMPT,
     TUTOR_SUMMARY_SYSTEM_PROMPT,
@@ -380,6 +381,43 @@ Nível dos participantes: {participant_level}
         response_format={"type": "json_object"},
         messages=[
             {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_content},
+        ],
+    )
+
+    return _parse_json_response(response)
+
+
+async def edit_training_content(
+    current_content: dict,
+    edit_prompt: str,
+    training_title: str,
+    module_title: str,
+) -> dict:
+    """Edit existing training content based on admin instructions."""
+    client = _get_client()
+
+    current_json = json.dumps(current_content, ensure_ascii=False, indent=2)
+
+    user_content = f"""Conteúdo atual do módulo (JSON):
+
+{_sanitize_user_input(current_json)}
+
+---
+
+Treinamento: {training_title}
+Módulo: {module_title}
+
+Instruções de edição do administrador:
+{_sanitize_user_input(edit_prompt)}
+"""
+
+    response = await client.chat.completions.create(
+        model=settings.openai_model,
+        max_tokens=16384,
+        response_format={"type": "json_object"},
+        messages=[
+            {"role": "system", "content": TRAINING_CONTENT_EDIT_PROMPT},
             {"role": "user", "content": user_content},
         ],
     )

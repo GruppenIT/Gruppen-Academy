@@ -647,7 +647,7 @@ async def mark_content_viewed(
     if not module.has_quiz or not module.quiz_required_to_advance:
         if not progress.completed_at:
             progress.completed_at = datetime.now(timezone.utc)
-            # Award module XP
+            # Award module XP (no commit – we commit once at the end)
             if module.xp_reward > 0:
                 await add_score(
                     db,
@@ -658,6 +658,7 @@ async def mark_content_viewed(
                         source_id=module.id,
                         description=f"Módulo concluído: {module.title}",
                     ),
+                    commit=False,
                 )
             await _check_training_completion(db, enrollment)
 
@@ -726,7 +727,7 @@ async def submit_quiz_attempt(
     progress.quiz_score = score
     if passed and not progress.completed_at:
         progress.completed_at = datetime.now(timezone.utc)
-        # Award module XP
+        # Award module XP (no commit – single commit at the end)
         if module.xp_reward > 0:
             await add_score(
                 db,
@@ -737,6 +738,7 @@ async def submit_quiz_attempt(
                     source_id=module.id,
                     description=f"Módulo concluído: {module.title}",
                 ),
+                commit=False,
             )
 
     await db.flush()
@@ -750,7 +752,11 @@ async def submit_quiz_attempt(
 async def _check_training_completion(
     db: AsyncSession, enrollment: TrainingEnrollment
 ) -> None:
-    """Check if all modules are completed and mark training as done."""
+    """Check if all modules are completed and mark training as done.
+
+    NOTE: This function does NOT commit. The caller is responsible for
+    calling db.commit() after this returns.
+    """
     modules = await list_modules(db, enrollment.training_id)
     if not modules:
         return
@@ -770,7 +776,7 @@ async def _check_training_completion(
         enrollment.status = EnrollmentStatus.COMPLETED
         enrollment.completed_at = datetime.now(timezone.utc)
 
-        # Award training-level XP
+        # Award training-level XP (no commit – caller manages transaction)
         training_result = await db.execute(
             select(Training).where(Training.id == enrollment.training_id)
         )
@@ -785,9 +791,10 @@ async def _check_training_completion(
                     source_id=training.id,
                     description=f"Treinamento concluído: {training.title}",
                 ),
+                commit=False,
             )
-        # Check badge criteria
-        await check_and_award_badges(db, enrollment.user_id)
+        # Check badge criteria (no commit – caller manages transaction)
+        await check_and_award_badges(db, enrollment.user_id, commit=False)
 
     # Update current_module_order
     enrollment.current_module_order = len(completed_module_ids) + 1

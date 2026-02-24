@@ -13,11 +13,12 @@ from app.users.models import User
 
 
 # --- Scores ---
-async def add_score(db: AsyncSession, data: ScoreCreate) -> Score:
+async def add_score(db: AsyncSession, data: ScoreCreate, *, commit: bool = True) -> Score:
     score = Score(**data.model_dump())
     db.add(score)
-    await db.commit()
-    await db.refresh(score)
+    if commit:
+        await db.commit()
+        await db.refresh(score)
     return score
 
 
@@ -152,7 +153,9 @@ async def get_user_streak(db: AsyncSession, user_id: uuid.UUID) -> dict:
 
 
 # --- Auto-Badge Check ---
-async def check_and_award_badges(db: AsyncSession, user_id: uuid.UUID) -> list[UserBadge]:
+async def check_and_award_badges(
+    db: AsyncSession, user_id: uuid.UUID, *, commit: bool = True
+) -> list[UserBadge]:
     """Check all badge criteria and award any newly earned badges.
     Called after scoring events.
     """
@@ -189,7 +192,7 @@ async def check_and_award_badges(db: AsyncSession, user_id: uuid.UUID) -> list[U
             db.add(user_badge)
             awarded.append(user_badge)
 
-    if awarded:
+    if awarded and commit:
         await db.commit()
         for ub in awarded:
             await db.refresh(ub)

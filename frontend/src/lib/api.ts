@@ -602,10 +602,57 @@ class ApiClient {
       method: 'POST', body: JSON.stringify({ prompt }),
     })
   }
-  generateModuleQuiz(trainingId: string, moduleId: string) {
+  generateModuleQuiz(trainingId: string, moduleId: string, opts?: { num_questions?: number; difficulty?: string; orientation?: string }) {
     return this.request<{ quiz_id: string; questions_count: number; questions: import('@/types').QuizQuestion[] }>(
-      `/api/trainings/${trainingId}/modules/${moduleId}/generate-quiz`, { method: 'POST' }
+      `/api/trainings/${trainingId}/modules/${moduleId}/generate-quiz`, {
+        method: 'POST',
+        body: opts ? JSON.stringify(opts) : undefined,
+      }
     )
+  }
+
+  // Training Final Quiz (Admin)
+  createTrainingQuiz(trainingId: string, data?: { title?: string; passing_score?: number; max_attempts?: number }) {
+    return this.request<import('@/types').TrainingQuiz>(`/api/trainings/${trainingId}/quiz`, {
+      method: 'POST', body: data ? JSON.stringify(data) : undefined,
+    })
+  }
+  getTrainingQuiz(trainingId: string) {
+    return this.request<import('@/types').TrainingQuiz | null>(`/api/trainings/${trainingId}/quiz`)
+  }
+  updateTrainingQuiz(trainingId: string, data: { title?: string; passing_score?: number; max_attempts?: number }) {
+    return this.request<import('@/types').TrainingQuiz>(`/api/trainings/${trainingId}/quiz`, {
+      method: 'PUT', body: JSON.stringify(data),
+    })
+  }
+  deleteTrainingQuiz(trainingId: string) {
+    return this.request<void>(`/api/trainings/${trainingId}/quiz`, { method: 'DELETE' })
+  }
+  addTrainingQuizQuestion(trainingId: string, data: Record<string, unknown>) {
+    return this.request<import('@/types').TrainingQuizQuestion>(`/api/trainings/${trainingId}/quiz/questions`, {
+      method: 'POST', body: JSON.stringify(data),
+    })
+  }
+  updateTrainingQuizQuestion(trainingId: string, questionId: string, data: Record<string, unknown>) {
+    return this.request<import('@/types').TrainingQuizQuestion>(`/api/trainings/${trainingId}/quiz/questions/${questionId}`, {
+      method: 'PUT', body: JSON.stringify(data),
+    })
+  }
+  deleteTrainingQuizQuestion(trainingId: string, questionId: string) {
+    return this.request<void>(`/api/trainings/${trainingId}/quiz/questions/${questionId}`, { method: 'DELETE' })
+  }
+  generateTrainingQuiz(trainingId: string, opts?: { num_questions?: number; difficulty?: string; orientation?: string }) {
+    return this.request<{ quiz_id: string; questions_count: number; questions: import('@/types').TrainingQuizQuestion[] }>(
+      `/api/trainings/${trainingId}/quiz/generate`, {
+        method: 'POST',
+        body: opts ? JSON.stringify(opts) : undefined,
+      }
+    )
+  }
+  unlockQuizRetry(trainingId: string, enrollmentId: string) {
+    return this.request<import('@/types').TrainingEnrollment>(`/api/trainings/${trainingId}/enrollments/${enrollmentId}/unlock-quiz`, {
+      method: 'POST',
+    })
   }
 
   // Trainings — Professional
@@ -625,6 +672,14 @@ class ApiClient {
     return this.request<import('@/types').QuizAttemptOut>(`/api/trainings/my/trainings/${trainingId}/modules/${moduleId}/quiz/attempt`, {
       method: 'POST', body: JSON.stringify({ answers }),
     })
+  }
+  submitTrainingQuizAttempt(trainingId: string, answers: Record<string, string>) {
+    return this.request<import('@/types').TrainingQuizAttemptOut>(`/api/trainings/my/trainings/${trainingId}/quiz/attempt`, {
+      method: 'POST', body: JSON.stringify({ answers }),
+    })
+  }
+  getTrainingQuizAttempts(trainingId: string) {
+    return this.request<import('@/types').TrainingQuizAttemptOut[]>(`/api/trainings/my/trainings/${trainingId}/quiz/attempts`)
   }
 
   // Settings

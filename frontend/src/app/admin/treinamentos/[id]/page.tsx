@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { api } from '@/lib/api'
-import type { Training, TrainingModule, Team, ModuleQuiz, QuizQuestion, QuizQuestionType } from '@/types'
+import type { Training, TrainingModule, Team, ModuleQuiz, QuizQuestion, QuizQuestionType, TrainingQuiz, TrainingQuizQuestion } from '@/types'
 import {
   ArrowLeft, Plus, Trash2, Upload, Loader2, Save, Send,
   GripVertical, FileText, CheckCircle2, X, ChevronDown, ChevronUp,
@@ -323,7 +323,6 @@ export default function AdminTrainingDetailPage() {
                         : mod.content_type === 'ai_generated' ? 'Conteudo IA' : 'Texto rico'
                     : 'Sem conteudo'}
                   {mod.has_quiz && ` · Quiz (${mod.quiz?.questions?.length || 0} perguntas)${mod.quiz_required_to_advance ? ' obrigatorio' : ''}`}
-                  {` · ${mod.xp_reward} XP`}
                 </p>
               </div>
               {mod.content_type && <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
@@ -394,6 +393,9 @@ export default function AdminTrainingDetailPage() {
           </button>
         </div>
       )}
+
+      {/* Training Final Quiz */}
+      <FinalQuizSection trainingId={id} training={training} isDraft={isDraft} onReload={load} onError={setError} />
 
       {/* Publish Modal */}
       {showPublish && (
@@ -482,11 +484,6 @@ function ModuleSettingsPanel({ mod, onUpdate }: {
           <label className="text-xs text-gray-500 block mb-1">Titulo</label>
           <input type="text" className="input-field w-full text-sm" defaultValue={mod.title}
             onBlur={(e) => { if (e.target.value !== mod.title) onUpdate({ title: e.target.value }) }} />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 block mb-1">XP do modulo</label>
-          <input type="number" className="input-field w-full text-sm" defaultValue={mod.xp_reward} min={0}
-            onBlur={(e) => { const v = Number(e.target.value); if (v !== mod.xp_reward) onUpdate({ xp_reward: v }) }} />
         </div>
         <div>
           <label className="text-xs text-gray-500 block mb-1">Descricao</label>
@@ -1129,6 +1126,10 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
   const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
   const [savingQuiz, setSavingQuiz] = useState(false)
   const [generatingQuiz, setGeneratingQuiz] = useState(false)
+  const [showAiModal, setShowAiModal] = useState(false)
+  const [aiNumQuestions, setAiNumQuestions] = useState(5)
+  const [aiDifficulty, setAiDifficulty] = useState('intermediario')
+  const [aiOrientation, setAiOrientation] = useState('')
   const [passingScore, setPassingScore] = useState(quiz?.passing_score ?? 0.7)
   const [quizRequired, setQuizRequired] = useState(quizRequiredProp)
 
@@ -1212,8 +1213,13 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
 
   const handleGenerateQuiz = async () => {
     setGeneratingQuiz(true)
+    setShowAiModal(false)
     try {
-      await api.generateModuleQuiz(trainingId, moduleId)
+      await api.generateModuleQuiz(trainingId, moduleId, {
+        num_questions: aiNumQuestions,
+        difficulty: aiDifficulty,
+        orientation: aiOrientation || undefined,
+      })
       onReload()
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Erro ao gerar quiz com IA')
@@ -1233,7 +1239,7 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
               {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
               Criar quiz
             </button>
-            <button onClick={handleGenerateQuiz} disabled={generatingQuiz}
+            <button onClick={() => setShowAiModal(true)} disabled={generatingQuiz}
               className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-violet-600 bg-violet-50 hover:bg-violet-100 rounded-lg transition-colors">
               {generatingQuiz ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
               Gerar com IA
@@ -1241,6 +1247,44 @@ function QuizPanel({ trainingId, moduleId, quiz, hasQuiz, quizRequiredProp, isDr
           </div>
         )}
       </div>
+
+      {/* AI Quiz Generation Modal */}
+      {showAiModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 p-6 animate-slide-up">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-violet-500" /> Gerar Quiz com IA
+            </h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantas perguntas?</label>
+                <input type="number" min={3} max={20} value={aiNumQuestions} onChange={e => setAiNumQuestions(Number(e.target.value))}
+                  className="input-field w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nível de dificuldade</label>
+                <select value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)} className="input-field w-full">
+                  <option value="facil">Fácil</option>
+                  <option value="intermediario">Intermediário</option>
+                  <option value="dificil">Difícil</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Orientação para a IA</label>
+                <textarea value={aiOrientation} onChange={e => setAiOrientation(e.target.value)}
+                  placeholder="Descreva o foco das perguntas ou cole perguntas que deseja melhorar..."
+                  rows={4} className="input-field w-full resize-none" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => setShowAiModal(false)} className="btn-secondary text-sm px-4 py-2">Cancelar</button>
+              <button onClick={handleGenerateQuiz} className="btn-primary text-sm px-4 py-2 flex items-center gap-1">
+                <Sparkles className="w-4 h-4" /> Gerar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {!quiz ? (
         <p className="text-sm text-gray-400">Nenhum quiz configurado.</p>
@@ -1534,6 +1578,277 @@ function QuestionForm({ initial, onSave, onCancel, index }: {
       </div>
     </div>
   )
+}
+
+// ── Training Final Quiz Section ──
+function FinalQuizSection({ trainingId, training, isDraft, onReload, onError }: {
+  trainingId: string; training: Training; isDraft: boolean; onReload: () => void; onError: (msg: string) => void
+}) {
+  const [quiz, setQuiz] = useState<TrainingQuiz | null>(training.final_quiz || null)
+  const [creating, setCreating] = useState(false)
+  const [generatingQuiz, setGeneratingQuiz] = useState(false)
+  const [showAiModal, setShowAiModal] = useState(false)
+  const [aiNumQuestions, setAiNumQuestions] = useState(5)
+  const [aiDifficulty, setAiDifficulty] = useState('intermediario')
+  const [aiOrientation, setAiOrientation] = useState('')
+  const [addingQuestion, setAddingQuestion] = useState(false)
+  const [editingQuestion, setEditingQuestion] = useState<string | null>(null)
+  const [savingQuiz, setSavingQuiz] = useState(false)
+  const [passingScore, setPassingScore] = useState(quiz?.passing_score ?? 0.7)
+  const [maxAttempts, setMaxAttempts] = useState(quiz?.max_attempts ?? 3)
+
+  useEffect(() => {
+    setQuiz(training.final_quiz || null)
+    setPassingScore(training.final_quiz?.passing_score ?? 0.7)
+    setMaxAttempts(training.final_quiz?.max_attempts ?? 3)
+  }, [training])
+
+  const loadQuiz = async () => {
+    const q = await api.getTrainingQuiz(trainingId)
+    setQuiz(q)
+    onReload()
+  }
+
+  const handleCreate = async () => {
+    setCreating(true)
+    try {
+      await api.createTrainingQuiz(trainingId)
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao criar avaliação') }
+    finally { setCreating(false) }
+  }
+
+  const handleDelete = async () => {
+    if (!confirm('Remover a avaliação final e todas as perguntas?')) return
+    try {
+      await api.deleteTrainingQuiz(trainingId)
+      setQuiz(null)
+      onReload()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao remover avaliação') }
+  }
+
+  const handleGenerate = async () => {
+    setGeneratingQuiz(true)
+    setShowAiModal(false)
+    try {
+      await api.generateTrainingQuiz(trainingId, {
+        num_questions: aiNumQuestions,
+        difficulty: aiDifficulty,
+        orientation: aiOrientation || undefined,
+      })
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao gerar avaliação com IA') }
+    finally { setGeneratingQuiz(false) }
+  }
+
+  const handleUpdateSettings = async (updates: { passing_score?: number; max_attempts?: number }) => {
+    setSavingQuiz(true)
+    try {
+      await api.updateTrainingQuiz(trainingId, updates)
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao atualizar avaliação') }
+    finally { setSavingQuiz(false) }
+  }
+
+  const handleAddQuestion = async (data: QuestionFormData) => {
+    try {
+      await api.addTrainingQuizQuestion(trainingId, {
+        text: data.text, type: data.type,
+        options: data.type === 'multiple_choice' ? data.options.filter(o => o.text.trim()) : undefined,
+        correct_answer: data.correct_answer || undefined,
+        explanation: data.explanation || undefined,
+        weight: data.weight,
+      })
+      setAddingQuestion(false)
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao adicionar pergunta') }
+  }
+
+  const handleUpdateQuestion = async (questionId: string, data: QuestionFormData) => {
+    try {
+      await api.updateTrainingQuizQuestion(trainingId, questionId, {
+        text: data.text, type: data.type,
+        options: data.type === 'multiple_choice' ? data.options.filter(o => o.text.trim()) : undefined,
+        correct_answer: data.correct_answer || undefined,
+        explanation: data.explanation || undefined,
+        weight: data.weight,
+      })
+      setEditingQuestion(null)
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao atualizar pergunta') }
+  }
+
+  const handleDeleteQuestion = async (questionId: string) => {
+    if (!confirm('Remover esta pergunta?')) return
+    try {
+      await api.deleteTrainingQuizQuestion(trainingId, questionId)
+      await loadQuiz()
+    } catch (err) { onError(err instanceof Error ? err.message : 'Erro ao remover pergunta') }
+  }
+
+  return (
+    <div className="card p-6 border-2 border-dashed border-violet-200 bg-violet-50/30">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+          <ClipboardCheck className="w-5 h-5 text-violet-600" />
+          Avaliação Final do Treinamento
+        </h3>
+        {isDraft && !quiz && (
+          <div className="flex items-center gap-2">
+            <button onClick={handleCreate} disabled={creating}
+              className="btn-secondary text-xs px-3 py-1 flex items-center gap-1">
+              {creating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+              Criar avaliação
+            </button>
+            <button onClick={() => setShowAiModal(true)} disabled={generatingQuiz}
+              className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-violet-600 bg-violet-100 hover:bg-violet-200 rounded-lg transition-colors">
+              {generatingQuiz ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+              Gerar com IA
+            </button>
+          </div>
+        )}
+      </div>
+
+      {!quiz ? (
+        <p className="text-sm text-gray-500">
+          Adicione uma avaliação final para que os profissionais sejam avaliados após concluir todos os módulos.
+          A nota influencia diretamente o XP recebido.
+        </p>
+      ) : (
+        <div className="space-y-4">
+          {/* Settings */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Nota mínima (%)</label>
+              <select value={passingScore} disabled={!isDraft || savingQuiz}
+                onChange={e => { const v = Number(e.target.value); setPassingScore(v); handleUpdateSettings({ passing_score: v }) }}
+                className="input-field w-full text-sm">
+                {[0.5, 0.6, 0.7, 0.8, 0.9, 1.0].map(v => (
+                  <option key={v} value={v}>{Math.round(v * 100)}%</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs text-gray-500 block mb-1">Máx. tentativas</label>
+              <select value={maxAttempts} disabled={!isDraft || savingQuiz}
+                onChange={e => { const v = Number(e.target.value); setMaxAttempts(v); handleUpdateSettings({ max_attempts: v }) }}
+                className="input-field w-full text-sm">
+                <option value={0}>Ilimitado</option>
+                <option value={1}>1</option>
+                <option value={2}>2</option>
+                <option value={3}>3</option>
+                <option value={5}>5</option>
+              </select>
+            </div>
+            <div className="flex items-end">
+              {isDraft && (
+                <button onClick={handleDelete} className="text-red-500 hover:text-red-700 text-xs flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Remover avaliação
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Questions */}
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-gray-700">{quiz.questions?.length || 0} perguntas</p>
+            {quiz.questions?.map((q, i) => (
+              <div key={q.id} className="bg-white rounded-xl p-4 border border-gray-100">
+                {editingQuestion === q.id ? (
+                  <QuestionForm initial={tqToFormData(q)} onSave={(d) => handleUpdateQuestion(q.id, d)} onCancel={() => setEditingQuestion(null)} index={i} />
+                ) : (
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-800">{i + 1}. {q.text}</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {q.type === 'multiple_choice' ? 'Múltipla escolha' : q.type === 'true_false' ? 'V/F' : 'Dissertativa'}
+                        {q.correct_answer && ` · Resp: ${q.correct_answer}`}
+                      </p>
+                    </div>
+                    {isDraft && (
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => setEditingQuestion(q.id)} className="p-1 text-gray-400 hover:text-indigo-600"><Pencil className="w-3.5 h-3.5" /></button>
+                        <button onClick={() => handleDeleteQuestion(q.id)} className="p-1 text-gray-400 hover:text-red-500"><Trash2 className="w-3.5 h-3.5" /></button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Add question */}
+          {isDraft && (
+            addingQuestion ? (
+              <QuestionForm initial={emptyQuestion} onSave={handleAddQuestion} onCancel={() => setAddingQuestion(false)} index={(quiz.questions?.length || 0)} />
+            ) : (
+              <div className="flex gap-2">
+                <button onClick={() => setAddingQuestion(true)} className="btn-secondary text-xs px-3 py-1 flex items-center gap-1">
+                  <Plus className="w-3 h-3" /> Adicionar pergunta
+                </button>
+                <button onClick={() => setShowAiModal(true)} disabled={generatingQuiz}
+                  className="inline-flex items-center gap-1 px-3 py-1 text-xs font-medium text-violet-600 bg-violet-100 hover:bg-violet-200 rounded-lg transition-colors">
+                  {generatingQuiz ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                  Gerar com IA
+                </button>
+              </div>
+            )
+          )}
+        </div>
+      )}
+
+      {/* AI Generation Modal */}
+      {showAiModal && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full mx-4 p-6 animate-slide-up">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-violet-500" /> Gerar Avaliação Final com IA
+            </h3>
+            <p className="text-sm text-gray-500 mb-4">A IA considerará o conteúdo de todos os módulos.</p>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Quantas perguntas?</label>
+                <input type="number" min={3} max={20} value={aiNumQuestions} onChange={e => setAiNumQuestions(Number(e.target.value))}
+                  className="input-field w-full" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nível de dificuldade</label>
+                <select value={aiDifficulty} onChange={e => setAiDifficulty(e.target.value)} className="input-field w-full">
+                  <option value="facil">Fácil</option>
+                  <option value="intermediario">Intermediário</option>
+                  <option value="dificil">Difícil</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Orientação para a IA</label>
+                <textarea value={aiOrientation} onChange={e => setAiOrientation(e.target.value)}
+                  placeholder="Descreva o foco das perguntas ou cole perguntas que deseja melhorar..."
+                  rows={4} className="input-field w-full resize-none" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 mt-6">
+              <button onClick={() => setShowAiModal(false)} className="btn-secondary text-sm px-4 py-2">Cancelar</button>
+              <button onClick={handleGenerate} className="btn-primary text-sm px-4 py-2 flex items-center gap-1">
+                <Sparkles className="w-4 h-4" /> Gerar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function tqToFormData(q: TrainingQuizQuestion): QuestionFormData {
+  let options: { text: string }[]
+  if (q.options && q.options.length > 0) {
+    options = q.options.map(o => ({ text: o.text }))
+  } else if (q.type === 'true_false') {
+    options = [{ text: 'Verdadeiro' }, { text: 'Falso' }]
+  } else {
+    options = [{ text: '' }, { text: '' }, { text: '' }, { text: '' }]
+  }
+  return { text: q.text, type: q.type, options, correct_answer: q.correct_answer || '', explanation: q.explanation || '', weight: q.weight }
 }
 
 // ── Helpers ──

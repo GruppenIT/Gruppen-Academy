@@ -58,6 +58,7 @@ class TrainingOut(BaseModel):
 
 class TrainingDetailOut(TrainingOut):
     modules: list["ModuleDetailOut"] = []
+    final_quiz: "TrainingQuizOut | None" = None
 
 
 # --- Training Module ---
@@ -69,7 +70,6 @@ class ModuleCreate(BaseModel):
     content_data: dict | None = None
     has_quiz: bool = False
     quiz_required_to_advance: bool = False
-    xp_reward: int = 20
     allow_download: bool = True
 
     @field_validator("content_type", mode="before")
@@ -88,7 +88,6 @@ class ModuleUpdate(BaseModel):
     content_data: dict | None = None
     has_quiz: bool | None = None
     quiz_required_to_advance: bool | None = None
-    xp_reward: int | None = None
     allow_download: bool | None = None
 
     @field_validator("content_type", mode="before")
@@ -112,7 +111,6 @@ class ModuleOut(BaseModel):
     mime_type: str | None
     has_quiz: bool
     quiz_required_to_advance: bool
-    xp_reward: int
     allow_download: bool
     preview_file_path: str | None
     created_at: datetime
@@ -124,7 +122,7 @@ class ModuleDetailOut(ModuleOut):
     quiz: "QuizOut | None" = None
 
 
-# --- Quiz ---
+# --- Module Quiz ---
 class QuizCreate(BaseModel):
     title: str = "Quiz"
     passing_score: float = 0.7
@@ -198,6 +196,110 @@ class QuizQuestionOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+# --- Training Final Quiz ---
+class TrainingQuizCreate(BaseModel):
+    title: str = "Avaliação Final"
+    passing_score: float = 0.7
+    max_attempts: int = 3
+
+
+class TrainingQuizUpdate(BaseModel):
+    title: str | None = None
+    passing_score: float | None = None
+    max_attempts: int | None = None
+
+
+class TrainingQuizQuestionCreate(BaseModel):
+    text: str
+    type: QuizQuestionType = QuizQuestionType.MULTIPLE_CHOICE
+    options: list[dict] | None = None
+    correct_answer: str | None = None
+    explanation: str | None = None
+    weight: float = 1.0
+    order: int = 0
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
+
+class TrainingQuizQuestionUpdate(BaseModel):
+    text: str | None = None
+    type: QuizQuestionType | None = None
+    options: list[dict] | None = None
+    correct_answer: str | None = None
+    explanation: str | None = None
+    weight: float | None = None
+    order: int | None = None
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_type(cls, v: str | None) -> str | None:
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
+
+class TrainingQuizQuestionOut(BaseModel):
+    id: uuid.UUID
+    quiz_id: uuid.UUID
+    text: str
+    type: QuizQuestionType
+    options: list[dict] | None
+    correct_answer: str | None
+    explanation: str | None
+    weight: float
+    order: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TrainingQuizOut(BaseModel):
+    id: uuid.UUID
+    training_id: uuid.UUID
+    title: str
+    passing_score: float
+    max_attempts: int
+    created_at: datetime
+    questions: list[TrainingQuizQuestionOut] = []
+
+    model_config = {"from_attributes": True}
+
+
+class TrainingQuizAttemptSubmit(BaseModel):
+    answers: dict
+
+
+class TrainingQuizAttemptOut(BaseModel):
+    id: uuid.UUID
+    enrollment_id: uuid.UUID
+    score: float
+    answers: dict
+    passed: bool
+    started_at: datetime
+    completed_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+# --- Generate Quiz Request (AI) ---
+class GenerateQuizRequest(BaseModel):
+    num_questions: int = 5
+    difficulty: str = "intermediario"
+    orientation: str | None = None
+
+    @field_validator("difficulty", mode="before")
+    @classmethod
+    def normalize_difficulty(cls, v: str) -> str:
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
+
 # --- Enrollment ---
 class EnrollmentOut(BaseModel):
     id: uuid.UUID
@@ -215,6 +317,8 @@ class EnrollmentDetailOut(EnrollmentOut):
     user_name: str | None = None
     user_email: str | None = None
     training_title: str | None = None
+    quiz_blocked: bool = False
+    quiz_attempts_used: int = 0
 
 
 # --- Module Progress ---
@@ -266,6 +370,7 @@ class MyTrainingSummary(BaseModel):
     completed_modules: int
     enrolled_at: datetime
     completed_at: datetime | None
+    has_final_quiz: bool = False
 
 
 class TrainingProgressModule(BaseModel):
@@ -278,13 +383,25 @@ class TrainingProgressModule(BaseModel):
     mime_type: str | None
     has_quiz: bool
     quiz_required_to_advance: bool
-    xp_reward: int
     allow_download: bool
     content_viewed: bool
     quiz_passed: bool
     quiz_score: float | None
     completed: bool
     locked: bool
+
+
+class FinalQuizProgress(BaseModel):
+    has_quiz: bool = False
+    unlocked: bool = False
+    passing_score: float = 0.7
+    max_attempts: int = 3
+    attempts_used: int = 0
+    best_score: float | None = None
+    passed: bool = False
+    blocked: bool = False
+    quiz_id: uuid.UUID | None = None
+    questions_count: int = 0
 
 
 class TrainingProgressOut(BaseModel):
@@ -296,6 +413,7 @@ class TrainingProgressOut(BaseModel):
     completed_modules: int
     xp_reward: int
     modules: list[TrainingProgressModule]
+    final_quiz: FinalQuizProgress = FinalQuizProgress()
 
 
 class PendingItem(BaseModel):

@@ -429,6 +429,7 @@ export interface Training {
   created_at: string
   updated_at: string
   modules?: TrainingModule[]
+  final_quiz?: TrainingQuiz | null
 }
 
 export interface TrainingModule {
@@ -444,7 +445,6 @@ export interface TrainingModule {
   mime_type: string | null
   has_quiz: boolean
   quiz_required_to_advance: boolean
-  xp_reward: number
   allow_download: boolean
   preview_file_path: string | null
   created_at: string
@@ -473,6 +473,52 @@ export interface QuizQuestion {
   created_at: string
 }
 
+export interface TrainingQuiz {
+  id: string
+  training_id: string
+  title: string
+  passing_score: number
+  max_attempts: number
+  created_at: string
+  questions: TrainingQuizQuestion[]
+}
+
+export interface TrainingQuizQuestion {
+  id: string
+  quiz_id: string
+  text: string
+  type: QuizQuestionType
+  options: { text: string }[] | null
+  correct_answer: string | null
+  explanation: string | null
+  weight: number
+  order: number
+  created_at: string
+}
+
+export interface TrainingQuizAttemptOut {
+  id: string
+  enrollment_id: string
+  score: number
+  answers: Record<string, { user_answer: string; correct_answer: string | null; is_correct: boolean; explanation: string | null }>
+  passed: boolean
+  started_at: string
+  completed_at: string | null
+}
+
+export interface FinalQuizProgress {
+  has_quiz: boolean
+  unlocked: boolean
+  passing_score: number
+  max_attempts: number
+  attempts_used: number
+  best_score: number | null
+  passed: boolean
+  blocked: boolean
+  quiz_id: string | null
+  questions_count: number
+}
+
 export interface TrainingEnrollment {
   id: string
   training_id: string
@@ -484,6 +530,8 @@ export interface TrainingEnrollment {
   user_name?: string | null
   user_email?: string | null
   training_title?: string | null
+  quiz_blocked?: boolean
+  quiz_attempts_used?: number
 }
 
 export interface MyTrainingSummary {
@@ -499,6 +547,7 @@ export interface MyTrainingSummary {
   completed_modules: number
   enrolled_at: string
   completed_at: string | null
+  has_final_quiz?: boolean
 }
 
 export interface TrainingProgressModule {
@@ -511,7 +560,6 @@ export interface TrainingProgressModule {
   mime_type: string | null
   has_quiz: boolean
   quiz_required_to_advance: boolean
-  xp_reward: number
   allow_download: boolean
   content_viewed: boolean
   quiz_passed: boolean
@@ -529,6 +577,7 @@ export interface TrainingProgressOut {
   completed_modules: number
   xp_reward: number
   modules: TrainingProgressModule[]
+  final_quiz?: FinalQuizProgress
 }
 
 export interface ModuleProgressOut {

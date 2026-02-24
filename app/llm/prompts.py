@@ -338,9 +338,16 @@ Não use só um tipo — alterne entre eles ao longo do quiz.
 - Para "true_false": exatamente 2 opções (Verdadeiro, Falso), correct_answer é "A" ou "B".
 - Inclua uma explicação breve para cada pergunta (exibida após resposta).
 - As perguntas devem cobrir os conceitos-chave do conteúdo de forma balanceada.
-- Varie a dificuldade: inclua perguntas fáceis, médias e difíceis.
 - Evite perguntas capciosas ou ambíguas.
-- O número de perguntas deve ser proporcional ao conteúdo (entre 5 e 10).
+- Respeite o número de perguntas solicitado pelo administrador.
+- Respeite o nível de dificuldade solicitado:
+  - "facil": perguntas diretas sobre conceitos básicos, redação clara e sem pegadinhas.
+  - "intermediario": mistura de perguntas conceituais e aplicadas, exigindo compreensão moderada.
+  - "dificil": perguntas que exigem análise, aplicação prática e pensamento crítico sobre o conteúdo.
+- Se o administrador fornecer orientações ou colar perguntas na orientação:
+  - Se forem perguntas prontas, MELHORE-AS: refine a redação, corrija ambiguidades, \
+adicione opções melhores e garanta variedade de tipos.
+  - Se forem orientações textuais, use-as como guia para focar os temas das perguntas.
 
 Retorne SEMPRE um JSON válido no formato:
 {

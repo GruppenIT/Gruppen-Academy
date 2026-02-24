@@ -153,6 +153,9 @@ class Training(Base):
         cascade="all, delete-orphan",
         order_by="TrainingModule.order",
     )
+    final_quiz: Mapped["TrainingQuiz | None"] = relationship(
+        back_populates="training", uselist=False, cascade="all, delete-orphan"
+    )
     products = relationship("Product", secondary=training_product)
     competencies = relationship("Competency", secondary=training_competency)
     teams = relationship("Team", secondary=training_team, back_populates="trainings")
@@ -184,7 +187,6 @@ class TrainingModule(Base):
     mime_type: Mapped[str | None] = mapped_column(String(100))
     has_quiz: Mapped[bool] = mapped_column(Boolean, default=False)
     quiz_required_to_advance: Mapped[bool] = mapped_column(Boolean, default=False)
-    xp_reward: Mapped[int] = mapped_column(Integer, nullable=False, default=20)
     allow_download: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     preview_file_path: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(
@@ -251,6 +253,88 @@ class QuizQuestion(Base):
     competencies = relationship("Competency", secondary=quiz_question_competency)
 
 
+# --- Training-level Final Quiz ---
+
+class TrainingQuiz(Base):
+    __tablename__ = "training_quizzes"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    training_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("trainings.id", ondelete="CASCADE"),
+        unique=True,
+        nullable=False,
+    )
+    title: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="Avaliação Final"
+    )
+    passing_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.7)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=3)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    training: Mapped["Training"] = relationship(back_populates="final_quiz")
+    questions: Mapped[list["TrainingQuizQuestion"]] = relationship(
+        back_populates="quiz",
+        cascade="all, delete-orphan",
+        order_by="TrainingQuizQuestion.order",
+    )
+
+
+class TrainingQuizQuestion(Base):
+    __tablename__ = "training_quiz_questions"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    quiz_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("training_quizzes.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[QuizQuestionType] = mapped_column(
+        Enum(QuizQuestionType), nullable=False, default=QuizQuestionType.MULTIPLE_CHOICE
+    )
+    options: Mapped[list | None] = mapped_column(JSONB)
+    correct_answer: Mapped[str | None] = mapped_column(Text)
+    explanation: Mapped[str | None] = mapped_column(Text)
+    weight: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    quiz: Mapped["TrainingQuiz"] = relationship(back_populates="questions")
+
+
+class TrainingQuizAttempt(Base):
+    __tablename__ = "training_quiz_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    enrollment_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("training_enrollments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    score: Mapped[float] = mapped_column(Float, nullable=False)
+    answers: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    enrollment: Mapped["TrainingEnrollment"] = relationship(
+        back_populates="training_quiz_attempts"
+    )
+
+
 class TrainingEnrollment(Base):
     __tablename__ = "training_enrollments"
 
@@ -275,10 +359,19 @@ class TrainingEnrollment(Base):
         DateTime(timezone=True), server_default=func.now()
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    quiz_unlocked_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True
+    )
+    quiz_unlocked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     training: Mapped["Training"] = relationship(back_populates="enrollments")
-    user: Mapped["User"] = relationship()
+    user: Mapped["User"] = relationship(foreign_keys=[user_id])
     module_progress: Mapped[list["ModuleProgress"]] = relationship(
+        back_populates="enrollment", cascade="all, delete-orphan"
+    )
+    training_quiz_attempts: Mapped[list["TrainingQuizAttempt"]] = relationship(
         back_populates="enrollment", cascade="all, delete-orphan"
     )
 

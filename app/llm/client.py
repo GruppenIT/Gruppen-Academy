@@ -429,21 +429,25 @@ async def generate_training_quiz(
     module_title: str,
     content_text: str,
     participant_level: str,
-    num_questions: int | None = None,
+    num_questions: int = 5,
+    difficulty: str = "intermediario",
+    orientation: str | None = None,
 ) -> list[dict]:
     """Generate quiz questions based on training module content."""
     client = _get_client()
 
     user_content = f"""Gere perguntas de quiz para verificar a compreensão do seguinte conteúdo:
 
-Módulo: {module_title}
+Título: {module_title}
 Nível dos participantes: {participant_level}
+Número de perguntas: {num_questions}
+Nível de dificuldade: {difficulty}
 
-Conteúdo do módulo:
+Conteúdo:
 {_sanitize_user_input(content_text)}
 """
-    if num_questions:
-        user_content += f"\nNúmero desejado de perguntas: {num_questions}"
+    if orientation:
+        user_content += f"\nOrientação do administrador:\n{_sanitize_user_input(orientation)}"
 
     response = await client.chat.completions.create(
         model=settings.openai_model,

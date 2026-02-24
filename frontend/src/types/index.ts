@@ -694,3 +694,50 @@ export function getUserLevel(points: number) {
     : ((points - current.minPoints) / (next.minPoints - current.minPoints)) * 100
   return { current, next, progressToNext }
 }
+
+// Certificate types
+export interface CertificateSettings {
+  id: string
+  logo_path: string | null
+  logo_original_filename: string | null
+  company_name: string
+  signer_name: string
+  signer_title: string
+  signature_style: string
+  signature_image_path: string | null
+  extra_text: string | null
+  primary_color: string
+  secondary_color: string
+  updated_at: string
+}
+
+export interface CertificateOut {
+  id: string
+  enrollment_id: string
+  user_id: string
+  training_id: string
+  certificate_number: string
+  issued_at: string
+  training_title?: string | null
+  user_name?: string | null
+}
+
+export interface CertificateView {
+  id: string
+  certificate_number: string
+  issued_at: string
+  user_name: string
+  training_title: string
+  training_domain: string
+  training_duration_minutes: number
+  completed_at: string | null
+  company_name: string
+  signer_name: string
+  signer_title: string
+  signature_style: string
+  signature_image_url: string | null
+  logo_url: string | null
+  extra_text: string | null
+  primary_color: string
+  secondary_color: string
+}

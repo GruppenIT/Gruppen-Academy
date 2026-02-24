@@ -771,6 +771,67 @@ class ApiClient {
       body: JSON.stringify({ settings }),
     })
   }
+
+  // Certificates — Admin
+  getCertificateSettings() {
+    return this.request<import('@/types').CertificateSettings>('/api/certificates/settings')
+  }
+  updateCertificateSettings(data: {
+    company_name?: string; signer_name?: string; signer_title?: string;
+    signature_style?: string; extra_text?: string | null;
+    primary_color?: string; secondary_color?: string;
+  }) {
+    return this.request<import('@/types').CertificateSettings>('/api/certificates/settings', {
+      method: 'PUT', body: JSON.stringify(data),
+    })
+  }
+  async uploadCertificateLogo(file: File): Promise<import('@/types').CertificateSettings> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${API_BASE}/api/certificates/settings/logo`, {
+      method: 'POST', body: formData, credentials: 'include',
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || `Erro ${res.status}`)
+    }
+    return res.json()
+  }
+  async uploadCertificateSignatureImage(file: File): Promise<import('@/types').CertificateSettings> {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${API_BASE}/api/certificates/settings/signature-image`, {
+      method: 'POST', body: formData, credentials: 'include',
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail || `Erro ${res.status}`)
+    }
+    return res.json()
+  }
+  getCertificateLogoUrl() {
+    return `${API_BASE}/api/certificates/settings/logo-file`
+  }
+  getCertificateSignatureUrl() {
+    return `${API_BASE}/api/certificates/settings/signature-file`
+  }
+
+  // Certificates — Professional
+  issueCertificate(enrollmentId: string) {
+    return this.request<import('@/types').CertificateOut>(`/api/certificates/issue/${enrollmentId}`, { method: 'POST' })
+  }
+  getMyCertificates() {
+    return this.request<import('@/types').CertificateOut[]>('/api/certificates/my')
+  }
+  getCertificateForEnrollment(enrollmentId: string) {
+    return this.request<import('@/types').CertificateOut | null>(`/api/certificates/enrollment/${enrollmentId}`)
+  }
+  getCertificateView(certificateId: string) {
+    return this.request<import('@/types').CertificateView>(`/api/certificates/${certificateId}/view`)
+  }
+  getCertificateFileUrl(type: 'logo' | 'signature', certificateId: string) {
+    return `${API_BASE}/api/certificates/files/${type}/${certificateId}`
+  }
 }
 
 export const api = new ApiClient()

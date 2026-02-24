@@ -8,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.audit.middleware import AuditLogMiddleware
 from app.auth.router import router as auth_router
 from app.catalog.router import router as catalog_router
+from app.certificates.router import router as certificates_router
 from app.config import settings
 from app.copilot.router import router as copilot_router
 from app.evaluations.router import router as evaluations_router
@@ -115,6 +116,7 @@ app.include_router(copilot_router, prefix="/api/copilot", tags=["copilot"])
 app.include_router(teams_router, prefix="/api/teams", tags=["teams"])
 app.include_router(trainings_router, prefix="/api/trainings", tags=["trainings"])
 app.include_router(settings_router, prefix="/api/settings", tags=["settings"])
+app.include_router(certificates_router, prefix="/api/certificates", tags=["certificates"])
 
 
 @app.get("/api/health")

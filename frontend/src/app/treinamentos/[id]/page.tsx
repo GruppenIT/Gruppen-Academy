@@ -4,11 +4,11 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import AppShell from '@/components/layout/AppShell'
 import { api } from '@/lib/api'
-import type { TrainingProgressOut, TrainingProgressModule, FinalQuizProgress, TrainingQuizQuestion, TrainingQuizAttemptOut, TrainingQuiz } from '@/types'
+import type { TrainingProgressOut, TrainingProgressModule, FinalQuizProgress, TrainingQuizQuestion, TrainingQuizAttemptOut, TrainingQuiz, CertificateOut } from '@/types'
 import Link from 'next/link'
 import {
   LibraryBig, ArrowLeft, CheckCircle2, Lock, PlayCircle, FileText, Star,
-  ChevronRight, ClipboardCheck, Circle, Loader2, AlertTriangle, Shield,
+  ChevronRight, ClipboardCheck, Circle, Loader2, AlertTriangle, Shield, GraduationCap,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -19,6 +19,8 @@ export default function TrainingProgressPage() {
   const [progress, setProgress] = useState<TrainingProgressOut | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [certificate, setCertificate] = useState<CertificateOut | null>(null)
+  const [issuingCert, setIssuingCert] = useState(false)
 
   useEffect(() => {
     api.getTrainingProgress(trainingId)
@@ -54,6 +56,35 @@ export default function TrainingProgressPage() {
         </div>
       </AppShell>
     )
+  }
+
+  // Check for existing certificate when completed
+  useEffect(() => {
+    if (progress?.status === 'completed' && progress.enrollment_id) {
+      api.getCertificateForEnrollment(progress.enrollment_id)
+        .then((cert) => { if (cert) setCertificate(cert) })
+        .catch(() => {})
+    }
+  }, [progress?.status, progress?.enrollment_id])
+
+  const handleIssueCertificate = async () => {
+    if (!progress) return
+    setIssuingCert(true)
+    try {
+      const cert = await api.issueCertificate(progress.enrollment_id)
+      setCertificate(cert)
+      window.open(`/certificado/${cert.id}`, '_blank')
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Erro ao gerar certificado')
+    } finally {
+      setIssuingCert(false)
+    }
+  }
+
+  const handleViewCertificate = () => {
+    if (certificate) {
+      window.open(`/certificado/${certificate.id}`, '_blank')
+    }
   }
 
   const pct = progress.total_modules > 0
@@ -131,6 +162,26 @@ export default function TrainingProgressPage() {
           <p className="text-emerald-600 text-sm mt-1">
             Parabéns! Você concluiu o treinamento e ganhou seus XP.
           </p>
+          <div className="mt-4">
+            {certificate ? (
+              <button
+                onClick={handleViewCertificate}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-medium text-sm hover:bg-emerald-700 transition-colors"
+              >
+                <GraduationCap className="w-4 h-4" />
+                Ver certificado
+              </button>
+            ) : (
+              <button
+                onClick={handleIssueCertificate}
+                disabled={issuingCert}
+                className="inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 text-white rounded-xl font-medium text-sm hover:bg-emerald-700 transition-colors disabled:opacity-50"
+              >
+                {issuingCert ? <Loader2 className="w-4 h-4 animate-spin" /> : <GraduationCap className="w-4 h-4" />}
+                Gerar certificado
+              </button>
+            )}
+          </div>
         </div>
       )}
     </AppShell>

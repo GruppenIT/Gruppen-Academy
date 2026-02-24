@@ -7,33 +7,15 @@ class ApiClient {
    */
   private _authenticated: boolean = false
 
+  /** Guard against multiple simultaneous 401 redirects. */
+  private _redirectingToLogin: boolean = false
+
   get authenticated(): boolean {
     return this._authenticated
   }
 
   setAuthenticated(value: boolean) {
     this._authenticated = value
-  }
-
-  // --- Backward compatibility shims (no-ops, token lives in HttpOnly cookie) ---
-  /** @deprecated Token is now managed via HttpOnly cookie */
-  setToken(token: string | null) {
-    this._authenticated = !!token
-    // Migration: clean up any leftover localStorage token
-    if (typeof window !== 'undefined') localStorage.removeItem('token')
-  }
-
-  /** @deprecated Token is now managed via HttpOnly cookie */
-  getToken(): string | null {
-    // During migration: check if there's an old localStorage token
-    if (typeof window !== 'undefined') {
-      const legacy = localStorage.getItem('token')
-      if (legacy) {
-        // Clean up old token — cookie is now the source of truth
-        localStorage.removeItem('token')
-      }
-    }
-    return null
   }
 
   private async request<T>(path: string, options: RequestInit = {}, timeoutMs?: number): Promise<T> {
@@ -65,10 +47,11 @@ class ApiClient {
 
     if (res.status === 401) {
       this._authenticated = false
-      // Only redirect if not already on a public page (avoids infinite reload loop)
-      if (typeof window !== 'undefined') {
+      // Deduplicate: only one redirect per "burst" of 401s
+      if (typeof window !== 'undefined' && !this._redirectingToLogin) {
         const p = window.location.pathname
         if (p !== '/login' && !p.startsWith('/auth/')) {
+          this._redirectingToLogin = true
           window.location.href = '/login'
         }
       }
@@ -113,8 +96,7 @@ class ApiClient {
       // Best-effort: even if the call fails, clear client state
     }
     this._authenticated = false
-    // Clean up any legacy localStorage token
-    if (typeof window !== 'undefined') localStorage.removeItem('token')
+    this._redirectingToLogin = false
   }
 
   // SSO
@@ -139,6 +121,10 @@ class ApiClient {
 
   ssoCheck() {
     return this.request<{ enabled: boolean }>('/api/auth/sso/check')
+  }
+
+  getSessionInfo() {
+    return this.request<{ idle_timeout_minutes: number; token_lifetime_minutes: number }>('/api/auth/session-info')
   }
 
   // Users

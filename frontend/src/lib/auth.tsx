@@ -7,6 +7,8 @@ import type { User } from '@/types'
 interface AuthContextType {
   user: User | null
   loading: boolean
+  /** Configured idle timeout in minutes (0 = disabled). */
+  idleTimeoutMinutes: number
   login: (email: string, password: string) => Promise<void>
   loginWithToken: (token?: string) => Promise<void>
   logout: () => void
@@ -15,6 +17,7 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType>({
   user: null,
   loading: true,
+  idleTimeoutMinutes: 15,
   login: async () => {},
   loginWithToken: async () => {},
   logout: () => {},
@@ -23,19 +26,30 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
+  const [idleTimeoutMinutes, setIdleTimeoutMinutes] = useState(15)
 
   useEffect(() => {
-    // With HttpOnly cookies, we always try to fetch the user.
-    // The cookie is sent automatically — no client-side token to check.
-    api.getMe()
-      .then((me) => {
+    const init = async () => {
+      // With HttpOnly cookies, we always try to fetch the user.
+      try {
+        const me = await api.getMe()
         api.setAuthenticated(true)
         setUser(me)
-      })
-      .catch(() => {
-        // No valid session — stay on current page (login guard handles redirect)
-      })
-      .finally(() => setLoading(false))
+      } catch {
+        // No valid session — login guard handles redirect
+      }
+      // Fetch session config (idle timeout) — best-effort
+      try {
+        const info = await api.getSessionInfo()
+        if (info.idle_timeout_minutes > 0) {
+          setIdleTimeoutMinutes(info.idle_timeout_minutes)
+        }
+      } catch {
+        // Use default
+      }
+      setLoading(false)
+    }
+    init()
   }, [])
 
   const login = async (email: string, password: string) => {
@@ -60,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, loginWithToken, logout }}>
+    <AuthContext.Provider value={{ user, loading, idleTimeoutMinutes, login, loginWithToken, logout }}>
       {children}
     </AuthContext.Provider>
   )

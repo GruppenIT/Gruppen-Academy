@@ -52,14 +52,19 @@ def _record_attempt(key: str) -> None:
 
 
 def _set_auth_cookie(response: Response, token: str) -> None:
-    """Set an HttpOnly secure cookie containing the JWT."""
+    """Set an HttpOnly **session** cookie containing the JWT.
+
+    No ``max_age`` / ``expires`` → the browser deletes the cookie when it
+    closes, which satisfies the requirement that sessions must not survive
+    a browser restart.  The JWT ``exp`` claim is the authoritative expiry;
+    the sliding-window middleware refreshes it while the user is active.
+    """
     response.set_cookie(
         key=app_settings.cookie_name,
         value=token,
         httponly=True,
         secure=app_settings.cookie_secure,
         samesite=app_settings.cookie_samesite,
-        max_age=app_settings.jwt_access_token_expire_minutes * 60,
         path="/",
         domain=app_settings.cookie_domain,
     )
@@ -254,3 +259,16 @@ async def logout(request: Request, response: Response):
         except Exception:
             pass  # Token may already be invalid — still clear the cookie
     _clear_auth_cookie(response)
+
+
+@router.get("/session-info")
+async def session_info():
+    """Return session configuration consumed by the frontend.
+
+    This is a public endpoint (no auth required) so the login page can
+    also read the idle-timeout value.
+    """
+    return {
+        "idle_timeout_minutes": app_settings.idle_timeout_minutes,
+        "token_lifetime_minutes": app_settings.jwt_access_token_expire_minutes,
+    }

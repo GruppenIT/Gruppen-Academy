@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     cookie_samesite: str = "lax"
     cookie_domain: str | None = None  # None = current domain only
 
+    # Idle timeout — enforced by the frontend; backend JWT expiry is the hard limit
+    idle_timeout_minutes: int = 15
+
     # Redis (used for token blacklist)
     redis_url: str = "redis://redis:6379/0"
 

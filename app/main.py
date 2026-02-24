@@ -1,5 +1,6 @@
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.audit.middleware import AuditLogMiddleware
 from app.auth.router import router as auth_router
+from app.auth.service import create_access_token, decode_access_token
 from app.catalog.router import router as catalog_router
 from app.certificates.router import router as certificates_router
 from app.config import settings
@@ -61,6 +63,69 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# --- Sliding-window session refresh middleware ---
+
+
+class SessionRefreshMiddleware(BaseHTTPMiddleware):
+    """Transparently refresh the JWT session cookie while the user is active.
+
+    On every **successful** authenticated response, if the JWT is past the
+    halfway point of its lifetime a fresh token is issued and set as a new
+    session cookie.  This gives active users an effectively infinite session
+    while keeping the hard JWT expiry as a safety net for abandoned sessions.
+
+    Paths that manage auth themselves (login, logout) are skipped.
+    """
+
+    _SKIP_PATHS = frozenset({
+        "/api/auth/login",
+        "/api/auth/logout",
+        "/api/auth/sso/callback",
+        "/api/health",
+    })
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+
+        # Only refresh on 2xx responses
+        if response.status_code >= 300:
+            return response
+
+        path = request.url.path
+        if path in self._SKIP_PATHS:
+            return response
+
+        cookie_token = request.cookies.get(settings.cookie_name)
+        if not cookie_token:
+            return response
+
+        try:
+            payload = decode_access_token(cookie_token)
+            exp = payload.get("exp", 0)
+            iat = payload.get("iat", 0)
+            now = datetime.now(timezone.utc).timestamp()
+
+            lifetime = exp - iat
+            elapsed = now - iat
+
+            # Refresh when past the halfway point of the token's lifetime
+            if lifetime > 0 and elapsed > lifetime / 2:
+                new_token = create_access_token(subject=payload["sub"])
+                response.set_cookie(
+                    key=settings.cookie_name,
+                    value=new_token,
+                    httponly=True,
+                    secure=settings.cookie_secure,
+                    samesite=settings.cookie_samesite,
+                    path="/",
+                    domain=settings.cookie_domain,
+                )
+        except Exception:
+            pass  # Token invalid or expired — regular auth flow handles it
+
+        return response
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings.validate_secrets()
@@ -89,6 +154,9 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 # Audit log for mutating API requests (runs after auth, before response)
 app.add_middleware(AuditLogMiddleware)
+
+# Sliding-window JWT refresh — extends session while user is active
+app.add_middleware(SessionRefreshMiddleware)
 
 cors_origins = list(settings.cors_origins)
 # Only include localhost in non-production environments

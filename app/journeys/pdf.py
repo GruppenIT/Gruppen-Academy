@@ -170,7 +170,9 @@ async def generate_journey_pdf(
 
     pdf = JourneyPDF(journey.title)
     pdf.alias_nb_pages()
-    pdf.set_auto_page_break(auto=True, margin=20)
+    # Reserve enough bottom margin so content never overlaps the footer QR code.
+    # QR occupies from (page_h - 43) to (page_h - 18); add 5 mm buffer above it.
+    pdf.set_auto_page_break(auto=True, margin=48)
 
     now = datetime.now(timezone.utc).strftime("%d/%m/%Y")
 
@@ -297,7 +299,7 @@ async def _render_question(
     pdf.set_draw_color(200, 200, 200)
 
     for _ in range(num_lines):
-        if pdf.get_y() > pdf.h - 25:
+        if pdf.get_y() > pdf.h - 48:
             user_page += 1
             code = await _create_page_code(db, journey_id, user_id, user_page)
             pdf.set_page_code(code)

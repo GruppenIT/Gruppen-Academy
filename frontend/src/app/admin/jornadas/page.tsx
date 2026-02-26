@@ -61,6 +61,11 @@ export default function AdminJornadasPage() {
   const [qMaxTime, setQMaxTime] = useState<number | ''>('')
   const [cloning, setCloning] = useState<string | null>(null)
 
+  // Delete confirmation
+  const [deleteTarget, setDeleteTarget] = useState<Journey | null>(null)
+  const [deleteHistory, setDeleteHistory] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+
   // Team assignment
   const [assignJourneyId, setAssignJourneyId] = useState('')
   const [assignedTeamIds, setAssignedTeamIds] = useState<string[]>([])
@@ -143,6 +148,20 @@ export default function AdminJornadasPage() {
     setError(''); setModalMode('assign-teams')
   }
   const closeModal = () => { setModalMode(null); setError('') }
+
+  const openDeleteConfirm = (j: Journey) => { setDeleteTarget(j); setDeleteHistory(false) }
+  const closeDeleteConfirm = () => { setDeleteTarget(null); setDeleteHistory(false) }
+  const handleDeleteJourney = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await api.deleteJourney(deleteTarget.id, deleteHistory)
+      closeDeleteConfirm()
+      await load()
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : 'Erro ao excluir jornada')
+    } finally { setDeleting(false) }
+  }
 
   const [printingPdf, setPrintingPdf] = useState<string | null>(null)
   const handlePrintPdf = async (journeyId: string) => {
@@ -304,6 +323,7 @@ export default function AdminJornadasPage() {
                     {cloning === j.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Copy className="w-4 h-4" />}
                   </button>
                   <button onClick={() => openAssignTeams(j.id)} className="p-2 rounded-lg text-gray-400 hover:text-teal-600 hover:bg-teal-50" title="Atribuir equipes"><UsersRound className="w-4 h-4" /></button>
+                  <button onClick={() => openDeleteConfirm(j)} className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50" title="Excluir jornada"><Trash2 className="w-4 h-4" /></button>
                   <button onClick={() => openEditJourney(j)} className="p-2 rounded-lg text-gray-400 hover:text-brand-600 hover:bg-brand-50" title="Editar"><Pencil className="w-4 h-4" /></button>
                   <button onClick={() => toggleExpand(j.id)} className="p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50">
                     {expanded === j.id ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
@@ -516,6 +536,58 @@ export default function AdminJornadasPage() {
               <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2 px-4 py-2">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
                 {modalMode === 'add-question' ? 'Criar' : modalMode === 'edit-question' ? 'Atualizar' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Journey Confirmation */}
+      {deleteTarget && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md animate-slide-up">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <h3 className="font-bold text-gray-900">Excluir Jornada</h3>
+              <button onClick={closeDeleteConfirm} className="text-gray-400 hover:text-gray-600"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="p-4 rounded-xl bg-red-50 border border-red-100">
+                <div className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-semibold text-red-900">Tem certeza que deseja excluir?</p>
+                    <p className="text-sm text-red-700 mt-1">
+                      A jornada <strong>&ldquo;{deleteTarget.title}&rdquo;</strong> sera excluida permanentemente.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setDeleteHistory(!deleteHistory)}
+                className={`w-full flex items-center gap-3 p-4 rounded-xl border-2 text-left transition-all ${deleteHistory ? 'border-red-400 bg-red-50' : 'border-gray-100 hover:border-gray-200 bg-white'}`}
+              >
+                <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center shrink-0 transition-all ${deleteHistory ? 'border-red-500 bg-red-500' : 'border-gray-300'}`}>
+                  {deleteHistory && <Check className="w-3 h-3 text-white" />}
+                </div>
+                <div className="min-w-0">
+                  <p className={`text-sm font-medium ${deleteHistory ? 'text-red-900' : 'text-gray-900'}`}>Excluir historico associado</p>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Participacoes, respostas, avaliacoes, relatorios e pontuacoes vinculados a esta jornada serao removidos permanentemente.
+                  </p>
+                </div>
+              </button>
+            </div>
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-gray-100">
+              <button onClick={closeDeleteConfirm} className="btn-secondary px-4 py-2">Cancelar</button>
+              <button
+                onClick={handleDeleteJourney}
+                disabled={deleting}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-white font-medium text-sm bg-red-600 hover:bg-red-700 disabled:opacity-50 transition-colors"
+              >
+                {deleting && <Loader2 className="w-4 h-4 animate-spin" />}
+                {deleteHistory ? 'Excluir Tudo' : 'Excluir Jornada'}
               </button>
             </div>
           </div>

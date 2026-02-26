@@ -214,6 +214,9 @@ class ApiClient {
   deleteQuestion(journeyId: string, questionId: string) {
     return this.request<void>(`/api/journeys/${journeyId}/questions/${questionId}`, { method: 'DELETE' })
   }
+  deleteJourney(journeyId: string, deleteHistory: boolean = false) {
+    return this.request<{ journey_id: string; title: string; deleted_history: boolean }>(`/api/journeys/${journeyId}?delete_history=${deleteHistory}`, { method: 'DELETE' })
+  }
   cloneJourney(journeyId: string) {
     return this.request<import('@/types').Journey>(`/api/journeys/${journeyId}/clone`, { method: 'POST' })
   }

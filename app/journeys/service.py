@@ -197,6 +197,123 @@ async def delete_question(db: AsyncSession, question: Question) -> None:
     await db.commit()
 
 
+# --- Journey Delete ---
+async def delete_journey(
+    db: AsyncSession, journey_id: uuid.UUID, *, delete_history: bool = False
+) -> dict:
+    """Delete a journey.
+
+    If ``delete_history`` is False, only draft journeys without participations
+    can be deleted (structural delete — removes questions, team assignments, etc.).
+
+    If ``delete_history`` is True, the journey **and** all associated history
+    (participations, responses, evaluations, analytical reports, OCR uploads,
+    page codes, and gamification scores) are permanently deleted.
+
+    Returns a summary dict of what was deleted.
+    """
+    from app.evaluations.models import AnalyticalReport, Evaluation
+    from app.gamification.models import Score
+
+    journey = await get_journey(db, journey_id)
+    if not journey:
+        raise ValueError("Jornada não encontrada")
+
+    summary: dict = {"journey_id": str(journey_id), "title": journey.title, "deleted_history": delete_history}
+
+    if delete_history:
+        # 1. Delete scores linked to this journey (no FK, soft reference via source_id)
+        score_result = await db.execute(
+            select(Score).where(Score.source_id == journey_id)
+        )
+        scores = list(score_result.scalars().all())
+        for s in scores:
+            await db.delete(s)
+        summary["scores_deleted"] = len(scores)
+
+        # 2. Delete evaluations linked to responses of this journey's participations
+        eval_result = await db.execute(
+            select(Evaluation)
+            .join(QuestionResponse, Evaluation.response_id == QuestionResponse.id)
+            .join(JourneyParticipation, QuestionResponse.participation_id == JourneyParticipation.id)
+            .where(JourneyParticipation.journey_id == journey_id)
+        )
+        evaluations = list(eval_result.scalars().all())
+        for e in evaluations:
+            await db.delete(e)
+        summary["evaluations_deleted"] = len(evaluations)
+
+        # 3. Delete analytical reports
+        report_result = await db.execute(
+            select(AnalyticalReport)
+            .join(JourneyParticipation, AnalyticalReport.participation_id == JourneyParticipation.id)
+            .where(JourneyParticipation.journey_id == journey_id)
+        )
+        reports = list(report_result.scalars().all())
+        for r in reports:
+            await db.delete(r)
+        summary["reports_deleted"] = len(reports)
+
+        # 4. Delete OCR uploads
+        ocr_result = await db.execute(
+            select(OCRUpload)
+            .join(JourneyParticipation, OCRUpload.participation_id == JourneyParticipation.id)
+            .where(JourneyParticipation.journey_id == journey_id)
+        )
+        ocr_uploads = list(ocr_result.scalars().all())
+        for o in ocr_uploads:
+            await db.delete(o)
+        summary["ocr_uploads_deleted"] = len(ocr_uploads)
+
+        # Also delete orphan OCR uploads (participation_id is NULL but file_path references journey)
+        # These are unlikely but possible from failed batch imports
+
+        # 5. Delete question responses
+        resp_result = await db.execute(
+            select(QuestionResponse)
+            .join(JourneyParticipation, QuestionResponse.participation_id == JourneyParticipation.id)
+            .where(JourneyParticipation.journey_id == journey_id)
+        )
+        responses = list(resp_result.scalars().all())
+        for r in responses:
+            await db.delete(r)
+        summary["responses_deleted"] = len(responses)
+
+        # 6. Delete participations
+        part_result = await db.execute(
+            select(JourneyParticipation).where(JourneyParticipation.journey_id == journey_id)
+        )
+        participations = list(part_result.scalars().all())
+        for p in participations:
+            await db.delete(p)
+        summary["participations_deleted"] = len(participations)
+
+        # 7. Delete page codes
+        pc_result = await db.execute(
+            select(PageCode).where(PageCode.journey_id == journey_id)
+        )
+        page_codes = list(pc_result.scalars().all())
+        for pc in page_codes:
+            await db.delete(pc)
+        summary["page_codes_deleted"] = len(page_codes)
+    else:
+        # Without history deletion, check if there are participations
+        part_result = await db.execute(
+            select(JourneyParticipation).where(JourneyParticipation.journey_id == journey_id)
+        )
+        if part_result.scalars().first():
+            raise ValueError(
+                "Esta jornada possui histórico de participações. "
+                "Para excluí-la, confirme a exclusão do histórico associado."
+            )
+
+    # Delete the journey itself (questions + M:N associations cascade via DB)
+    await db.delete(journey)
+    await db.commit()
+
+    return summary
+
+
 # --- Journey Clone ---
 async def clone_journey(db: AsyncSession, journey_id: uuid.UUID, created_by: uuid.UUID) -> Journey:
     """Clone a journey with all its questions."""

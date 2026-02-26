@@ -37,6 +37,7 @@ from app.journeys.service import (
     create_journey,
     create_ocr_upload,
     create_participation,
+    delete_journey,
     delete_question,
     get_journey,
     get_ocr_upload,
@@ -350,6 +351,25 @@ async def update_existing_journey(
         raise HTTPException(status_code=404, detail="Jornada não encontrada")
     try:
         return await update_journey(db, journey, data)
+    except ValueError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+
+
+@router.delete("/{journey_id}", status_code=status.HTTP_200_OK)
+async def delete_existing_journey(
+    journey_id: uuid.UUID,
+    delete_history: bool = False,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_role(UserRole.ADMIN, UserRole.SUPER_ADMIN)),
+):
+    """Delete a journey.
+
+    If ``delete_history`` is False, only journeys without participations can
+    be deleted. If True, all associated data (participations, responses,
+    evaluations, reports, scores) is permanently removed.
+    """
+    try:
+        return await delete_journey(db, journey_id, delete_history=delete_history)
     except ValueError as e:
         raise HTTPException(status_code=409, detail=str(e))
 

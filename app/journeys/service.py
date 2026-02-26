@@ -214,12 +214,25 @@ async def delete_journey(
     """
     from app.evaluations.models import AnalyticalReport, Evaluation
     from app.gamification.models import Score
+    from app.learning.models import LearningPathItem, PathItemType
 
     journey = await get_journey(db, journey_id)
     if not journey:
         raise ValueError("Jornada não encontrada")
 
     summary: dict = {"journey_id": str(journey_id), "title": journey.title, "deleted_history": delete_history}
+
+    # Always clean up LearningPathItem references (polymorphic, no FK constraint)
+    lpi_result = await db.execute(
+        select(LearningPathItem).where(
+            LearningPathItem.item_type == PathItemType.JOURNEY,
+            LearningPathItem.item_id == journey_id,
+        )
+    )
+    path_items = list(lpi_result.scalars().all())
+    for pi in path_items:
+        await db.delete(pi)
+    summary["learning_path_items_removed"] = len(path_items)
 
     if delete_history:
         # 1. Delete scores linked to this journey (no FK, soft reference via source_id)
